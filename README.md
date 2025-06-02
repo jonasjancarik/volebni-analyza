@@ -93,8 +93,8 @@ This runs the entire pipeline: comprehensive data scraping → processing → an
 
 ### Individual Components
 ```bash
-# Enhanced data collection with comprehensive scraping
-uv run src/scraper.py
+# XML API electoral district data scraping (primary scraper)
+uv run src/xml_scraper.py
 
 # Generate visualizations
 uv run src/visualizer.py
@@ -111,16 +111,16 @@ uv run src/data_processor.py
 ```
 volebni-analyza/
 ├── src/                          # Source code modules
-│   ├── scraper.py               # Comprehensive election data scraper
+│   ├── xml_scraper.py           # Electoral district XML API scraper (primary)
 │   ├── data_processor.py        # Data cleaning and CSV processing  
 │   ├── visualizer.py            # Interactive chart generation
 │   ├── analyzer.py              # Statistical analysis engine
 │   └── main.py                  # Main pipeline script
 ├── data/                        # Generated data and outputs
-│   ├── raw/                     # Raw scraped data
-│   ├── processed/               # Cleaned datasets
-│   ├── detailed/                # District-level results
-│   ├── results/                 # Complete election results
+│   ├── raw/                     # Raw data (XML batches, HTML responses)
+│   ├── processed/               # Cleaned datasets (CSV processing output)
+│   ├── detailed/                # District-level and granular results
+│   ├── results/                 # Complete election results (JSON)
 │   ├── visualizations/          # Interactive HTML charts
 │   └── reports/                 # Analysis reports
 ├── pyproject.toml              # Project dependencies and configuration
@@ -146,11 +146,34 @@ volebni-analyza/
 
 ## Data Sources
 
+### Primary Data Sources
 - **Primary**: Czech Statistical Office (Český statistický úřad) - volby.cz
 - **Method**: Comprehensive web scraping of complete results pages
 - **Coverage**: Prague 5 municipality (code: 500143) - 100% complete
 - **Elections**: 2022 Municipal Elections
 - **URL**: https://www.volby.cz/pls/kv2022/kv1111?xjazyk=CZ&xid=0&xdz=5&xnumnuts=1100&xobec=500143&xstat=0&xvyber=0
+
+### Electoral District XML API
+- **API Endpoint**: https://www.volby.cz/pls/kv2022/vysledky_okrsky
+- **Format**: Structured XML data with detailed district-level results
+- **Coverage**: Individual electoral districts (okrsky) with granular vote data
+- **Current Approach**: Downloads relevant batches, filters locally for Prague 5 data
+- **Files Generated**: 
+  - `data/raw/electoral_districts_batch_30.xml` - Contains Prague 5 district data
+  - `data/raw/prague5_districts_batch100.xml` - Additional Prague 5 data
+  - `data/detailed/prague5_electoral_districts.json` - Processed district results
+
+### 🚀 Optimization Opportunity
+**TODO**: The XML API likely supports direct municipality/district filtering parameters that could eliminate the need to download and filter batches locally. Potential parameters to investigate:
+- `obec=500143` (municipality code)
+- `kodzastup=500143` (district code) 
+- `nuts=CZ0100` (Prague NUTS code)
+- Other filtering parameters in the API documentation
+
+**Current Efficiency**: Downloads ~30 batches, keeps only 2 relevant files (~95% reduction)
+**Potential**: Direct API filtering could eliminate batch downloads entirely
+
+**API Schema**: See `kv_vysledky_okrsky.xsd` for complete XML structure documentation
 
 ## Key Insights
 
@@ -211,13 +234,13 @@ volebni-analyza/
 ### Testing
 ```bash
 # Run individual components to test
-uv run src/scraper.py
+uv run src/xml_scraper.py
 uv run src/visualizer.py
 uv run src/analyzer.py
 ```
 
 ### Adding New Features
-1. **Data Sources**: Extend `EnhancedPrague5Scraper` class in `scraper.py`
+1. **Data Sources**: Extend `ElectoralDistrictXMLScraper` class in `xml_scraper.py`
 2. **Visualizations**: Add methods to `Prague5Visualizer` class  
 3. **Analysis**: Enhance `Prague5ElectionAnalyzer` with new metrics
 4. **Reports**: Modify report generation in analyzer module

@@ -11,7 +11,7 @@ from pathlib import Path
 # Add src to path
 sys.path.append(str(Path(__file__).parent))
 
-from scraper import EnhancedPrague5Scraper
+from xml_scraper import ElectoralDistrictXMLScraper
 from data_processor import Prague5DataProcessor
 
 # Set up logging
@@ -30,7 +30,7 @@ def main():
     data_dir = project_root / "data"
 
     # Initialize components
-    scraper = EnhancedPrague5Scraper(str(data_dir))
+    scraper = ElectoralDistrictXMLScraper(str(data_dir))
     processor = Prague5DataProcessor(str(data_dir))
 
     try:
