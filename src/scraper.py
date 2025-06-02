@@ -10,6 +10,7 @@ import os
 import logging
 from pathlib import Path
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +304,256 @@ class ElectoralDistrictXMLScraper:
         # Otherwise, scrape the data
         return self.find_prague5_data()
 
+    def get_party_list_names(
+        self, municipality_code="500143", election_date="20220923"
+    ):
+        """Get party list names from official Czech election data sources"""
+        logger.info("Fetching party names from official election data sources...")
+
+        # First try the Electoral Parties Register (ROS) - this should have local list number mappings
+        party_names = self._download_electoral_parties_register(municipality_code)
+
+        if not party_names:
+            # Fallback to electoral parties code list (cvs.xml) - though this has universal codes
+            party_names = self._download_electoral_parties_codelist()
+
+        if not party_names:
+            # Fallback to political parties code list (cns.xml)
+            party_names = self._download_political_parties_codelist()
+
+        if not party_names:
+            # Last resort: try to get party names from municipality-specific data
+            party_names = self._get_party_names_from_municipality_data(
+                municipality_code
+            )
+
+        return party_names
+
+    def _download_electoral_parties_codelist(self):
+        """Download and parse the electoral parties code list (cvs.xml)"""
+        url = "https://www.volby.cz/opendata/kv2022/xml/cvs.xml"
+
+        try:
+            logger.info("Downloading electoral parties code list (cvs.xml)...")
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+
+            # Save the code list
+            codelist_file = self.data_dir / "raw" / "cvs_electoral_parties.xml"
+            with open(codelist_file, "wb") as f:
+                f.write(response.content)
+
+            # Parse the XML with namespace handling
+            tree = ET.parse(codelist_file)
+            root = tree.getroot()
+
+            # Define namespace
+            ns = {"vol": "http://www.volby.cz/vol/"}
+
+            party_names = {}
+            # Handle both with and without namespace
+            rows = root.findall(".//vol:CVS_ROW", ns) or root.findall(".//CVS_ROW")
+
+            for row in rows:
+                # Try with namespace first, then without
+                vstrana = row.find("vol:VSTRANA", ns) or row.find("VSTRANA")
+                nazev = (
+                    row.find("vol:NAZEV_STRV", ns)
+                    or row.find("NAZEV_STRV")
+                    or row.find("vol:NAZEVCELK", ns)
+                    or row.find("NAZEVCELK")
+                )
+
+                if vstrana is not None and nazev is not None:
+                    try:
+                        party_code = int(vstrana.text)
+                        party_name = (
+                            nazev.text.strip() if nazev.text else f"Party {party_code}"
+                        )
+                        party_names[party_code] = party_name
+                    except (ValueError, AttributeError):
+                        continue
+
+            logger.info(f"Loaded {len(party_names)} electoral parties from code list")
+            return party_names
+
+        except Exception as e:
+            logger.error(f"Error downloading electoral parties code list: {e}")
+            return {}
+
+    def _download_political_parties_codelist(self):
+        """Download and parse the political parties code list (cns.xml)"""
+        url = "https://www.volby.cz/opendata/kv2022/xml/cns.xml"
+
+        try:
+            logger.info("Downloading political parties code list (cns.xml)...")
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+
+            # Save the code list
+            codelist_file = self.data_dir / "raw" / "cns_political_parties.xml"
+            with open(codelist_file, "wb") as f:
+                f.write(response.content)
+
+            # Parse the XML with namespace handling
+            tree = ET.parse(codelist_file)
+            root = tree.getroot()
+
+            # Define namespace
+            ns = {"vol": "http://www.volby.cz/vol/"}
+
+            party_names = {}
+            # Handle both with and without namespace
+            rows = root.findall(".//vol:CNS_ROW", ns) or root.findall(".//CNS_ROW")
+
+            for row in rows:
+                # Try with namespace first, then without
+                nstrana = row.find("vol:NSTRANA", ns) or row.find("NSTRANA")
+                nazev = row.find("vol:NAZEV_STRN", ns) or row.find("NAZEV_STRN")
+
+                if nstrana is not None and nazev is not None:
+                    try:
+                        party_code = int(nstrana.text)
+                        party_name = (
+                            nazev.text.strip() if nazev.text else f"Party {party_code}"
+                        )
+                        party_names[party_code] = party_name
+                    except (ValueError, AttributeError):
+                        continue
+
+            logger.info(f"Loaded {len(party_names)} political parties from code list")
+            return party_names
+
+        except Exception as e:
+            logger.error(f"Error downloading political parties code list: {e}")
+            return {}
+
+    def _get_party_names_from_municipality_data(self, municipality_code):
+        """Fallback: Get party names from municipality-specific results page"""
+        logger.info("Falling back to municipality-specific party name extraction...")
+
+        url = "https://www.volby.cz/pls/kv2022/kv1111"
+        params = {
+            "xjazyk": "CZ",
+            "xid": "0",
+            "xdz": "5",
+            "xnumnuts": "1100",
+            "xobec": municipality_code,
+            "xstat": "0",
+            "xvyber": "0",
+        }
+
+        try:
+            response = self.session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+
+            # Parse HTML to extract party names
+            soup = BeautifulSoup(response.content, "html.parser")
+
+            # Find the party results table
+            party_table = soup.find("table", {"id": "kv11111_t1"})
+            if not party_table:
+                logger.warning("Party results table not found")
+                return {}
+
+            party_names = {}
+            data_rows = party_table.find_all("tr")[2:]  # Skip header rows
+
+            for row in data_rows:
+                cells = row.find_all(["td", "th"])
+                if len(cells) >= 2:
+                    # First cell contains the list number
+                    list_number_text = cells[0].get_text().strip()
+                    # Second cell contains the party name
+                    party_name_text = cells[1].get_text().strip()
+
+                    # Clean up the list number
+                    try:
+                        list_number = int(list_number_text)
+                        party_names[list_number] = party_name_text
+                    except ValueError:
+                        continue
+
+            logger.info(
+                f"Retrieved {len(party_names)} party names from municipality page"
+            )
+            return party_names
+
+        except Exception as e:
+            logger.error(f"Error fetching party names from municipality page: {e}")
+            return {}
+
+    def _download_electoral_parties_register(self, municipality_code="500143"):
+        """Download and parse the Electoral Parties Register (ROS) for party list mappings"""
+        url = "https://www.volby.cz/opendata/kv2022/xml/kvros.xml"
+
+        try:
+            logger.info("Downloading Electoral Parties Register (kvros.xml)...")
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+
+            # Save the register
+            register_file = (
+                self.data_dir / "raw" / "kvros_electoral_parties_register.xml"
+            )
+            with open(register_file, "wb") as f:
+                f.write(response.content)
+
+            # Parse the XML with namespace handling
+            tree = ET.parse(register_file)
+            root = tree.getroot()
+
+            # Define namespace for KV data (different from CVS)
+            ns = {"kv": "http://www.volby.cz/kv/"}
+
+            party_mappings = {}
+            # Look for entries related to our municipality
+            rows = root.findall(".//kv:KV_ROS_ROW", ns)
+
+            for row in rows:
+                # Use namespace approach (fallback doesn't work for this XML)
+                kodzastup = row.find("kv:KODZASTUP", ns)
+                por_str_hl = row.find("kv:POR_STR_HL", ns)  # Local party list number
+                nazevcelk = row.find("kv:NAZEVCELK", ns)  # Full party name
+                zkratkao30 = row.find("kv:ZKRATKAO30", ns)  # 30-char abbreviation
+
+                # Filter for Prague 5 (municipality code 500143)
+                if (
+                    kodzastup is not None
+                    and kodzastup.text == municipality_code
+                    and por_str_hl is not None
+                    and nazevcelk is not None
+                ):
+                    try:
+                        local_list_number = int(por_str_hl.text)
+                        party_name = (
+                            nazevcelk.text.strip()
+                            if nazevcelk.text
+                            else f"Party List {local_list_number}"
+                        )
+
+                        # Prefer shorter name if available
+                        if zkratkao30 is not None and zkratkao30.text:
+                            short_name = zkratkao30.text.strip()
+                            if (
+                                len(short_name) < len(party_name)
+                                and short_name != "SNK"
+                            ):
+                                party_name = short_name
+
+                        party_mappings[local_list_number] = party_name
+                    except (ValueError, AttributeError):
+                        continue
+
+            logger.info(
+                f"Loaded {len(party_mappings)} party mappings from electoral register for Prague 5"
+            )
+            return party_mappings
+
+        except Exception as e:
+            logger.error(f"Error downloading electoral parties register: {e}")
+            return {}
+
     def run_complete_scraping(self):
         """
         Run complete scraping process with interface compatible with EnhancedPrague5Scraper
@@ -315,6 +566,10 @@ class ElectoralDistrictXMLScraper:
         if not district_data:
             logger.error("Failed to scrape district data from XML API")
             return None
+
+        # Get party names from web interface
+        logger.info("Fetching party names from web interface...")
+        party_names = self.get_party_list_names()
 
         # Transform district data into compatible format
         results = {
@@ -364,7 +619,7 @@ class ElectoralDistrictXMLScraper:
                         party_votes[party_num] = 0
                     party_votes[party_num] += votes
 
-            # Convert to party results format
+            # Convert to party results format with real names
             results["party_results"] = []
             total_votes = sum(party_votes.values()) if party_votes else 0
 
@@ -372,20 +627,25 @@ class ElectoralDistrictXMLScraper:
                 percentage = (
                     round((votes / total_votes) * 100, 2) if total_votes > 0 else 0
                 )
+
+                # Use real party name if available, fallback to generic name
+                party_name = party_names.get(party_num, f"Party List {party_num}")
+
                 results["party_results"].append(
                     {
                         "list_number": str(party_num),
-                        "party_name": f"Party List {party_num}",  # Names not available in XML
+                        "party_name": party_name,
                         "votes_absolute": votes,
                         "votes_percentage": percentage,
                         "candidate_count": None,  # Not available in XML data
                         "mandates_won": None,  # Not available in XML data
-                        "data_source": "XML_aggregation",
+                        "data_source": "XML_aggregation_with_web_names",
                     }
                 )
 
-        # Include original district data
+        # Include original district data and party name mapping
         results["district_data"] = district_data
+        results["party_name_mapping"] = party_names
 
         # Save comprehensive results
         output_file = self.data_dir / "results" / "prague5_comprehensive_results.json"

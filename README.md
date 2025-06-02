@@ -38,6 +38,13 @@ This project analyzes the 2022 municipal elections in Prague 5 (Městská část
 - **Data Validation**: Ensures data integrity throughout the pipeline
 - **Multiple Output Formats**: JSON, structured data ready for analysis
 
+### 🌐 Interactive Streamlit Dashboard
+- **Real-time Visualization**: Interactive web dashboard powered by Streamlit
+- **Geographic Analysis**: Interactive maps with electoral district boundaries
+- **Data Explorer**: Browse and explore all collected electoral data
+- **Turnout Analysis**: Visual analysis of voter participation patterns
+- **Responsive Design**: Works on desktop and mobile devices
+
 ### 📈 Interactive Visualizations
 - **Party Performance**: Vote share analysis and mandate distribution
 - **Candidate Analysis**: Individual performance within parties
@@ -71,7 +78,11 @@ cd volebni-analyza
 uv sync
 
 # Run the complete analysis pipeline
-uv run src/main.py
+uv run python run_analysis.py
+
+# Launch the interactive Streamlit dashboard
+uv run python run_streamlit.py
+# OR: uv run streamlit run streamlit_app.py
 ```
 
 ### Manual Installation
@@ -80,14 +91,32 @@ uv run src/main.py
 pip install -r requirements.txt
 
 # Run analysis
-python src/main.py
+python run_analysis.py
+
+# Launch dashboard
+streamlit run streamlit_app.py
 ```
 
 ## Usage
 
+### 🚀 Streamlit Dashboard (Recommended)
+```bash
+# Launch the interactive dashboard
+uv run python run_streamlit.py
+
+# Or directly with streamlit
+uv run streamlit run streamlit_app.py
+```
+
+The dashboard provides:
+- **📊 Overview**: Key metrics and summary statistics
+- **📈 Turnout Analysis**: Interactive charts and voter participation data
+- **🗺️ Geographic Analysis**: Interactive map with electoral districts (automatically downloads GeoJSON data)
+- **🔍 Data Explorer**: Browse and analyze all collected data
+
 ### Complete Analysis Pipeline
 ```bash
-uv run src/main.py
+uv run python run_analysis.py
 ```
 This runs the entire pipeline: comprehensive data scraping → processing → analysis reporting
 
@@ -116,6 +145,9 @@ volebni-analyza/
 │   ├── visualizer.py            # Interactive chart generation
 │   ├── analyzer.py              # Statistical analysis engine
 │   └── main.py                  # Main pipeline script
+├── streamlit_app.py             # Interactive Streamlit dashboard
+├── run_streamlit.py             # Streamlit launcher script
+├── run_analysis.py              # Main analysis pipeline
 ├── data/                        # Generated data and outputs
 │   ├── raw/                     # Raw data (XML batches, HTML responses)
 │   ├── processed/               # Cleaned datasets (CSV processing output)
@@ -129,6 +161,11 @@ volebni-analyza/
 ```
 
 ## Generated Outputs
+
+### 🌐 Interactive Dashboard
+- **Streamlit App**: `streamlit_app.py` - Interactive web dashboard
+- **Geographic Data**: Automatically downloads electoral district GeoJSON from volby.cz
+- **Real-time Analysis**: Live data exploration and visualization
 
 ### 📊 Complete Election Data
 - **`data/results/prague5_comprehensive_results.json`** - Complete results with all candidate data
@@ -152,6 +189,12 @@ volebni-analyza/
 - **Coverage**: Prague 5 municipality (code: 500143) - 100% complete
 - **Elections**: 2022 Municipal Elections
 - **URL**: https://www.volby.cz/pls/kv2022/kv1111?xjazyk=CZ&xid=0&xdz=5&xnumnuts=1100&xobec=500143&xstat=0&xvyber=0
+
+### Geographic Data
+- **Electoral Districts GeoJSON**: https://www.volby.cz/opendata/kv2022/geo/vol_okrsky_2022g100.geojson
+- **Format**: GeoJSON with electoral district boundaries
+- **Usage**: Automatically downloaded by Streamlit dashboard for interactive maps
+- **Coverage**: All Czech electoral districts (filtered for analysis)
 
 ### Electoral District XML API
 - **API Endpoint**: https://www.volby.cz/pls/kv2022/vysledky_okrsky
@@ -280,11 +323,71 @@ This project is for educational and research purposes. Election data is public d
 
 ---
 
+## Quick Start 🚀
+
+### First Time Setup
+```bash
+# Clone and setup
+git clone <repository-url>
+cd volebni-analyza
+uv sync
+
+# Run the guided quick start
+uv run python quick_start.py
+```
+
+The `quick_start.py` script will:
+1. Check for existing data
+2. Run the complete analysis pipeline if needed
+3. Launch the interactive Streamlit dashboard
+4. Guide you through the entire process
+
+### Alternative: Manual Setup
+```bash
+# 1. Run analysis pipeline
+uv run python run_analysis.py
+
+# 2. Launch dashboard  
+uv run python run_streamlit.py
+```
+
+### What You'll Get
+- **📊 Interactive Dashboard**: Web-based visualization at `http://localhost:8501`
+- **🗺️ Electoral Maps**: Interactive maps with district boundaries
+- **📈 Data Analysis**: Comprehensive electoral statistics and insights
+- **🔍 Data Explorer**: Browse all collected data interactively
+
 ## Getting Started
 
-1. **Quick Demo**: Run `uv run src/main.py`
-2. **Explore Results**: Check `data/results/` for comprehensive election data
-3. **Read Analysis**: Review generated reports in `data/reports/`
-4. **Customize**: Modify source code in `src/` directory for your needs
+### For Quick Exploration
+```bash
+# One-command guided setup
+uv run python quick_start.py
+```
+
+### For Development & Customization
+1. **Complete Analysis**: `uv run python run_analysis.py`
+2. **Interactive Dashboard**: `uv run python run_streamlit.py` 
+3. **Explore Results**: Check `data/results/` for comprehensive election data
+4. **Read Analysis**: Review generated reports in `data/reports/`
+5. **Customize**: Modify source code in `src/` directory for your needs
+
+### Available Commands
+```bash
+# Analysis pipeline
+uv run python run_analysis.py          # Complete data collection & analysis
+
+# Visualization options  
+uv run python run_streamlit.py         # Interactive Streamlit dashboard
+uv run streamlit run streamlit_app.py  # Alternative dashboard launch
+
+# Individual components
+uv run src/xml_scraper.py              # Data collection only
+uv run src/visualizer.py               # Static visualizations
+uv run src/analyzer.py                 # Analysis & reporting
+
+# Quick start wizard
+uv run python quick_start.py           # Guided setup process
+```
 
 **📊 Happy Analyzing!** 🇨🇿

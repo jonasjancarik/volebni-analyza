@@ -7,6 +7,10 @@ import logging
 from shapely.geometry import Point, Polygon
 import numpy as np
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +21,10 @@ class Prague5DataProcessor:
 
     def __init__(self, data_dir="data"):
         self.data_dir = data_dir
-        self.prague_5_code = "500143"
+        self.prague_5_code = "500143"  # Municipality code for Prague 5
+        self.prague_5_districts = list(
+            range(5001, 5082)
+        )  # Electoral districts 5001-5081
 
     def read_csu_csv(self, filepath, encoding="utf-8"):
         """Read ČSÚ CSV files with proper encoding handling"""
@@ -38,6 +45,80 @@ class Prague5DataProcessor:
 
         logger.error(f"Could not read {filepath} with any encoding")
         return None
+
+    def _filter_prague5_by_district(self, df, district_column="OKRSEK"):
+        """Filter dataframe for Prague 5 electoral districts (5001-5081)"""
+        if district_column in df.columns:
+            # Convert to numeric and filter for Prague 5 districts
+            df_copy = df.copy()
+            df_copy[district_column] = pd.to_numeric(
+                df_copy[district_column], errors="coerce"
+            )
+            return df_copy[df_copy[district_column].isin(self.prague_5_districts)]
+        return df
+
+    def _filter_prague5_by_municipality(self, df, municipality_column="KODZASTUP"):
+        """Filter dataframe for Prague 5 municipality"""
+        if municipality_column in df.columns:
+            return df[df[municipality_column] == self.prague_5_code].copy()
+        return df
+
+    def validate_prague5_districts(self, districts_df):
+        """Validate that we have the expected 81 electoral districts for Prague 5"""
+        if districts_df is None or districts_df.empty:
+            logger.warning("No districts data to validate")
+            return False
+
+        # Check if we have a CIS_OKRSEK column and what districts we have
+        district_column = None
+        for col in ["CIS_OKRSEK", "OKRSEK", "CIS_OKRSEK_NUM"]:
+            if col in districts_df.columns:
+                district_column = col
+                break
+
+        if district_column:
+            district_codes = pd.to_numeric(
+                districts_df[district_column], errors="coerce"
+            ).dropna()
+            unique_districts = sorted(district_codes.unique())
+
+            logger.info(f"Found {len(unique_districts)} unique electoral districts")
+            if len(unique_districts) > 0:
+                logger.info(
+                    f"District range: {min(unique_districts)} - {max(unique_districts)}"
+                )
+
+            # Check if we have all 81 expected districts (5001-5081)
+            expected_districts = set(range(5001, 5082))
+            found_districts = set(unique_districts)
+
+            missing_districts = expected_districts - found_districts
+            extra_districts = found_districts - expected_districts
+
+            if missing_districts:
+                logger.warning(
+                    f"Missing {len(missing_districts)} expected districts: {sorted(list(missing_districts))[:10]}..."
+                )
+
+            if extra_districts:
+                logger.info(
+                    f"Found {len(extra_districts)} additional districts: {sorted(list(extra_districts))[:10]}..."
+                )
+
+            prague5_count = len(found_districts & expected_districts)
+            if prague5_count == 81:
+                logger.info("✓ Found all 81 expected Prague 5 electoral districts!")
+                return True
+            else:
+                logger.warning(
+                    f"Expected 81 districts, found {prague5_count} matching districts"
+                )
+                return False
+
+        logger.warning(
+            f"No district column found for validation (columns: {list(districts_df.columns)})"
+        )
+        return False
 
     def process_municipal_results(self, year="2022"):
         """Process municipal election results for Prague 5"""
@@ -70,15 +151,8 @@ class Prague5DataProcessor:
             logger.info(f"Processing candidates from {candidates_file}")
             candidates_df = self.read_csu_csv(candidates_file)
             if candidates_df is not None:
-                # Filter for Prague 5
-                if "KODZASTUP" in candidates_df.columns:
-                    prague5_candidates = candidates_df[
-                        candidates_df["KODZASTUP"] == self.prague_5_code
-                    ].copy()
-                else:
-                    # Try other common column names
-                    prague5_candidates = candidates_df
-
+                # Filter for Prague 5 by municipality code
+                prague5_candidates = self._filter_prague5_by_municipality(candidates_df)
                 processed_data["candidates"] = prague5_candidates
 
         # Process results
@@ -86,15 +160,13 @@ class Prague5DataProcessor:
             logger.info(f"Processing results from {results_file}")
             results_df = self.read_csu_csv(results_file)
             if results_df is not None:
-                # Filter for Prague 5
-                if "KODZASTUP" in results_df.columns:
-                    prague5_results = results_df[
-                        results_df["KODZASTUP"] == self.prague_5_code
-                    ].copy()
-                else:
-                    prague5_results = results_df
-
+                # Filter for Prague 5 by municipality code
+                prague5_results = self._filter_prague5_by_municipality(results_df)
                 processed_data["results"] = prague5_results
+
+                # Validate that we have the expected 81 districts in results
+                if not prague5_results.empty:
+                    self.validate_prague5_districts(prague5_results)
 
         # Process parties
         if parties_file:
@@ -108,15 +180,15 @@ class Prague5DataProcessor:
             logger.info(f"Processing districts from {districts_file}")
             districts_df = self.read_csu_csv(districts_file)
             if districts_df is not None:
-                # Filter for Prague 5
-                if "KODZASTUP" in districts_df.columns:
-                    prague5_districts = districts_df[
-                        districts_df["KODZASTUP"] == self.prague_5_code
-                    ].copy()
-                else:
-                    prague5_districts = districts_df
-
+                # Filter for Prague 5 by municipality code
+                prague5_districts = self._filter_prague5_by_municipality(districts_df)
                 processed_data["districts"] = prague5_districts
+                logger.info(
+                    f"Found {len(prague5_districts)} electoral districts for Prague 5"
+                )
+
+                # Validate that we have the expected 81 districts
+                self.validate_prague5_districts(prague5_districts)
 
         # Save processed data
         output_file = os.path.join(processed_dir, f"prague5_municipal_{year}.json")
@@ -208,33 +280,46 @@ class Prague5DataProcessor:
 
             districts = []
 
-            # Look for electoral district elements (this depends on the XML structure)
-            # The exact structure may vary based on the RUIAN format
-            for elem in root.iter():
-                if "okrsek" in elem.tag.lower() or "district" in elem.tag.lower():
+            # Parse the XML structure - look for OKRSEK elements
+            for okrsek in root.iter():
+                if okrsek.tag.endswith("}OKRSEK"):
                     district_data = {}
 
-                    # Extract attributes and child elements
-                    district_data.update(elem.attrib)
+                    # Extract attributes from OKRSEK element
+                    district_data.update(okrsek.attrib)
 
-                    for child in elem:
-                        if child.text:
-                            district_data[child.tag] = child.text
+                    # Look for child elements like UCAST_OKRSEK (turnout) and HLASY_OKRSEK (votes)
+                    for child in okrsek:
+                        if child.tag.endswith("}UCAST_OKRSEK"):
+                            # Add turnout data with prefix
+                            for key, value in child.attrib.items():
+                                district_data[f"UCAST_{key}"] = value
+                        elif child.tag.endswith("}HLASY_OKRSEK"):
+                            # Add vote data - for now just collect the first vote entry
+                            if "HLASY_DATA" not in district_data:
+                                district_data["HLASY_DATA"] = []
+                            district_data["HLASY_DATA"].append(child.attrib)
 
-                    districts.append(district_data)
+                    if district_data:
+                        districts.append(district_data)
 
             if districts:
                 districts_df = pd.DataFrame(districts)
+                logger.info(f"Parsed {len(districts_df)} total districts from XML")
 
-                # Filter for Prague 5 if possible
-                if "obec_kod" in districts_df.columns:
+                # Filter for Prague 5 using municipality code - this gives us exactly 81 districts
+                if "CIS_OBEC" in districts_df.columns:
                     prague5_districts = districts_df[
-                        districts_df["obec_kod"] == self.prague_5_code
-                    ]
-                else:
-                    prague5_districts = districts_df
+                        districts_df["CIS_OBEC"] == self.prague_5_code
+                    ].copy()
+                    logger.info(
+                        f"Found {len(prague5_districts)} Prague 5 electoral districts"
+                    )
 
-                return prague5_districts
+                    return prague5_districts
+                else:
+                    logger.warning("No CIS_OBEC column found in XML data")
+                    return districts_df
 
         except ET.ParseError as e:
             logger.error(f"XML parsing error: {e}")
@@ -292,15 +377,50 @@ class Prague5DataProcessor:
                     "party_results": self.process_party_results(data),
                 }
 
-        # Process electoral districts XML if available
-        xml_file = os.path.join(self.data_dir, "geo", "20250503_ST_UVOH.xml")
-        if os.path.exists(xml_file):
-            districts_df = self.parse_xml_electoral_districts(xml_file)
-            if districts_df is not None:
-                processed_results["geographic_districts"] = districts_df
-                processed_results["geospatial_data"] = self.create_geospatial_data(
-                    districts_df
+        # Process electoral districts XML files from raw directory
+        xml_dir = os.path.join(self.data_dir, "raw")
+        if os.path.exists(xml_dir):
+            all_prague5_districts = []
+
+            # Process all XML files that contain electoral district data
+            xml_files = [
+                f
+                for f in os.listdir(xml_dir)
+                if f.endswith(".xml") and "electoral_districts" in f
+            ]
+            logger.info(f"Found {len(xml_files)} XML files to process")
+
+            for xml_file in xml_files:  # Process all XML files to get all districts
+                xml_path = os.path.join(xml_dir, xml_file)
+                logger.info(f"Processing {xml_file}")
+                districts_df = self.parse_xml_electoral_districts(xml_path)
+                if districts_df is not None and not districts_df.empty:
+                    all_prague5_districts.append(districts_df)
+
+            # Combine all districts data
+            if all_prague5_districts:
+                combined_districts = pd.concat(all_prague5_districts, ignore_index=True)
+                logger.info(
+                    f"Combined data from {len(all_prague5_districts)} XML files"
                 )
+                logger.info(f"Total districts found: {len(combined_districts)}")
+
+                # Remove duplicates based on CIS_OKRSEK
+                if "CIS_OKRSEK" in combined_districts.columns:
+                    unique_districts = combined_districts.drop_duplicates(
+                        subset=["CIS_OKRSEK"]
+                    )
+                    logger.info(
+                        f"Unique districts after deduplication: {len(unique_districts)}"
+                    )
+
+                    # Validate the final dataset
+                    self.validate_prague5_districts(unique_districts)
+
+                    processed_results["xml_districts"] = unique_districts
+                    processed_results["geospatial_data"] = self.create_geospatial_data(
+                        unique_districts
+                    )
 
         # Save comprehensive results
         output_file = os.path.join(
@@ -320,6 +440,9 @@ class Prague5DataProcessor:
             else:
                 if isinstance(processed_results[year], pd.DataFrame):
                     json_data[year] = processed_results[year].to_dict("records")
+
+        # Create processed directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(json_data, f, ensure_ascii=False, indent=2)
