@@ -259,7 +259,9 @@ class AllMunicipalitiesScraper:
         logger.info("Collecting electoral data for ALL Czech municipalities...")
 
         all_districts = []
-        municipalities_found = set()
+        zastupitelstvo_found = (
+            set()
+        )  # Track by zastupitelstvo codes, not municipality codes
         processed_batches = []
 
         # Process all existing batch files first
@@ -272,9 +274,10 @@ class AllMunicipalitiesScraper:
                 batch_data = self.parse_xml_batch(xml_file)
                 if batch_data and batch_data["districts"]:
                     all_districts.extend(batch_data["districts"])
-                    # Track municipalities found
+                    # Track zastupitelstvo codes found (elections, not just geographic municipalities)
                     for district in batch_data["districts"]:
-                        municipalities_found.add(district["municipality_code"])
+                        if district["zastupitelstvo_code"]:
+                            zastupitelstvo_found.add(district["zastupitelstvo_code"])
                     processed_batches.append(xml_file.name)
 
         # If we don't have enough data, download more batches
@@ -291,26 +294,31 @@ class AllMunicipalitiesScraper:
                         batch_data = self.parse_xml_batch(xml_file)
                         if batch_data and batch_data["districts"]:
                             all_districts.extend(batch_data["districts"])
-                            # Track municipalities found
+                            # Track zastupitelstvo codes found
                             for district in batch_data["districts"]:
-                                municipalities_found.add(district["municipality_code"])
+                                if district["zastupitelstvo_code"]:
+                                    zastupitelstvo_found.add(
+                                        district["zastupitelstvo_code"]
+                                    )
                             processed_batches.append(xml_file.name)
 
         logger.info(f"Collected data from {len(processed_batches)} batch files")
         logger.info(f"Found {len(all_districts)} total electoral districts")
-        logger.info(f"Covering {len(municipalities_found)} municipalities")
+        logger.info(
+            f"Covering {len(zastupitelstvo_found)} council elections (zastupitelstvo)"
+        )
 
-        # Group districts by municipality
+        # Group districts by zastupitelstvo (council election)
         municipalities_data = self._group_districts_by_municipality(all_districts)
 
         return {
             "metadata": {
                 "total_districts": len(all_districts),
-                "total_municipalities": len(municipalities_found),
+                "total_zastupitelstvo": len(zastupitelstvo_found),
                 "processed_batches": len(processed_batches),
                 "batch_files": processed_batches,
                 "collection_date": datetime.now().isoformat(),
-                "source": "XML_API_all_municipalities",
+                "source": "XML_API_all_municipalities_by_zastupitelstvo",
             },
             "municipalities": municipalities_data,
             "raw_districts": all_districts,
@@ -319,7 +327,7 @@ class AllMunicipalitiesScraper:
     def _group_districts_by_municipality(
         self, all_districts: List[Dict]
     ) -> Dict[str, Dict]:
-        """Group electoral districts by municipality"""
+        """Group electoral districts by zastupitelstvo (council election)"""
         municipalities = defaultdict(
             lambda: {
                 "districts": [],
@@ -335,16 +343,18 @@ class AllMunicipalitiesScraper:
         )
 
         for district in all_districts:
-            municipality_code = district["municipality_code"]
-            if not municipality_code:
+            # Use zastupitelstvo_code (KODZASTUP) instead of municipality_code (CIS_OBEC)
+            # This ensures we group by the actual council election, not just the geographic municipality
+            zastupitelstvo_code = district["zastupitelstvo_code"]
+            if not zastupitelstvo_code:
                 continue
 
-            municipalities[municipality_code]["districts"].append(district)
+            municipalities[zastupitelstvo_code]["districts"].append(district)
 
             # Aggregate turnout data
             if "turnout" in district:
                 turnout = district["turnout"]
-                summary = municipalities[municipality_code]["summary"]
+                summary = municipalities[zastupitelstvo_code]["summary"]
                 summary["total_registered_voters"] += turnout.get(
                     "registered_voters", 0
                 )
@@ -357,12 +367,12 @@ class AllMunicipalitiesScraper:
                 party_num = party_vote.get("party_list_number")
                 votes = party_vote.get("votes", 0)
                 if party_num:
-                    municipalities[municipality_code]["party_totals"][party_num] += (
+                    municipalities[zastupitelstvo_code]["party_totals"][party_num] += (
                         votes
                     )
 
         # Calculate turnout percentages
-        for municipality_code, data in municipalities.items():
+        for zastupitelstvo_code, data in municipalities.items():
             summary = data["summary"]
             if summary["total_registered_voters"] > 0:
                 summary["turnout_percentage"] = round(
@@ -379,8 +389,8 @@ class AllMunicipalitiesScraper:
     def generate_municipality_reports(
         self, municipalities_data: Dict[str, Dict]
     ) -> Dict[str, Dict]:
-        """Generate comprehensive reports for each municipality"""
-        logger.info("Generating reports for all municipalities...")
+        """Generate comprehensive reports for each zastupitelstvo (council election)"""
+        logger.info("Generating reports for all zastupitelstvo elections...")
 
         # Get municipality registry for metadata
         registry = self.municipality_registry.get_all_municipalities()
@@ -388,18 +398,19 @@ class AllMunicipalitiesScraper:
 
         municipality_reports = {}
 
-        for municipality_code, data in municipalities_data.items():
-            # Get municipality info from registry
-            municipality_info = registry_by_code.get(municipality_code)
+        for zastupitelstvo_code, data in municipalities_data.items():
+            # Get municipality info from registry using zastupitelstvo_code
+            # The zastupitelstvo_code should match a municipality_code in most cases
+            municipality_info = registry_by_code.get(zastupitelstvo_code)
             municipality_name = (
                 municipality_info.municipality_name
                 if municipality_info
-                else f"Municipality {municipality_code}"
+                else f"Zastupitelstvo {zastupitelstvo_code}"
             )
             total_mandates = municipality_info.mandates if municipality_info else 0
 
-            # Get party information from the party registry
-            party_info = self.party_registry.get(municipality_code, {})
+            # Get party information from the party registry using zastupitelstvo_code
+            party_info = self.party_registry.get(zastupitelstvo_code, {})
 
             # Create party results with enriched data
             party_results = []
@@ -437,15 +448,15 @@ class AllMunicipalitiesScraper:
             # Calculate summary statistics
             total_mandates_won = sum(p["mandates_won"] for p in party_results)
 
-            # Create municipality report
-            municipality_reports[municipality_code] = {
+            # Create municipality report (using zastupitelstvo_code as the key)
+            municipality_reports[zastupitelstvo_code] = {
                 "metadata": {
-                    "municipality_code": municipality_code,
+                    "municipality_code": zastupitelstvo_code,  # This is actually the zastupitelstvo code
                     "municipality_name": municipality_name,
                     "total_mandates": total_mandates,
                     "mandates_won": total_mandates_won,
                     "election_year": "2022",
-                    "data_source": "All_municipalities_scraper_with_kvros",
+                    "data_source": "All_municipalities_scraper_with_kvros_by_zastupitelstvo",
                 },
                 "summary_statistics": {
                     "electoral_districts": data["summary"]["total_districts"],
@@ -476,10 +487,11 @@ class AllMunicipalitiesScraper:
         comprehensive_file = output_dir / "all_municipalities_comprehensive.json"
         comprehensive_data = {
             "metadata": {
-                "total_municipalities": len(municipalities_data),
+                "total_zastupitelstvo": len(municipalities_data),
                 "collection_date": datetime.now().isoformat(),
-                "source": "All_municipalities_scraper_with_kvros",
-                "description": "Complete electoral data for all Czech municipalities with party names and mandates",
+                "source": "All_municipalities_scraper_with_kvros_by_zastupitelstvo",
+                "description": "Complete electoral data for all Czech council elections (zastupitelstvo) with party names and mandates. Each entry represents a specific council election, distinguished by KODZASTUP.",
+                "note": "Data is grouped by zastupitelstvo_code (KODZASTUP) to properly distinguish between municipal (OBEC) and district (MCMO) elections in the same geographic area.",
             },
             "municipalities": municipality_reports,
         }
@@ -488,7 +500,7 @@ class AllMunicipalitiesScraper:
             json.dump(comprehensive_data, f, ensure_ascii=False, indent=2)
 
         logger.info(
-            f"Saved comprehensive data for {len(municipalities_data)} municipalities to {comprehensive_file}"
+            f"Saved comprehensive data for {len(municipalities_data)} council elections to {comprehensive_file}"
         )
 
         # Save municipality index for quick lookup
@@ -517,8 +529,10 @@ class AllMunicipalitiesScraper:
         return str(comprehensive_file)
 
     def run_complete_analysis(self) -> str:
-        """Run complete analysis for all municipalities"""
-        logger.info("Starting complete electoral analysis for ALL Czech municipalities")
+        """Run complete analysis for all council elections (zastupitelstvo)"""
+        logger.info(
+            "Starting complete electoral analysis for ALL Czech council elections (zastupitelstvo)"
+        )
 
         # Step 1: Load municipality registry
         self.municipality_registry.parse_municipality_registry()
@@ -540,6 +554,9 @@ class AllMunicipalitiesScraper:
         )
 
         logger.info(f"Complete analysis finished. Results saved to {output_file}")
+        logger.info(
+            f"Processed {len(municipality_reports)} council elections (zastupitelstvo)"
+        )
         return output_file
 
 

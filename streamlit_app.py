@@ -6,9 +6,9 @@ Interactive visualization dashboard for electoral analysis of any Czech municipa
 
 import streamlit as st
 import pandas as pd
-import geopandas as gpd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import folium
 from streamlit_folium import st_folium
 import json
@@ -18,14 +18,12 @@ from pathlib import Path
 import sys
 import os
 import numpy as np
+import geopandas as gpd
+from PIL import Image
 from shapely.geometry import Point, Polygon
 from shapely.affinity import scale
 
-# Add src to path for importing our modules
-sys.path.append(str(Path(__file__).parent / "src"))
-
-# Import our municipality selector
-from streamlit_municipality_selector import MunicipalitySelector
+from src.streamlit_municipality_selector import MunicipalitySelector
 
 # Configure Streamlit page
 st.set_page_config(
@@ -146,17 +144,17 @@ def load_geojson_data():
 
 
 @st.cache_data
-def load_municipality_data(municipality_code: str):
-    """Load processed election data for a specific municipality"""
-    if not municipality_code:
+def load_municipality_data(zastupitelstvo_code: str):
+    """Load processed election data for a specific zastupitelstvo (council election)"""
+    if not zastupitelstvo_code:
         return {}
 
-    # Load from our all municipalities data
+    # Load from our all municipalities data using zastupitelstvo_code
     selector = MunicipalitySelector()
-    municipality_data = selector.get_municipality_data(municipality_code)
+    municipality_data = selector.get_municipality_data(zastupitelstvo_code)
 
     if not municipality_data:
-        st.error(f"No data found for municipality {municipality_code}")
+        st.error(f"No data found for zastupitelstvo {zastupitelstvo_code}")
         return {}
 
     # Convert to format expected by visualization functions
@@ -168,10 +166,10 @@ def load_municipality_data(municipality_code: str):
         party_df = pd.DataFrame(party_results)
         party_df = party_df.rename(
             columns={
-                "votes": "votes_absolute",
-                "percentage": "votes_percentage",
-                "party_name": "party_name",
-                "list_number": "list_number",
+                "votes_absolute": "votes_absolute",  # Already correct
+                "votes_percentage": "votes_percentage",  # Already correct
+                "party_name": "party_name",  # Already correct
+                "list_number": "list_number",  # Already correct
             }
         )
         converted_data["party_results"] = party_df
@@ -829,6 +827,9 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     """Display geographic analysis with filtered electoral districts map for the selected municipality"""
     st.subheader("🗺️ Geographic Analysis - Municipality Districts")
 
+    # Initialize map_data to avoid UnboundLocalError
+    map_data = None
+
     if not geojson_data:
         st.error("Unable to load GeoJSON data. Please check your internet connection.")
 
@@ -980,7 +981,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         )
 
     # Display information about clicked features
-    if map_data["last_object_clicked"]:
+    if map_data and map_data.get("last_object_clicked"):
         st.subheader("Selected Okrsek Information")
         clicked_data = map_data["last_object_clicked"]
 
@@ -1882,21 +1883,23 @@ def main():
     )
 
     # Municipality Selection
-    st.sidebar.title("🏛️ Municipality Selection")
+    st.sidebar.title("🏛️ Election Selection")
     st.sidebar.markdown("---")
 
     # Initialize municipality selector
     selector = MunicipalitySelector()
-    selected_municipality_code = selector.create_municipality_selector()
+    selected_zastupitelstvo_code = selector.create_municipality_selector()
 
-    if not selected_municipality_code:
-        st.info("👈 Please select a municipality from the sidebar to begin analysis.")
+    if not selected_zastupitelstvo_code:
+        st.info(
+            "👈 Please select a council election from the sidebar to begin analysis."
+        )
         st.markdown("---")
 
         # Show overall municipalities overview
         st.subheader("📊 Available Analysis Features")
         st.markdown("""
-        **Once you select a municipality, you'll have access to:**
+        **Once you select a council election, you'll have access to:**
         
         • **Overview** - Key statistics and party results
         • **Turnout Analysis** - Detailed voter participation analysis  
@@ -1904,19 +1907,35 @@ def main():
         • **Data Explorer** - Detailed data tables and filtering
         • **District Analysis** - Electoral district breakdown
         
-        **Select any of the 6,377+ Czech municipalities from the sidebar!**
+        **Select from 6,000+ Czech council elections from the sidebar!**
+        
+        **Note**: Some areas (like Prague) have multiple elections:
+        - **Municipal Council** (OBEC) - Main city/town council
+        - **City District Council** (MCMO) - Local district council
         """)
         return
 
     # Get municipality info for title
-    municipality_data = selector.get_municipality_data(selected_municipality_code)
+    municipality_data = selector.get_municipality_data(selected_zastupitelstvo_code)
     municipality_name = "Unknown Municipality"
-    if municipality_data:
-        municipality_name = municipality_data.get("metadata", {}).get(
-            "municipality_name", "Unknown Municipality"
-        )
+    election_type = "Council Election"
 
-    st.subheader(f"📍 Analysis for: **{municipality_name}**")
+    if municipality_data:
+        metadata = municipality_data.get("metadata", {})
+        municipality_name = metadata.get("municipality_name", "Unknown Municipality")
+
+        # Determine election type
+        districts = municipality_data.get("district_data", [])
+        if districts:
+            first_district = districts[0]
+            oznac_typu = first_district.get("type", "")
+
+            if oznac_typu == "OBEC":
+                election_type = "Municipal Council Election"
+            elif oznac_typu == "MCMO":
+                election_type = "City District Council Election"
+
+    st.subheader(f"📍 Analysis for: **{municipality_name}** - {election_type}")
 
     # Navigation
     st.sidebar.markdown("---")
@@ -1932,16 +1951,16 @@ def main():
         ],
     )
 
-    # Load data for selected municipality
-    with st.spinner(f"Loading data for {municipality_name}..."):
+    # Load data for selected municipality/zastupitelstvo
+    with st.spinner(f"Loading data for {municipality_name} {election_type}..."):
         geojson_data = load_geojson_data()
-        electoral_data = load_municipality_data(selected_municipality_code)
+        electoral_data = load_municipality_data(selected_zastupitelstvo_code)
 
     # Sidebar info
     st.sidebar.markdown("---")
     st.sidebar.info(
-        "This dashboard visualizes electoral data for Czech municipalities. "
-        "Use the municipality selector above to switch between different locations."
+        "This dashboard visualizes electoral data for Czech council elections. "
+        "Use the election selector above to switch between different councils and election types."
     )
 
     # Quick stats in sidebar
@@ -1959,16 +1978,62 @@ def main():
 
         st.sidebar.metric("Data Sources Loaded", len(electoral_data))
 
+    # For geographic analysis, we need to map zastupitelstvo_code to geographic municipality code
+    # since the GeoJSON uses different codes (CIS_OBEC vs KODZASTUP)
+    geographic_municipality_codes = [
+        selected_zastupitelstvo_code
+    ]  # Start with zastupitelstvo code
+
+    # For city-wide elections (like Praha), we need to collect ALL municipality codes from districts
+    if municipality_data:
+        metadata = municipality_data.get("metadata", {})
+        districts = municipality_data.get("district_data", [])
+
+        # If we have district data, collect ALL unique CIS_OBEC codes from the districts
+        if districts:
+            # Get all unique CIS_OBEC codes from all districts
+            unique_cis_obec_codes = set()
+            for district in districts:
+                cis_obec = district.get("municipality_code")
+                if cis_obec:
+                    unique_cis_obec_codes.add(cis_obec)
+
+            # Add all unique codes to our search list
+            geographic_municipality_codes.extend(list(unique_cis_obec_codes))
+
     if geojson_data and "features" in geojson_data:
         # Filter geojson for this municipality using MOMC field (electoral municipality code)
         municipality_districts = []
         for feature in geojson_data["features"]:
             props = feature.get("properties", {})
-            if props.get("MOMC") == selected_municipality_code:
+            # Try matching against any of our geographic codes
+            if props.get("MOMC") in geographic_municipality_codes:
                 municipality_districts.append(feature)
 
         if municipality_districts:
             st.sidebar.metric("Geographic Districts Found", len(municipality_districts))
+        else:
+            # Try a different approach - look for matching district codes in the electoral data
+            if electoral_data and "district_data" in electoral_data:
+                electoral_districts = electoral_data["district_data"]
+                if hasattr(electoral_districts, "index"):  # It's a DataFrame
+                    district_codes = electoral_districts["district_code"].tolist()
+                else:  # It's a list of dicts
+                    district_codes = [
+                        d.get("district_code", "") for d in electoral_districts
+                    ]
+
+                # Try to find matching districts by district code
+                for feature in geojson_data["features"]:
+                    props = feature.get("properties", {})
+                    if props.get("CISLO_OKRS") in district_codes:
+                        municipality_districts.append(feature)
+
+                if municipality_districts:
+                    st.sidebar.metric(
+                        "Geographic Districts Found (by district match)",
+                        len(municipality_districts),
+                    )
 
     # Main content based on navigation
     if page == "Overview":
@@ -1978,13 +2043,14 @@ def main():
         display_turnout_analysis(electoral_data)
 
     elif page == "Geographic Analysis":
-        # Filter geojson for this municipality using MOMC field (electoral municipality code)
+        # Filter geojson for this municipality
         municipality_geojson = None
         if geojson_data and "features" in geojson_data:
             municipality_districts = []
             for feature in geojson_data["features"]:
                 props = feature.get("properties", {})
-                if props.get("MOMC") == selected_municipality_code:
+                # Try matching against any of our geographic codes
+                if props.get("MOMC") in geographic_municipality_codes:
                     municipality_districts.append(feature)
 
             if municipality_districts:
@@ -1997,8 +2063,12 @@ def main():
                 )
             else:
                 st.sidebar.warning(
-                    f"⚠️ No geographic districts found for municipality {selected_municipality_code}"
+                    f"⚠️ No geographic districts found for municipality {selected_zastupitelstvo_code}"
                 )
+                # Show debugging info
+                st.sidebar.write(f"**Debug Info:**")
+                st.sidebar.write(f"Zastupitelstvo Code: {selected_zastupitelstvo_code}")
+                st.sidebar.write(f"Geographic Codes: {geographic_municipality_codes}")
 
         display_geographic_analysis(municipality_geojson, electoral_data)
 
