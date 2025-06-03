@@ -58,6 +58,33 @@ st.markdown(
 )
 
 
+def get_seat_count(electoral_data):
+    """Get the number of seats for the current municipality from electoral data"""
+    if not electoral_data or "summary_statistics" not in electoral_data:
+        return 41  # Default fallback only when no data is available
+
+    summary_stats = electoral_data["summary_statistics"]
+
+    # First try to get num_seats directly
+    if "num_seats" in summary_stats and summary_stats["num_seats"]:
+        try:
+            return int(summary_stats["num_seats"])
+        except (ValueError, TypeError):
+            pass
+
+    # Fallback to electoral_districts if reasonable seat count
+    if "electoral_districts" in summary_stats:
+        try:
+            districts_count = int(summary_stats.get("electoral_districts", 41))
+            if districts_count < 100:  # Reasonable seat count
+                return districts_count
+        except (ValueError, TypeError):
+            pass
+
+    # Final fallback
+    return 41
+
+
 @st.cache_data
 def load_geojson_data():
     """Download and cache GeoJSON data for electoral districts to local disk"""
@@ -458,21 +485,7 @@ def create_folium_map(
                     valid_votes = int(district_row["valid_votes"])
 
                     # Calculate voter estimate (votes ÷ seats available)
-                    # Most Czech municipal elections have 41 seats, but let's try to get it from data
-                    num_seats = 41  # Default assumption
-
-                    # Try to get number of seats from electoral data if available
-                    if electoral_data and "summary_statistics" in electoral_data:
-                        summary_stats = electoral_data["summary_statistics"]
-                        if "num_seats" in summary_stats:
-                            num_seats = summary_stats["num_seats"]
-                        elif "electoral_districts" in summary_stats:
-                            # For some elections, districts might indicate seats
-                            districts_count = summary_stats.get(
-                                "electoral_districts", 41
-                            )
-                            if districts_count < 100:  # Reasonable seat count
-                                num_seats = districts_count
+                    num_seats = get_seat_count(electoral_data)
 
                     if num_seats > 0:
                         voter_estimate = round(valid_votes / num_seats)
@@ -551,18 +564,7 @@ def create_folium_map(
                         valid_votes = int(row["valid_votes"])
 
                         # Calculate voter estimate for tooltip
-                        num_seats = 41  # Default assumption
-                        if electoral_data and "summary_statistics" in electoral_data:
-                            summary_stats = electoral_data["summary_statistics"]
-                            if "num_seats" in summary_stats:
-                                num_seats = summary_stats["num_seats"]
-                            elif "electoral_districts" in summary_stats:
-                                districts_count = summary_stats.get(
-                                    "electoral_districts", 41
-                                )
-                                if districts_count < 100:
-                                    num_seats = districts_count
-
+                        num_seats = get_seat_count(electoral_data)
                         if num_seats > 0:
                             voter_estimate = round(valid_votes / num_seats)
                             # Add voter estimate to tooltip based on visualization type
@@ -1970,18 +1972,7 @@ def create_cartogram_map(
         # Add voter estimate to tooltip if we have electoral data
         if electoral_data and vote_count > 0:
             # Calculate voter estimate (votes ÷ seats available)
-            num_seats = 41  # Default assumption
-
-            # Try to get number of seats from electoral data if available
-            if "summary_statistics" in electoral_data:
-                summary_stats = electoral_data["summary_statistics"]
-                if "num_seats" in summary_stats:
-                    num_seats = summary_stats["num_seats"]
-                elif "electoral_districts" in summary_stats:
-                    # For some elections, districts might indicate seats
-                    districts_count = summary_stats.get("electoral_districts", 41)
-                    if districts_count < 100:  # Reasonable seat count
-                        num_seats = districts_count
+            num_seats = get_seat_count(electoral_data)
 
             if num_seats > 0:
                 voter_estimate = round(vote_count / num_seats)
