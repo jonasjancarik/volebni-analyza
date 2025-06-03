@@ -314,9 +314,9 @@ def create_folium_map(
         lat_min, lat_max = min(lats), max(lats)
         lon_min, lon_max = min(lons), max(lons)
 
-        # Add 5% padding to ensure districts aren't at the very edge
-        lat_padding = (lat_max - lat_min) * 0.05
-        lon_padding = (lon_max - lon_min) * 0.05
+        # Add 2.5% padding to ensure districts aren't at the very edge
+        lat_padding = (lat_max - lat_min) * 0.025
+        lon_padding = (lon_max - lon_min) * 0.025
 
         bounds = [
             [lat_min - lat_padding, lon_min - lon_padding],  # Southwest corner
@@ -1664,16 +1664,16 @@ def create_cartogram(
     if not vote_counts:
         return gdf
 
-    # Create cartogram with direct proportionality and optional collision avoidance
+    # Create cartogram with normalized scaling and optional collision avoidance
     cartogram_gdf = gdf.copy()
 
-    # Calculate areas directly proportional to vote counts
+    # Calculate normalized scaling between min and max vote counts
     min_votes = min(vote_counts.values())
     max_votes = max(vote_counts.values())
 
-    # Set a base radius for the smallest district
+    # Set radius range for scaling
     base_radius = base_size
-    max_radius = base_radius * 4  # Restore reasonable maximum size
+    max_radius = base_radius * 4  # Maximum size for highest vote count
 
     # Store centroid positions and radii for collision detection
     districts = []
@@ -1684,12 +1684,18 @@ def create_cartogram(
 
         if district_code in vote_counts:
             votes = vote_counts[district_code]
-            # Direct proportionality: area proportional to votes
-            # Area = π * r², so r = sqrt(area/π) = sqrt(votes * scale / π)
-            scale_factor = votes / min_votes  # Direct ratio
-            radius = base_radius * np.sqrt(scale_factor)
-            radius = min(radius, max_radius)  # Cap maximum size
-            radius = max(radius, base_radius * 0.7)  # Reasonable minimum size
+
+            # Normalized scaling: 0 to 1 based on vote range
+            if max_votes > min_votes:
+                scale_factor = (votes - min_votes) / (max_votes - min_votes)
+            else:
+                scale_factor = 0  # All districts have same vote count
+
+            # Scale radius between base_radius and max_radius
+            radius = base_radius + (max_radius - base_radius) * scale_factor
+
+            # Ensure minimum radius for visibility
+            radius = max(radius, base_radius * 0.7)
 
             districts.append(
                 {
