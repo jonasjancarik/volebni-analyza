@@ -474,13 +474,44 @@ def create_folium_map(
         for feature in geojson_data["features"]:
             popup_content = create_popup_content(feature)
 
+            # Create informative tooltip based on visualization type
+            properties = feature.get("properties", {})
+            district_code = properties.get("CISLO", "Unknown")
+
+            tooltip_text = f"Okrsek {district_code}"
+
+            # Add relevant data to tooltip based on visualization type
+            if district_code in viz_data:
+                value = viz_data[district_code]
+
+                if viz_type == "Turnout":
+                    tooltip_text = f"Okrsek {district_code}: {value:.1f}% turnout"
+                elif viz_type == "Estimated Voters":
+                    tooltip_text = f"Okrsek {district_code}: {int(value):,} voters"
+                elif viz_type == "Party Results" and selected_party:
+                    tooltip_text = (
+                        f"Okrsek {district_code}: {value:.1f}% {selected_party}"
+                    )
+
+            # Add valid votes if available in district data
+            if district_data is not None and isinstance(district_data, pd.DataFrame):
+                okrsek_rows = district_data[
+                    district_data["district_code"] == str(district_code)
+                ]
+                if not okrsek_rows.empty:
+                    row = okrsek_rows.iloc[0]
+                    if "valid_votes" in row and pd.notna(row["valid_votes"]):
+                        valid_votes = int(row["valid_votes"])
+                        if (
+                            viz_type != "Party Results"
+                        ):  # Don't duplicate for party results
+                            tooltip_text += f" | {valid_votes:,} votes"
+
             folium.GeoJson(
                 feature,
                 style_function=style_function,
                 popup=folium.Popup(popup_content, max_width=300),
-                tooltip=folium.Tooltip(
-                    f"Okrsek {feature.get('properties', {}).get('CISLO', 'Unknown')}"
-                ),
+                tooltip=folium.Tooltip(tooltip_text),
             ).add_to(m)
 
         # Add legend based on visualization type
@@ -1786,25 +1817,49 @@ def create_cartogram_map(cartogram_gdf, viz_type="Turnout", selected_party=None)
         # Style the circle (color based on display_value)
         color = get_color_for_value(display_value, viz_type)
 
-        # Create circle marker
+        # Create circle marker with informative tooltip
+        tooltip_text = f"Okrsek {district_code}: {vote_count:,} votes"
+
+        # Add display value to tooltip based on visualization type
+        if viz_type == "Turnout":
+            tooltip_text = f"Okrsek {district_code}: {display_value:.1f}% turnout | {vote_count:,} votes"
+        elif viz_type == "Estimated Voters":
+            tooltip_text = f"Okrsek {district_code}: {int(display_value):,} voters | {vote_count:,} votes"
+        elif viz_type == "Valid Votes":
+            tooltip_text = f"Okrsek {district_code}: {int(display_value):,} valid votes"
+        elif viz_type == "Party Results" and selected_party:
+            tooltip_text = f"Okrsek {district_code}: {display_value:.1f}% {selected_party} | {vote_count:,} votes"
+
         folium.Circle(
             location=[row.geometry.centroid.y, row.geometry.centroid.x],
             radius=radius * 111000,  # Convert degrees to meters approximately
             popup=folium.Popup(popup_html, max_width=320),
-            tooltip=folium.Tooltip(f"Okrsek {district_code}: {vote_count:,} votes"),
+            tooltip=folium.Tooltip(tooltip_text),
             color="black",
             weight=2,
             fillColor=color,
             fillOpacity=0.7,
         ).add_to(m)
 
-        # Add district label
+        # Add district label with key metric instead of just district number
+        label_text = district_code
+
+        # Show key metric in label based on visualization type
+        if viz_type == "Turnout":
+            label_text = f"{district_code}\n{display_value:.0f}%"
+        elif viz_type == "Estimated Voters":
+            label_text = f"{district_code}\n{int(display_value):,}"
+        elif viz_type == "Valid Votes":
+            label_text = f"{district_code}\n{int(display_value):,}"
+        elif viz_type == "Party Results" and selected_party:
+            label_text = f"{district_code}\n{display_value:.0f}%"
+
         folium.Marker(
             location=[row.geometry.centroid.y, row.geometry.centroid.x],
             icon=folium.DivIcon(
-                html=f'<div style="font-size: 10px; color: white; font-weight: bold; text-shadow: 1px 1px 1px black;">{district_code}</div>',
-                icon_size=(50, 20),
-                icon_anchor=(25, 10),
+                html=f'<div style="font-size: 9px; color: white; font-weight: bold; text-shadow: 1px 1px 1px black; text-align: center; line-height: 1.1;">{label_text}</div>',
+                icon_size=(50, 30),
+                icon_anchor=(25, 15),
             ),
         ).add_to(m)
 
