@@ -1397,7 +1397,7 @@ def display_district_analysis(data):
 
         # Additional info about data structure
         st.info(
-            f"📍 Prague 5 has {len(unique_okrseks)} okrseks (polling districts). Each okrsek represents a physical voting location where residents cast their ballots."
+            f"📍 This election has {len(unique_okrseks)} okrseks (polling districts). Each okrsek represents a physical voting location where residents cast their ballots."
         )
 
 
@@ -1412,26 +1412,14 @@ def create_cartogram(
     if not geojson_data or "features" not in geojson_data:
         return None
 
-    # Get Prague 5 features
-    prague5_features = []
-    prague5_municipality_code = "554782"
+    # Use the already-filtered geojson_data (filtered by main function for the selected municipality)
+    municipality_features = geojson_data.get("features", [])
 
-    for feature in geojson_data["features"]:
-        properties = feature.get("properties", {})
-        if properties.get("OBEC") == prague5_municipality_code:
-            cislo = properties.get("CISLO", "")
-            try:
-                district_num = int(cislo)
-                if 5001 <= district_num <= 5081:
-                    prague5_features.append(feature)
-            except (ValueError, TypeError):
-                continue
-
-    if not prague5_features:
+    if not municipality_features:
         return None
 
     # Convert to GeoDataFrame
-    gdf = gpd.GeoDataFrame.from_features(prague5_features)
+    gdf = gpd.GeoDataFrame.from_features(municipality_features)
     gdf["district_code"] = gdf["CISLO"].astype(str)
 
     # Get vote counts and display values
