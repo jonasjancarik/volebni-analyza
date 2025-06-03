@@ -62,12 +62,43 @@ st.markdown(
 
 @st.cache_data
 def load_geojson_data():
-    """Download and cache GeoJSON data for electoral districts"""
+    """Download and cache GeoJSON data for electoral districts to local disk"""
+    # Local cache file path
+    cache_file = Path("input/raw/electoral_districts_boundaries.geojson")
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Check if file already exists
+    if cache_file.exists():
+        try:
+            st.info("📁 Loading electoral districts from local cache...")
+            with open(cache_file, "r", encoding="utf-8") as f:
+                geojson_data = json.load(f)
+
+            # Validate the cached data
+            if (
+                isinstance(geojson_data, dict)
+                and geojson_data.get("type") == "FeatureCollection"
+            ):
+                features = geojson_data.get("features", [])
+                if features:
+                    st.success(
+                        f"✅ Loaded {len(features):,} electoral districts from cache"
+                    )
+                    return geojson_data
+
+            st.warning("⚠️ Cached file appears corrupted, re-downloading...")
+
+        except Exception as e:
+            st.warning(f"⚠️ Error reading cached file: {e}. Re-downloading...")
+
+    # Download the file
     url = "https://www.volby.cz/opendata/kv2022/geo/vol_okrsky_2022g100.geojson"
 
     try:
-        st.info("🌐 Downloading electoral district boundaries (8MB)...")
-        response = requests.get(url, timeout=60)  # Increased timeout
+        st.info(
+            "🌐 Downloading electoral district boundaries (8MB) - this may take a moment..."
+        )
+        response = requests.get(url, timeout=120)  # Increased timeout for large file
         response.raise_for_status()
 
         st.info("📊 Parsing GeoJSON data...")
@@ -84,12 +115,17 @@ def load_geojson_data():
         if not features:
             raise ValueError("No features found in GeoJSON")
 
-        st.success(f"✅ Loaded {len(features):,} electoral districts")
+        # Save to cache
+        st.info("💾 Saving to local cache for future use...")
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(geojson_data, f, ensure_ascii=False)
+
+        st.success(f"✅ Downloaded and cached {len(features):,} electoral districts")
         return geojson_data
 
     except requests.exceptions.Timeout:
         st.error(
-            "⏱️ Download timed out. The geographic data file is large (8MB). Please try again or check your internet connection."
+            "⏱️ Download timed out. Please try again or check your internet connection."
         )
         return None
     except requests.exceptions.ConnectionError:
@@ -807,8 +843,15 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 "🔄 Clear Cache",
                 help="Clear cached geographic data and try downloading again",
             ):
-                # Clear the cache for load_geojson_data
+                # Clear the streamlit cache
                 load_geojson_data.clear()
+
+                # Clear the local file cache
+                cache_file = Path("input/raw/electoral_districts_boundaries.geojson")
+                if cache_file.exists():
+                    cache_file.unlink()
+                    st.success("🗑️ Local cache file deleted!")
+
                 st.success("Cache cleared! Please refresh the page.")
                 st.rerun()
         return
