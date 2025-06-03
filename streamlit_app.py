@@ -242,7 +242,7 @@ def create_folium_map(
 ):
     """Create an interactive Folium map with electoral districts and optional data overlay"""
 
-    # Calculate map center from geojson data
+    # Calculate map center and bounds from geojson data
     map_center = [50.0755, 14.4378]  # Default to Prague center
     zoom_start = 10
 
@@ -274,23 +274,27 @@ def create_folium_map(
             center_lon = (min(lons) + max(lons)) / 2
             map_center = [center_lat, center_lon]
 
-            # Calculate appropriate zoom level based on area
-            lat_range = max(lats) - min(lats)
-            lon_range = max(lons) - min(lons)
-            max_range = max(lat_range, lon_range)
+            # Use a more conservative initial zoom, we'll fit bounds after adding features
+            zoom_start = 10
 
-            if max_range < 0.01:  # Very small area
-                zoom_start = 15
-            elif max_range < 0.05:  # Small area
-                zoom_start = 13
-            elif max_range < 0.1:  # Medium area
-                zoom_start = 12
-            elif max_range < 0.5:  # Large area
-                zoom_start = 10
-            else:  # Very large area
-                zoom_start = 8
-
+    # Create map with initial center
     m = folium.Map(location=map_center, zoom_start=zoom_start, tiles="OpenStreetMap")
+
+    # Calculate bounds for auto-fitting after we add all features
+    bounds = None
+    if geojson_data and "features" in geojson_data and lats and lons:
+        # Calculate bounds with a small padding
+        lat_min, lat_max = min(lats), max(lats)
+        lon_min, lon_max = min(lons), max(lons)
+
+        # Add 5% padding to ensure districts aren't at the very edge
+        lat_padding = (lat_max - lat_min) * 0.05
+        lon_padding = (lon_max - lon_min) * 0.05
+
+        bounds = [
+            [lat_min - lat_padding, lon_min - lon_padding],  # Southwest corner
+            [lat_max + lat_padding, lon_max + lon_padding],  # Northeast corner
+        ]
 
     if geojson_data and "features" in geojson_data:
         # Prepare electoral data lookup based on visualization type
@@ -417,12 +421,21 @@ def create_folium_map(
             district_code = properties.get("CISLO", "Unknown")
 
             popup_html = f"""
-            <div style="font-family: Arial; width: 220px;">
+            <div style="font-family: Arial; width: 250px;">
                 <h4 style="margin-bottom: 10px; color: #1f77b4;">Okrsek {district_code}</h4>
                 <hr style="margin: 5px 0;">
             """
 
-            # Add data based on visualization type
+            # Get district data for this okrsek
+            district_row = None
+            if district_data is not None and isinstance(district_data, pd.DataFrame):
+                okrsek_rows = district_data[
+                    district_data["district_code"] == str(district_code)
+                ]
+                if not okrsek_rows.empty:
+                    district_row = okrsek_rows.iloc[0]
+
+            # Add the main visualization metric first
             if district_code in viz_data:
                 value = viz_data[district_code]
 
@@ -430,37 +443,71 @@ def create_folium_map(
                     popup_html += f"<p><strong>Turnout:</strong> {value:.1f}%</p>"
                 elif viz_type == "Estimated Voters":
                     popup_html += (
-                        f"<p><strong>Registered Voters:</strong> {value:,}</p>"
+                        f"<p><strong>Registered Voters:</strong> {int(value):,}</p>"
                     )
-                elif viz_type == "Party Results":
+                elif viz_type == "Party Results" and selected_party:
                     popup_html += (
                         f"<p><strong>{selected_party}:</strong> {value:.1f}%</p>"
                     )
 
-                # Add additional context data
-                if district_data is not None:
-                    okrsek_rows = district_data[
-                        district_data["district_code"] == str(district_code)
-                    ]
-                    if not okrsek_rows.empty:
-                        row = okrsek_rows.iloc[0]
+            # Always add voter estimate and vote share if available
+            if district_row is not None:
+                if "valid_votes" in district_row and pd.notna(
+                    district_row["valid_votes"]
+                ):
+                    valid_votes = int(district_row["valid_votes"])
 
-                        if (
-                            viz_type != "Turnout"
-                            and "turnout_percentage" in row
-                            and pd.notna(row["turnout_percentage"])
-                        ):
-                            popup_html += f"<p><strong>Turnout:</strong> {row['turnout_percentage']:.1f}%</p>"
-                        if (
-                            viz_type != "Estimated Voters"
-                            and "registered_voters" in row
-                            and pd.notna(row["registered_voters"])
-                        ):
-                            popup_html += f"<p><strong>Registered Voters:</strong> {int(row['registered_voters']):,}</p>"
-                        if "valid_votes" in row and pd.notna(row["valid_votes"]):
-                            popup_html += f"<p><strong>Valid Votes:</strong> {int(row['valid_votes']):,}</p>"
+                    # Calculate voter estimate (votes ÷ seats available)
+                    # Most Czech municipal elections have 41 seats, but let's try to get it from data
+                    num_seats = 41  # Default assumption
+
+                    # Try to get number of seats from electoral data if available
+                    if electoral_data and "summary_statistics" in electoral_data:
+                        summary_stats = electoral_data["summary_statistics"]
+                        if "num_seats" in summary_stats:
+                            num_seats = summary_stats["num_seats"]
+                        elif "electoral_districts" in summary_stats:
+                            # For some elections, districts might indicate seats
+                            districts_count = summary_stats.get(
+                                "electoral_districts", 41
+                            )
+                            if districts_count < 100:  # Reasonable seat count
+                                num_seats = districts_count
+
+                    if num_seats > 0:
+                        voter_estimate = round(valid_votes / num_seats)
+                        popup_html += f"<p><strong>Estimated Voters:</strong> {voter_estimate:,}</p>"
+
+                    popup_html += (
+                        f"<p><strong>Valid Votes:</strong> {valid_votes:,}</p>"
+                    )
+
+                if "registered_voters" in district_row and pd.notna(
+                    district_row["registered_voters"]
+                ):
+                    registered_voters = int(district_row["registered_voters"])
+                    if registered_voters > 0 and "valid_votes" in locals():
+                        vote_share = (valid_votes / registered_voters) * 100
+                        popup_html += f"<p><strong>Vote Share:</strong> {vote_share:.1f}% of registered voters</p>"
+
+                # Add other context data if not already shown
+                if (
+                    viz_type != "Turnout"
+                    and "turnout_percentage" in district_row
+                    and pd.notna(district_row["turnout_percentage"])
+                ):
+                    popup_html += f"<p><strong>Turnout:</strong> {district_row['turnout_percentage']:.1f}%</p>"
+
+                if (
+                    viz_type != "Estimated Voters"
+                    and "registered_voters" in district_row
+                    and pd.notna(district_row["registered_voters"])
+                ):
+                    popup_html += f"<p><strong>Registered Voters:</strong> {int(district_row['registered_voters']):,}</p>"
             else:
-                popup_html += f"<p><em>No {viz_type.lower()} data available</em></p>"
+                popup_html += (
+                    f"<p><em>No detailed data available for this okrsek</em></p>"
+                )
 
             popup_html += f"""
                 <hr style="margin: 5px 0;">
@@ -493,7 +540,7 @@ def create_folium_map(
                         f"Okrsek {district_code}: {value:.1f}% {selected_party}"
                     )
 
-            # Add valid votes if available in district data
+            # Add voter estimate if available in district data
             if district_data is not None and isinstance(district_data, pd.DataFrame):
                 okrsek_rows = district_data[
                     district_data["district_code"] == str(district_code)
@@ -502,10 +549,29 @@ def create_folium_map(
                     row = okrsek_rows.iloc[0]
                     if "valid_votes" in row and pd.notna(row["valid_votes"]):
                         valid_votes = int(row["valid_votes"])
-                        if (
-                            viz_type != "Party Results"
-                        ):  # Don't duplicate for party results
-                            tooltip_text += f" | {valid_votes:,} votes"
+
+                        # Calculate voter estimate for tooltip
+                        num_seats = 41  # Default assumption
+                        if electoral_data and "summary_statistics" in electoral_data:
+                            summary_stats = electoral_data["summary_statistics"]
+                            if "num_seats" in summary_stats:
+                                num_seats = summary_stats["num_seats"]
+                            elif "electoral_districts" in summary_stats:
+                                districts_count = summary_stats.get(
+                                    "electoral_districts", 41
+                                )
+                                if districts_count < 100:
+                                    num_seats = districts_count
+
+                        if num_seats > 0:
+                            voter_estimate = round(valid_votes / num_seats)
+                            # Add voter estimate to tooltip based on visualization type
+                            if viz_type == "Party Results":
+                                tooltip_text += f" | ~{voter_estimate:,} voters"
+                            elif viz_type not in [
+                                "Estimated Voters"
+                            ]:  # Don't duplicate for estimated voters viz
+                                tooltip_text += f" | ~{voter_estimate:,} voters"
 
             folium.GeoJson(
                 feature,
@@ -531,24 +597,24 @@ def create_folium_map(
                     center_lat = sum(lats) / len(lats)
                     center_lon = sum(lons) / len(lons)
 
-                    # Create label text based on visualization type
-                    label_text = district_code
+                    # Create label text based on visualization type - show only the main figure
+                    label_text = ""
 
                     if district_code in viz_data:
                         value = viz_data[district_code]
 
                         if viz_type == "Turnout":
-                            label_text = f"{district_code}\n{value:.0f}%"
+                            label_text = f"{value:.0f}%"
                         elif viz_type == "Estimated Voters":
                             # Show abbreviated form for large numbers
                             if value >= 1000:
-                                label_text = f"{district_code}\n{value / 1000:.1f}k"
+                                label_text = f"{value / 1000:.1f}k"
                             else:
-                                label_text = f"{district_code}\n{int(value)}"
+                                label_text = f"{int(value)}"
                         elif viz_type == "Party Results" and selected_party:
-                            label_text = f"{district_code}\n{value:.0f}%"
+                            label_text = f"{value:.0f}%"
 
-                    # Add additional vote count if available
+                    # Add vote count for non-percentage visualizations
                     if district_data is not None and isinstance(
                         district_data, pd.DataFrame
                     ):
@@ -562,23 +628,22 @@ def create_folium_map(
                                 if viz_type not in [
                                     "Turnout",
                                     "Party Results",
-                                ]:  # Don't show for percentage-based viz
+                                ]:  # Show votes for non-percentage viz
                                     if valid_votes >= 1000:
-                                        label_text += (
-                                            f"\n{valid_votes / 1000:.1f}k votes"
-                                        )
+                                        label_text = f"{valid_votes / 1000:.1f}k"
                                     else:
-                                        label_text += f"\n{valid_votes} votes"
+                                        label_text = f"{valid_votes}"
 
-                    # Add the label marker
-                    folium.Marker(
-                        location=[center_lat, center_lon],
-                        icon=folium.DivIcon(
-                            html=f'<div style="font-size: 8px; color: black; font-weight: bold; text-shadow: 1px 1px 1px white; text-align: center; line-height: 1.1; background-color: rgba(255,255,255,0.8); padding: 1px 2px; border-radius: 2px;">{label_text}</div>',
-                            icon_size=(60, 35),
-                            icon_anchor=(30, 17),
-                        ),
-                    ).add_to(m)
+                    # Add the label marker with larger font
+                    if label_text:  # Only add label if we have data
+                        folium.Marker(
+                            location=[center_lat, center_lon],
+                            icon=folium.DivIcon(
+                                html=f'<div style="font-size: 16px; color: black; font-weight: bold; text-shadow: 1px 1px 1px white; text-align: center; line-height: 1.1; background-color: rgba(255,255,255,0.9); padding: 2px 4px; border-radius: 3px;">{label_text}</div>',
+                                icon_size=(60, 35),
+                                icon_anchor=(30, 17),
+                            ),
+                        ).add_to(m)
 
         # Add legend based on visualization type
         if viz_data:
@@ -619,6 +684,10 @@ def create_folium_map(
             legend_html += '<p style="margin: 3px 0;"><i class="fa fa-square" style="color:#CCCCCC"></i> No Data</p></div>'
 
             m.get_root().html.add_child(folium.Element(legend_html))
+
+    # Auto-fit the map to show all districts with padding
+    if bounds is not None:
+        m.fit_bounds(bounds, padding=(20, 20))  # 20px padding on all sides
 
     return m
 
@@ -1032,9 +1101,9 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 "Base size",
                 min_value=0.001,
                 max_value=0.005,
-                value=0.002,
+                value=0.0015,
                 step=0.0001,
-                format="%.3f",
+                format="%.10f",
                 help="Controls the overall size of circles. Larger values = bigger circles.",
             )
         with col_c:
@@ -1056,7 +1125,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
 
         if cartogram_gdf is not None:
             cartogram_map = create_cartogram_map(
-                cartogram_gdf, viz_type, selected_party
+                cartogram_gdf, viz_type, selected_party, electoral_data
             )
 
             if cartogram_map:
@@ -1770,7 +1839,9 @@ def create_cartogram(
     return cartogram_gdf
 
 
-def create_cartogram_map(cartogram_gdf, viz_type="Turnout", selected_party=None):
+def create_cartogram_map(
+    cartogram_gdf, viz_type="Turnout", selected_party=None, electoral_data=None
+):
     """Create a Folium map from cartogram GeoDataFrame with circular districts"""
     if cartogram_gdf is None or cartogram_gdf.empty:
         return None
@@ -1896,6 +1967,32 @@ def create_cartogram_map(cartogram_gdf, viz_type="Turnout", selected_party=None)
         elif viz_type == "Party Results" and selected_party:
             tooltip_text = f"Okrsek {district_code}: {display_value:.1f}% {selected_party} | {vote_count:,} votes"
 
+        # Add voter estimate to tooltip if we have electoral data
+        if electoral_data and vote_count > 0:
+            # Calculate voter estimate (votes ÷ seats available)
+            num_seats = 41  # Default assumption
+
+            # Try to get number of seats from electoral data if available
+            if "summary_statistics" in electoral_data:
+                summary_stats = electoral_data["summary_statistics"]
+                if "num_seats" in summary_stats:
+                    num_seats = summary_stats["num_seats"]
+                elif "electoral_districts" in summary_stats:
+                    # For some elections, districts might indicate seats
+                    districts_count = summary_stats.get("electoral_districts", 41)
+                    if districts_count < 100:  # Reasonable seat count
+                        num_seats = districts_count
+
+            if num_seats > 0:
+                voter_estimate = round(vote_count / num_seats)
+                # Add voter estimate to tooltip based on visualization type
+                if viz_type == "Party Results":
+                    tooltip_text += f" | ~{voter_estimate:,} voters"
+                elif viz_type not in [
+                    "Estimated Voters"
+                ]:  # Don't duplicate for estimated voters viz
+                    tooltip_text += f" | ~{voter_estimate:,} voters"
+
         folium.Circle(
             location=[row.geometry.centroid.y, row.geometry.centroid.x],
             radius=radius * 111000,  # Convert degrees to meters approximately
@@ -1907,27 +2004,34 @@ def create_cartogram_map(cartogram_gdf, viz_type="Turnout", selected_party=None)
             fillOpacity=0.7,
         ).add_to(m)
 
-        # Add district label with key metric instead of just district number
-        label_text = district_code
+        # Add district label with key metric - show only the main figure
+        label_text = ""
 
-        # Show key metric in label based on visualization type
+        # Show only key metric in label based on visualization type
         if viz_type == "Turnout":
-            label_text = f"{district_code}\n{display_value:.0f}%"
+            label_text = f"{display_value:.0f}%"
         elif viz_type == "Estimated Voters":
-            label_text = f"{district_code}\n{int(display_value):,}"
+            if display_value >= 1000:
+                label_text = f"{display_value / 1000:.1f}k"
+            else:
+                label_text = f"{int(display_value)}"
         elif viz_type == "Valid Votes":
-            label_text = f"{district_code}\n{int(display_value):,}"
+            if display_value >= 1000:
+                label_text = f"{int(display_value) / 1000:.1f}k"
+            else:
+                label_text = f"{int(display_value)}"
         elif viz_type == "Party Results" and selected_party:
-            label_text = f"{district_code}\n{display_value:.0f}%"
+            label_text = f"{display_value:.0f}%"
 
-        folium.Marker(
-            location=[row.geometry.centroid.y, row.geometry.centroid.x],
-            icon=folium.DivIcon(
-                html=f'<div style="font-size: 9px; color: white; font-weight: bold; text-shadow: 1px 1px 1px black; text-align: center; line-height: 1.1;">{label_text}</div>',
-                icon_size=(50, 30),
-                icon_anchor=(25, 15),
-            ),
-        ).add_to(m)
+        if label_text:  # Only add label if we have data
+            folium.Marker(
+                location=[row.geometry.centroid.y, row.geometry.centroid.x],
+                icon=folium.DivIcon(
+                    html=f'<div style="font-size: 18px; color: white; font-weight: bold; text-shadow: 2px 2px 2px black; text-align: center; line-height: 1.1;">{label_text}</div>',
+                    icon_size=(60, 40),
+                    icon_anchor=(30, 20),
+                ),
+            ).add_to(m)
 
     # Add enhanced cartogram legend
     legend_html = f"""
@@ -1982,6 +2086,19 @@ def create_cartogram_map(cartogram_gdf, viz_type="Turnout", selected_party=None)
     legend_html += "</div>"
 
     m.get_root().html.add_child(folium.Element(legend_html))
+
+    # Auto-fit the map to show all cartogram circles with padding
+    if not cartogram_gdf.empty:
+        bounds = cartogram_gdf.total_bounds
+        # Add 5% padding to ensure circles aren't at the very edge
+        lat_padding = (bounds[3] - bounds[1]) * 0.05
+        lon_padding = (bounds[2] - bounds[0]) * 0.05
+
+        fit_bounds = [
+            [bounds[1] - lat_padding, bounds[0] - lon_padding],  # Southwest corner
+            [bounds[3] + lat_padding, bounds[2] + lon_padding],  # Northeast corner
+        ]
+        m.fit_bounds(fit_bounds, padding=(20, 20))  # 20px padding on all sides
 
     return m
 
