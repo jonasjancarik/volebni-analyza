@@ -266,7 +266,11 @@ def load_municipality_data(zastupitelstvo_code: str):
 
 
 def create_folium_map(
-    geojson_data, electoral_data=None, viz_type="Turnout", selected_party=None
+    geojson_data,
+    electoral_data=None,
+    viz_type="Turnout",
+    selected_party=None,
+    base_map_style="OpenStreetMap",
 ):
     """Create an interactive Folium map with electoral districts and optional data overlay"""
 
@@ -306,7 +310,7 @@ def create_folium_map(
             zoom_start = 10
 
     # Create map with initial center
-    m = folium.Map(location=map_center, zoom_start=zoom_start, tiles="OpenStreetMap")
+    m = folium.Map(location=map_center, zoom_start=zoom_start, tiles=base_map_style)
 
     # Calculate bounds for auto-fitting after we add all features
     bounds = None
@@ -1086,7 +1090,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     # Map visualization controls
     st.subheader("📊 Map Visualization Controls")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         viz_type = st.selectbox(
@@ -1108,9 +1112,23 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
             help="Choose between geographic accuracy, data-proportional areas, or dot-fill visualization",
         )
 
+    with col3:
+        base_map_style_main = st.selectbox(
+            "Base map style:",
+            [
+                "OpenStreetMap",
+                "CartoDB Positron",
+                "CartoDB Dark Matter",
+                "Stamen Toner",
+                "CartoDB Voyager",
+            ],
+            index=0,  # Default to OpenStreetMap
+            help="Choose a base map style. Muted styles help overlays stand out better.",
+        )
+
     selected_party = None
     if viz_type == "Party Results" and party_data is not None:
-        with col3:
+        with col4:
             # Get available parties
             available_parties = (
                 sorted(party_data["party_name"].unique())
@@ -1189,11 +1207,12 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
             "🔵 **Dot Density**: Each dot represents a fixed number of votes (e.g., 1 dot = 100 votes). "
             "Dots are evenly distributed within each electoral district. "
             "When color scaling is enabled, dot colors show vote share: 🔴 red (low) → 🟡 yellow (moderate) → 🟢 green (high). "
+            "Choose a muted base map style to make colored dots stand out better. "
             "Count the dots to see vote distribution!"
         )
 
         # Dot density controls
-        col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
+        col_a, col_b, col_c, col_d, col_e = st.columns([1, 1, 1, 1, 1])
         with col_a:
             votes_per_dot = st.selectbox(
                 "Votes per dot:",
@@ -1223,6 +1242,19 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 "Color by vote share",
                 value=True,
                 help="Color dots based on vote share: red (low) to green (high). When disabled, uses single color.",
+            )
+        with col_e:
+            base_map_style = st.selectbox(
+                "Base map style:",
+                [
+                    "CartoDB Positron",
+                    "CartoDB Dark Matter",
+                    "Stamen Toner",
+                    "OpenStreetMap",
+                    "CartoDB Voyager",
+                ],
+                index=0,  # Default to CartoDB Positron (light, muted)
+                help="Choose a base map style. Muted styles help color-coded dots stand out better.",
             )
 
         # Create dot density map
@@ -1304,7 +1336,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 dot_map = folium.Map(
                     location=[50.0755, 14.4378],  # Default center
                     zoom_start=12,
-                    tiles="OpenStreetMap",
+                    tiles=base_map_style,
                 )
 
                 # Add district boundaries as background (light gray)
@@ -1350,9 +1382,9 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                                 font-size:11px; font-family: Arial; padding: 8px; box-sizing: border-box;">
                         <h5 style="margin: 0 0 8px 0; font-size: 13px;">Dot Color Scale</h5>
                         <p style="margin: 3px 0; font-weight: bold;">{legend_title}</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥25% (Excellent)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 20-24% (Very Good)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#32CD32"></i> 15-19% (Good)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#00FF00"></i> ≥25% (Excellent)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#32CD32"></i> 20-24% (Very Good)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 15-19% (Good)</p>
                         <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 10-14% (Moderate)</p>
                         <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF8C00"></i> 5-9% (Low)</p>
                         <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF4500"></i> <5% (Very Low)</p>
@@ -1382,21 +1414,25 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                     width=None,
                     height=900,
                     returned_objects=["last_clicked", "last_object_clicked"],
-                    key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}_{use_color_scale}",
+                    key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}_{use_color_scale}_{base_map_style}",
                 )
 
             except Exception as e:
                 st.error(f"Error creating dot density map: {e}")
                 st.info("Falling back to regular geographic map...")
                 map_obj = create_folium_map(
-                    filtered_geojson, electoral_data, viz_type, selected_party
+                    filtered_geojson,
+                    electoral_data,
+                    viz_type,
+                    selected_party,
+                    base_map_style,
                 )
                 map_data = st_folium(
                     map_obj,
                     width=None,
                     height=900,
                     returned_objects=["last_clicked", "last_object_clicked"],
-                    key=f"fallback_map_{viz_type}_{selected_party}",
+                    key=f"fallback_map_{viz_type}_{selected_party}_{base_map_style}",
                 )
         else:
             st.warning("No district data available for dot density visualization.")
@@ -1405,7 +1441,11 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         st.subheader("🗺️ Geographic Map View")
         # Create and display the regular map
         map_obj = create_folium_map(
-            filtered_geojson, electoral_data, viz_type, selected_party
+            filtered_geojson,
+            electoral_data,
+            viz_type,
+            selected_party,
+            base_map_style_main,
         )
 
         # Display the map
@@ -1414,7 +1454,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
             width=None,  # Full width
             height=900,  # Taller map
             returned_objects=["last_clicked", "last_object_clicked"],
-            key=f"map_{viz_type}_{selected_party}",  # Unique key for re-rendering
+            key=f"map_{viz_type}_{selected_party}_{base_map_style_main}",  # Include base map style in key
         )
 
     # Display information about clicked features
@@ -2394,11 +2434,11 @@ def icon_fill_layer(
     def get_color_from_percentage(percentage):
         """Convert percentage to color scale: red (low) to green (high)"""
         if percentage >= 25:
-            return "#006400"  # Dark green (very high)
+            return "#00FF00"  # Bright lime green (very high) - most attention-grabbing
         elif percentage >= 20:
-            return "#228B22"  # Forest green (high)
+            return "#32CD32"  # Lime green (high) - bright and noticeable
         elif percentage >= 15:
-            return "#32CD32"  # Lime green (good)
+            return "#228B22"  # Forest green (good) - solid green
         elif percentage >= 10:
             return "#FFD700"  # Gold (moderate)
         elif percentage >= 5:
