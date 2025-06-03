@@ -514,6 +514,72 @@ def create_folium_map(
                 tooltip=folium.Tooltip(tooltip_text),
             ).add_to(m)
 
+            # Add visible label with key metric for each district
+            if feature.get("geometry") and feature["geometry"].get("coordinates"):
+                # Calculate polygon centroid for label placement
+                if feature["geometry"]["type"] == "Polygon":
+                    coords = feature["geometry"]["coordinates"][0]
+                elif feature["geometry"]["type"] == "MultiPolygon":
+                    coords = feature["geometry"]["coordinates"][0][0]
+                else:
+                    coords = []
+
+                if coords:
+                    # Simple centroid calculation
+                    lats = [coord[1] for coord in coords]
+                    lons = [coord[0] for coord in coords]
+                    center_lat = sum(lats) / len(lats)
+                    center_lon = sum(lons) / len(lons)
+
+                    # Create label text based on visualization type
+                    label_text = district_code
+
+                    if district_code in viz_data:
+                        value = viz_data[district_code]
+
+                        if viz_type == "Turnout":
+                            label_text = f"{district_code}\n{value:.0f}%"
+                        elif viz_type == "Estimated Voters":
+                            # Show abbreviated form for large numbers
+                            if value >= 1000:
+                                label_text = f"{district_code}\n{value / 1000:.1f}k"
+                            else:
+                                label_text = f"{district_code}\n{int(value)}"
+                        elif viz_type == "Party Results" and selected_party:
+                            label_text = f"{district_code}\n{value:.0f}%"
+
+                    # Add additional vote count if available
+                    if district_data is not None and isinstance(
+                        district_data, pd.DataFrame
+                    ):
+                        okrsek_rows = district_data[
+                            district_data["district_code"] == str(district_code)
+                        ]
+                        if not okrsek_rows.empty:
+                            row = okrsek_rows.iloc[0]
+                            if "valid_votes" in row and pd.notna(row["valid_votes"]):
+                                valid_votes = int(row["valid_votes"])
+                                if viz_type not in [
+                                    "Turnout",
+                                    "Party Results",
+                                ]:  # Don't show for percentage-based viz
+                                    if valid_votes >= 1000:
+                                        label_text += (
+                                            f"\n{valid_votes / 1000:.1f}k votes"
+                                        )
+                                    else:
+                                        label_text += f"\n{valid_votes} votes"
+
+                    # Add the label marker
+                    folium.Marker(
+                        location=[center_lat, center_lon],
+                        icon=folium.DivIcon(
+                            html=f'<div style="font-size: 8px; color: black; font-weight: bold; text-shadow: 1px 1px 1px white; text-align: center; line-height: 1.1; background-color: rgba(255,255,255,0.8); padding: 1px 2px; border-radius: 2px;">{label_text}</div>',
+                            icon_size=(60, 35),
+                            icon_anchor=(30, 17),
+                        ),
+                    ).add_to(m)
+
         # Add legend based on visualization type
         if viz_data:
             legend_html = f"""
