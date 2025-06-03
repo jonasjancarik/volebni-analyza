@@ -22,6 +22,7 @@ import geopandas as gpd
 from PIL import Image
 from shapely.geometry import Point, Polygon
 from shapely.affinity import scale
+from itertools import product
 
 from src.streamlit_municipality_selector import MunicipalitySelector
 
@@ -353,6 +354,13 @@ def create_folium_map(
                     if pd.notna(voters):
                         viz_data[district_code] = int(voters)
 
+                elif (
+                    viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)"
+                ) and "valid_votes" in row:
+                    valid_votes = row.get("valid_votes", 0)
+                    if pd.notna(valid_votes):
+                        viz_data[district_code] = int(valid_votes)
+
         # For party results, use party data
         if (
             viz_type == "Party Results"
@@ -400,6 +408,19 @@ def create_folium_map(
                 elif value >= 400:
                     return "#FFD700"  # Gold
                 elif value >= 200:
+                    return "#FFA500"  # Orange
+                else:
+                    return "#FF6347"  # Red (low)
+
+            elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
+                # Valid votes color scale
+                if value >= 1000:
+                    return "#2E8B57"  # Dark green (high)
+                elif value >= 800:
+                    return "#90EE90"  # Light green
+                elif value >= 600:
+                    return "#FFD700"  # Gold
+                elif value >= 400:
                     return "#FFA500"  # Orange
                 else:
                     return "#FF6347"  # Red (low)
@@ -472,6 +493,8 @@ def create_folium_map(
                     popup_html += (
                         f"<p><strong>Registered Voters:</strong> {int(value):,}</p>"
                     )
+                elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
+                    popup_html += f"<p><strong>Valid Votes:</strong> {int(value):,}</p>"
                 elif viz_type == "Party Results" and selected_party:
                     popup_html += (
                         f"<p><strong>{selected_party}:</strong> {value:.1f}%</p>"
@@ -548,6 +571,8 @@ def create_folium_map(
                     tooltip_text = f"Okrsek {district_code}: {value:.1f}% turnout"
                 elif viz_type == "Estimated Voters":
                     tooltip_text = f"Okrsek {district_code}: {int(value):,} voters"
+                elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
+                    tooltip_text = f"Okrsek {district_code}: {int(value):,} valid votes"
                 elif viz_type == "Party Results" and selected_party:
                     tooltip_text = (
                         f"Okrsek {district_code}: {value:.1f}% {selected_party}"
@@ -608,6 +633,15 @@ def create_folium_map(
                         if viz_type == "Turnout":
                             label_text = f"{value:.0f}%"
                         elif viz_type == "Estimated Voters":
+                            # Show abbreviated form for large numbers
+                            if value >= 1000:
+                                label_text = f"{value / 1000:.1f}k"
+                            else:
+                                label_text = f"{int(value)}"
+                        elif (
+                            viz_type == "Valid Votes"
+                            or viz_type == "Valid Votes (dots)"
+                        ):
                             # Show abbreviated form for large numbers
                             if value >= 1000:
                                 label_text = f"{value / 1000:.1f}k"
@@ -1057,15 +1091,21 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     with col1:
         viz_type = st.selectbox(
             "Choose what to visualize:",
-            ["Turnout", "Estimated Voters", "Valid Votes", "Party Results"],
+            [
+                "Turnout",
+                "Estimated Voters",
+                "Valid Votes",
+                "Valid Votes (dots)",
+                "Party Results",
+            ],
             help="Select the data to display on the map with color coding",
         )
 
     with col2:
         map_type = st.selectbox(
             "Map type:",
-            ["Geographic Map", "Cartogram"],
-            help="Choose between geographic accuracy or data-proportional areas",
+            ["Geographic Map", "Cartogram", "Dot Density"],
+            help="Choose between geographic accuracy, data-proportional areas, or dot-fill visualization",
         )
 
     selected_party = None
@@ -1143,6 +1183,154 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 st.error("Failed to create cartogram map")
         else:
             st.error("Failed to create cartogram data")
+    elif map_type == "Dot Density":
+        st.subheader("🔵 Dot Density Map")
+        st.info(
+            "🔵 **Dot Density**: Each dot represents a fixed number of votes (e.g., 1 dot = 100 votes). "
+            "Dots are evenly distributed within each electoral district. Count the dots to see vote distribution!"
+        )
+
+        # Dot density controls
+        col_a, col_b, col_c = st.columns([1, 1, 1])
+        with col_a:
+            votes_per_dot = st.selectbox(
+                "Votes per dot:",
+                [50, 100, 150, 200, 250],
+                index=1,  # Default to 100
+                help="How many votes each dot represents. Smaller values = more dots = finer detail.",
+            )
+        with col_b:
+            dot_spacing = st.slider(
+                "Dot spacing (meters)",
+                min_value=30,
+                max_value=120,
+                value=70,
+                step=10,
+                help="Distance between dots in meters. Affects dot density within districts.",
+            )
+        with col_c:
+            dot_size = st.slider(
+                "Dot size",
+                min_value=1,
+                max_value=5,
+                value=2,
+                help="Visual size of each dot on the map.",
+            )
+
+        # Create dot density map
+        if district_data is not None and isinstance(district_data, pd.DataFrame):
+            # Build GeoDataFrame
+            gdf = gpd.GeoDataFrame.from_features(
+                filtered_geojson["features"], crs="EPSG:4326"
+            )
+            gdf["district_code"] = gdf["CISLO"].astype(str)
+
+            # Create vote series based on visualization type
+            if viz_type == "Valid Votes (dots)" or viz_type == "Valid Votes":
+                # Use valid votes for dot density
+                vote_series = district_data.set_index("district_code")[
+                    "valid_votes"
+                ].fillna(0)
+                dot_color = "#de425b"  # Red for votes
+            elif viz_type == "Party Results" and selected_party:
+                # Use party votes for dot density
+                if party_data is not None and isinstance(party_data, pd.DataFrame):
+                    party_subset = party_data[
+                        party_data["party_name"] == selected_party
+                    ].copy()
+                    if not party_subset.empty:
+                        party_subset["district_code"] = (
+                            party_subset["district_id"].str.split("-").str[0]
+                        )
+                        party_votes = party_subset.groupby("district_code")[
+                            "votes"
+                        ].sum()
+                        vote_series = party_votes.reindex(gdf["district_code"]).fillna(
+                            0
+                        )
+                        dot_color = "#2166ac"  # Blue for party votes
+                    else:
+                        vote_series = pd.Series(0, index=gdf["district_code"])
+                        dot_color = "#de425b"
+                else:
+                    vote_series = pd.Series(0, index=gdf["district_code"])
+                    dot_color = "#de425b"
+            else:
+                # Fallback to valid votes
+                vote_series = district_data.set_index("district_code")[
+                    "valid_votes"
+                ].fillna(0)
+                dot_color = "#de425b"
+
+            # Create the icon fill layer
+            try:
+                dot_map = folium.Map(
+                    location=[50.0755, 14.4378],  # Default center
+                    zoom_start=12,
+                    tiles="OpenStreetMap",
+                )
+
+                # Add district boundaries as background (light gray)
+                folium.GeoJson(
+                    filtered_geojson,
+                    style_function=lambda _: {
+                        "fillOpacity": 0.1,
+                        "color": "gray",
+                        "weight": 1,
+                        "fillColor": "#f0f0f0",
+                    },
+                ).add_to(dot_map)
+
+                # Add dot density layer
+                icon_layer = icon_fill_layer(
+                    gdf,
+                    vote_series,
+                    k_votes_per_dot=votes_per_dot,
+                    spacing_m=dot_spacing,
+                    dot_radius_px=dot_size,
+                    dot_color=dot_color,
+                )
+                icon_layer.add_to(dot_map)
+
+                # Add layer control
+                folium.LayerControl().add_to(dot_map)
+
+                # Auto-fit the map
+                if not gdf.empty:
+                    bounds = gdf.total_bounds
+                    lat_padding = (bounds[3] - bounds[1]) * 0.05
+                    lon_padding = (bounds[2] - bounds[0]) * 0.05
+                    fit_bounds = [
+                        [bounds[1] - lat_padding, bounds[0] - lon_padding],
+                        [bounds[3] + lat_padding, bounds[2] + lon_padding],
+                    ]
+                    dot_map.fit_bounds(fit_bounds, padding=(20, 20))
+
+                # Display the dot density map
+                map_data = st_folium(
+                    dot_map,
+                    width=None,
+                    height=900,
+                    returned_objects=["last_clicked", "last_object_clicked"],
+                    key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}",
+                )
+
+            except Exception as e:
+                st.error(f"Error creating dot density map: {e}")
+                st.info("Falling back to regular geographic map...")
+                map_obj = create_folium_map(
+                    filtered_geojson, electoral_data, viz_type, selected_party
+                )
+                map_data = st_folium(
+                    map_obj,
+                    width=None,
+                    height=900,
+                    returned_objects=["last_clicked", "last_object_clicked"],
+                    key=f"fallback_map_{viz_type}_{selected_party}",
+                )
+        else:
+            st.warning("No district data available for dot density visualization.")
+            map_data = None
     else:
         st.subheader("🗺️ Geographic Map View")
         # Create and display the regular map
@@ -1942,7 +2130,7 @@ def create_cartogram_map(
             popup_html += (
                 f"<p><strong>Registered Voters:</strong> {display_value:,.0f}</p>"
             )
-        elif viz_type == "Valid Votes":
+        elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
             popup_html += f"<p><strong>Valid Votes:</strong> {display_value:,.0f}</p>"
         elif viz_type == "Party Results" and selected_party:
             popup_html += (
@@ -2059,25 +2247,25 @@ def create_cartogram_map(
         <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥800 voters</p>
         <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 600-799</p>
         <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 400-599</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 200-399</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF6347"></i> <200 voters</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 200-399 (Low-Med)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <200 (Low)</p>
         """
     elif viz_type == "Valid Votes":
         legend_html += """
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥1000 votes</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 800-999</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 600-799</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 400-599</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF6347"></i> <400 votes</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#2E8B57"></i> ≥1000 (High)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#90EE90"></i> 800-999 (Med-High)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 600-799 (Medium)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFA500"></i> 400-599 (Low-Med)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <400 (Low)</p>
         """
     elif viz_type == "Party Results":
-        legend_html += """
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥25% support</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 20-24%</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#32CD32"></i> 15-19%</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 10-14%</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#87CEEB"></i> 5-9%</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#4169E1"></i> <5% support</p>
+        legend_html += f"""
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#006400"></i> ≥25% (Very Strong)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#228B22"></i> 20-24% (Strong)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#32CD32"></i> 15-19% (Good)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 10-14% (Moderate)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#87CEEB"></i> 5-9% (Weak)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#4169E1"></i> <5% (Very Weak)</p>
         """
 
     legend_html += "</div>"
@@ -2112,6 +2300,74 @@ def get_geographic_municipality_code(electoral_code):
     }
 
     return electoral_to_geographic.get(electoral_code, electoral_code)
+
+
+def icon_fill_layer(
+    districts_gdf: gpd.GeoDataFrame,
+    vote_series,  # pd.Series indexed by district_code, holding vote counts
+    k_votes_per_dot=100,  # granularity
+    spacing_m=70,  # waffle spacing in metres (≈ dot diameter)
+    dot_radius_px=2,
+    dot_color="#de425b",
+    seed=42,
+):
+    """
+    Returns a folium.FeatureGroup with dot-fills for every district.
+    districts_gdf must contain columns: ['district_code', 'geometry'] in EPSG:4326.
+    """
+    rng = np.random.default_rng(seed)
+
+    # Project to a metric CRS so 'spacing_m' means metres.
+    gdf_m = districts_gdf.to_crs(3857)  # Web-Mercator metres
+
+    features = []
+
+    for _, row in gdf_m.iterrows():
+        code = str(row["district_code"])
+        votes = int(vote_series.get(code, 0))
+        if votes <= 0:
+            continue
+
+        n_dots = max(1, votes // k_votes_per_dot)
+        poly = row.geometry
+
+        if poly.is_empty or not poly.is_valid:
+            continue
+
+        xmin, ymin, xmax, ymax = poly.bounds
+
+        # build waffle grid
+        xs = np.arange(xmin, xmax, spacing_m)
+        ys = np.arange(ymin, ymax, spacing_m)
+        pts = [Point(x, y) for x, y in product(xs, ys) if Point(x, y).within(poly)]
+
+        if not pts:
+            continue
+
+        rng.shuffle(pts)  # blue-noise
+        pts = pts[:n_dots]
+
+        # back to lat-lon
+        pts_ll = gpd.GeoSeries(pts, crs=3857).to_crs(4326)
+
+        for p in pts_ll:
+            marker = folium.CircleMarker(
+                location=[p.y, p.x],
+                radius=dot_radius_px,
+                color=dot_color,
+                fill=True,
+                fill_opacity=0.9,
+                stroke=False,
+                tooltip=f"Okrsek {code}: {votes:,} votes (1 dot = {k_votes_per_dot} votes)",
+            )
+            features.append(marker)
+
+    # wrap in a feature-group so the layer can be toggled
+    fg = folium.FeatureGroup(name=f"Icon fill (1 dot = {k_votes_per_dot} votes)")
+    for m in features:
+        m.add_to(fg)
+
+    return fg
 
 
 def main():
