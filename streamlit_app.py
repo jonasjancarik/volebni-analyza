@@ -17,6 +17,9 @@ import re
 from pathlib import Path
 import sys
 import os
+import numpy as np
+from shapely.geometry import Point, Polygon
+from shapely.affinity import scale
 
 # Add src to path for importing our modules
 sys.path.append(str(Path(__file__).parent / "src"))
@@ -674,18 +677,25 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     # Map visualization controls
     st.subheader("📊 Map Visualization Controls")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         viz_type = st.selectbox(
             "Choose what to visualize:",
-            ["Turnout", "Estimated Voters", "Party Results"],
+            ["Turnout", "Estimated Voters", "Valid Votes", "Party Results"],
             help="Select the data to display on the map with color coding",
+        )
+
+    with col2:
+        map_type = st.selectbox(
+            "Map type:",
+            ["Geographic Map", "Cartogram"],
+            help="Choose between geographic accuracy or data-proportional areas",
         )
 
     selected_party = None
     if viz_type == "Party Results" and party_data is not None:
-        with col2:
+        with col3:
             # Get available parties
             available_parties = (
                 sorted(party_data["party_name"].unique())
@@ -702,19 +712,66 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 st.warning("No party data available")
                 viz_type = "Turnout"  # Fallback
 
-    # Create and display the map with selected visualization
-    map_obj = create_folium_map(
-        filtered_geojson, electoral_data, viz_type, selected_party
-    )
+    # Create and display the map based on type
+    if map_type == "Cartogram":
+        st.subheader("🗺️ Cartogram View")
+        st.info(
+            "📐 **Cartogram**: Areas are scaled by **vote count** (larger areas = more total votes). Colors show the selected visualization data."
+        )
 
-    # Display the map
-    map_data = st_folium(
-        map_obj,
-        width=None,  # Full width
-        height=600,  # Taller map
-        returned_objects=["last_clicked", "last_object_clicked"],
-        key=f"map_{viz_type}_{selected_party}",  # Unique key for re-rendering
-    )
+        # Add base size control
+        col_a, col_b = st.columns([2, 1])
+        with col_a:
+            st.write("**Adjust Circle Size:**")
+        with col_b:
+            base_size = st.slider(
+                "Base size",
+                min_value=0.001,
+                max_value=0.005,
+                value=0.002,
+                step=0.0001,
+                format="%.3f",
+                help="Controls the overall size of circles. Larger values = bigger circles.",
+            )
+
+        # Create cartogram
+        cartogram_gdf = create_cartogram(
+            filtered_geojson, electoral_data, viz_type, selected_party, base_size
+        )
+
+        if cartogram_gdf is not None:
+            cartogram_map = create_cartogram_map(
+                cartogram_gdf, viz_type, selected_party
+            )
+
+            if cartogram_map:
+                # Display the cartogram map
+                map_data = st_folium(
+                    cartogram_map,
+                    width=None,  # Full width
+                    height=900,  # Taller map
+                    returned_objects=["last_clicked", "last_object_clicked"],
+                    key=f"cartogram_{viz_type}_{selected_party}_{base_size}",  # Include base_size in key
+                )
+            else:
+                st.error("Failed to create cartogram map")
+        else:
+            st.error("Failed to create cartogram data")
+    else:
+        st.subheader("🗺️ Geographic Map View")
+        # Create and display the regular map
+        map_obj = create_folium_map(
+            filtered_geojson, electoral_data, viz_type, selected_party
+        )
+
+        # Display the map
+        map_data = st_folium(
+            map_obj,
+            width=None,  # Full width
+            height=900,  # Taller map
+            returned_objects=["last_clicked", "last_object_clicked"],
+            key=f"map_{viz_type}_{selected_party}",  # Unique key for re-rendering
+        )
 
     # Display information about clicked features
     if map_data["last_object_clicked"]:
@@ -1135,6 +1192,423 @@ def display_district_analysis(data):
         st.info(
             f"📍 Prague 5 has {len(unique_okrseks)} okrseks (polling districts). Each okrsek represents a physical voting location where residents cast their ballots."
         )
+
+
+def create_cartogram(
+    geojson_data,
+    electoral_data,
+    viz_type="Turnout",
+    selected_party=None,
+    base_size=0.002,
+):
+    """Create a force-directed cartogram with areas proportional to vote counts and collision avoidance"""
+    if not geojson_data or "features" not in geojson_data:
+        return None
+
+    # Get Prague 5 features
+    prague5_features = []
+    prague5_municipality_code = "554782"
+
+    for feature in geojson_data["features"]:
+        properties = feature.get("properties", {})
+        if properties.get("OBEC") == prague5_municipality_code:
+            cislo = properties.get("CISLO", "")
+            try:
+                district_num = int(cislo)
+                if 5001 <= district_num <= 5081:
+                    prague5_features.append(feature)
+            except (ValueError, TypeError):
+                continue
+
+    if not prague5_features:
+        return None
+
+    # Convert to GeoDataFrame
+    gdf = gpd.GeoDataFrame.from_features(prague5_features)
+    gdf["district_code"] = gdf["CISLO"].astype(str)
+
+    # Get vote counts and display values
+    district_data = electoral_data.get("district_data") if electoral_data else None
+    party_data = (
+        electoral_data.get("district_party_results") if electoral_data else None
+    )
+
+    vote_counts = {}
+    display_values = {}
+
+    if (
+        isinstance(district_data, pd.DataFrame)
+        and "district_code" in district_data.columns
+    ):
+        for _, row in district_data.iterrows():
+            district_code = str(row.get("district_code", ""))
+
+            # Always use valid_votes for scaling
+            if "valid_votes" in row and pd.notna(row.get("valid_votes", 0)):
+                vote_counts[district_code] = int(row.get("valid_votes", 0))
+
+            # Get display values for color coding
+            if viz_type == "Turnout" and "turnout_percentage" in row:
+                value = row.get("turnout_percentage", 0)
+                if pd.notna(value):
+                    display_values[district_code] = float(value)
+            elif viz_type == "Estimated Voters" and "registered_voters" in row:
+                value = row.get("registered_voters", 0)
+                if pd.notna(value):
+                    display_values[district_code] = int(value)
+            elif viz_type == "Valid Votes" and "valid_votes" in row:
+                value = row.get("valid_votes", 0)
+                if pd.notna(value):
+                    display_values[district_code] = int(value)
+
+    # Handle party results
+    if (
+        viz_type == "Party Results"
+        and selected_party
+        and isinstance(party_data, pd.DataFrame)
+    ):
+        party_subset = party_data[party_data["party_name"] == selected_party].copy()
+        if not party_subset.empty:
+            party_subset["district_code"] = (
+                party_subset["district_id"].str.split("-").str[0]
+            )
+
+            for district_code, group in party_subset.groupby("district_code"):
+                total_district_votes = group["total_district_votes"].sum()
+                party_votes = group["votes"].sum()
+
+                # For area scaling: use actual party votes (not total district votes)
+                if party_votes > 0:
+                    vote_counts[str(district_code)] = party_votes
+
+                # For color display: use party percentage
+                if total_district_votes > 0:
+                    percentage = (party_votes / total_district_votes) * 100
+                    display_values[str(district_code)] = percentage
+
+    if not vote_counts:
+        return gdf
+
+    # Create cartogram with direct proportionality and collision avoidance
+    cartogram_gdf = gdf.copy()
+
+    # Calculate areas directly proportional to vote counts
+    min_votes = min(vote_counts.values())
+    max_votes = max(vote_counts.values())
+
+    # Set a base radius for the smallest district
+    base_radius = base_size
+    max_radius = base_radius * 4  # Maximum 4x the base size
+
+    # Store centroid positions and radii for collision detection
+    districts = []
+
+    for idx, row in cartogram_gdf.iterrows():
+        district_code = row["district_code"]
+        original_centroid = row.geometry.centroid
+
+        if district_code in vote_counts:
+            votes = vote_counts[district_code]
+            # Direct proportionality: area proportional to votes
+            # Area = π * r², so r = sqrt(area/π) = sqrt(votes * scale / π)
+            scale_factor = votes / min_votes  # Direct ratio
+            radius = base_radius * np.sqrt(scale_factor)
+            radius = min(radius, max_radius)  # Cap maximum size
+
+            districts.append(
+                {
+                    "idx": idx,
+                    "district_code": district_code,
+                    "x": original_centroid.x,
+                    "y": original_centroid.y,
+                    "radius": radius,
+                    "votes": votes,
+                    "display_value": display_values.get(district_code, 0),
+                    "original_x": original_centroid.x,
+                    "original_y": original_centroid.y,
+                }
+            )
+        else:
+            districts.append(
+                {
+                    "idx": idx,
+                    "district_code": district_code,
+                    "x": original_centroid.x,
+                    "y": original_centroid.y,
+                    "radius": base_radius,
+                    "votes": 0,
+                    "display_value": 0,
+                    "original_x": original_centroid.x,
+                    "original_y": original_centroid.y,
+                }
+            )
+
+    # Force-directed algorithm to separate overlapping circles
+    def apply_forces(districts, iterations=50, force_strength=0.5, damping=0.8):
+        """Apply repulsive forces to separate overlapping districts"""
+        for iteration in range(iterations):
+            forces = {d["idx"]: {"fx": 0, "fy": 0} for d in districts}
+
+            # Calculate repulsive forces between overlapping districts
+            for i, d1 in enumerate(districts):
+                for j, d2 in enumerate(districts[i + 1 :], i + 1):
+                    dx = d2["x"] - d1["x"]
+                    dy = d2["y"] - d1["y"]
+                    distance = np.sqrt(dx * dx + dy * dy)
+                    min_distance = d1["radius"] + d2["radius"]
+
+                    if distance < min_distance and distance > 0:
+                        # Calculate overlap and repulsive force
+                        overlap = min_distance - distance
+                        force_magnitude = overlap * force_strength
+
+                        # Normalize direction
+                        fx = (dx / distance) * force_magnitude
+                        fy = (dy / distance) * force_magnitude
+
+                        # Apply forces (larger districts move less)
+                        weight1 = (
+                            d2["votes"] / (d1["votes"] + d2["votes"])
+                            if (d1["votes"] + d2["votes"]) > 0
+                            else 0.5
+                        )
+                        weight2 = 1 - weight1
+
+                        forces[d1["idx"]]["fx"] -= fx * weight1
+                        forces[d1["idx"]]["fy"] -= fy * weight1
+                        forces[d2["idx"]]["fx"] += fx * weight2
+                        forces[d2["idx"]]["fy"] += fy * weight2
+
+            # Apply attraction force back to original position
+            for d in districts:
+                attraction_force = 0.1
+                forces[d["idx"]]["fx"] += (d["original_x"] - d["x"]) * attraction_force
+                forces[d["idx"]]["fy"] += (d["original_y"] - d["y"]) * attraction_force
+
+            # Update positions with damping
+            for d in districts:
+                d["x"] += forces[d["idx"]]["fx"] * damping
+                d["y"] += forces[d["idx"]]["fy"] * damping
+
+            # Early termination if forces are small
+            total_force = sum(
+                np.sqrt(f["fx"] ** 2 + f["fy"] ** 2) for f in forces.values()
+            )
+            if total_force < 0.001:
+                break
+
+    # Apply force-directed positioning
+    apply_forces(districts)
+
+    # Create new geometries based on final positions
+    for d in districts:
+        idx = d["idx"]
+        new_center = Point(d["x"], d["y"])
+
+        # Create a circular geometry with proportional area
+        circle_geom = new_center.buffer(d["radius"])
+
+        cartogram_gdf.loc[idx, "geometry"] = circle_geom
+        cartogram_gdf.loc[idx, "vote_count"] = d["votes"]
+        cartogram_gdf.loc[idx, "display_value"] = d["display_value"]
+        cartogram_gdf.loc[idx, "radius"] = d["radius"]
+        cartogram_gdf.loc[idx, "moved_distance"] = np.sqrt(
+            (d["x"] - d["original_x"]) ** 2 + (d["y"] - d["original_y"]) ** 2
+        )
+
+    return cartogram_gdf
+
+
+def create_cartogram_map(cartogram_gdf, viz_type="Turnout", selected_party=None):
+    """Create a Folium map from cartogram GeoDataFrame with circular districts"""
+    if cartogram_gdf is None or cartogram_gdf.empty:
+        return None
+
+    # Calculate map center
+    bounds = cartogram_gdf.total_bounds
+    center_lat = (bounds[1] + bounds[3]) / 2
+    center_lon = (bounds[0] + bounds[2]) / 2
+
+    m = folium.Map(
+        location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap"
+    )
+
+    # Color mapping function (uses display_value, not vote_count)
+    def get_color_for_value(value, viz_type):
+        """Get color based on value and visualization type"""
+        if viz_type == "Turnout":
+            if value >= 60:
+                return "#006400"
+            elif value >= 50:
+                return "#228B22"
+            elif value >= 40:
+                return "#FFD700"
+            elif value >= 30:
+                return "#FFA500"
+            else:
+                return "#FF6347"
+        elif viz_type == "Estimated Voters":
+            if value >= 800:
+                return "#006400"
+            elif value >= 600:
+                return "#228B22"
+            elif value >= 400:
+                return "#FFD700"
+            elif value >= 200:
+                return "#FFA500"
+            else:
+                return "#FF6347"
+        elif viz_type == "Valid Votes":
+            if value >= 1000:
+                return "#006400"
+            elif value >= 800:
+                return "#228B22"
+            elif value >= 600:
+                return "#FFD700"
+            elif value >= 400:
+                return "#FFA500"
+            else:
+                return "#FF6347"
+        elif viz_type == "Party Results":
+            if value >= 25:
+                return "#006400"
+            elif value >= 20:
+                return "#228B22"
+            elif value >= 15:
+                return "#32CD32"
+            elif value >= 10:
+                return "#FFD700"
+            elif value >= 5:
+                return "#87CEEB"
+            else:
+                return "#4169E1"
+        return "#CCCCCC"
+
+    # Add each district to the map
+    for idx, row in cartogram_gdf.iterrows():
+        district_code = row.get("CISLO", "Unknown")
+        vote_count = row.get("vote_count", 0)
+        display_value = row.get("display_value", 0)
+        radius = row.get("radius", 0)
+        moved_distance = row.get("moved_distance", 0)
+
+        # Calculate area for display
+        area_km2 = np.pi * (radius * 111) ** 2  # Rough conversion to km²
+
+        # Create popup content
+        popup_html = f"""
+        <div style="font-family: Arial; width: 270px;">
+            <h4 style="color: #1f77b4;">Okrsek {district_code}</h4>
+            <hr>
+            <p><strong>Vote Count:</strong> {vote_count:,} votes</p>
+            <p><strong>Circle Area:</strong> {area_km2:.2f} km² (proportional)</p>
+            <p><strong>Moved Distance:</strong> {moved_distance * 111:.0f}m from original</p>
+            <hr>
+        """
+
+        if viz_type == "Turnout":
+            popup_html += f"<p><strong>Turnout:</strong> {display_value:.1f}%</p>"
+        elif viz_type == "Estimated Voters":
+            popup_html += (
+                f"<p><strong>Registered Voters:</strong> {display_value:,.0f}</p>"
+            )
+        elif viz_type == "Valid Votes":
+            popup_html += f"<p><strong>Valid Votes:</strong> {display_value:,.0f}</p>"
+        elif viz_type == "Party Results" and selected_party:
+            popup_html += (
+                f"<p><strong>{selected_party}:</strong> {display_value:.1f}%</p>"
+            )
+
+        popup_html += """
+            <hr>
+            <p style="font-size: 10px; color: #666;">
+                ⭕ Circle size = vote count<br>
+                🎨 Circle color = data value<br>
+                📍 Position adjusted to avoid overlaps
+            </p>
+        </div>
+        """
+
+        # Style the circle (color based on display_value)
+        color = get_color_for_value(display_value, viz_type)
+
+        # Create circle marker
+        folium.Circle(
+            location=[row.geometry.centroid.y, row.geometry.centroid.x],
+            radius=radius * 111000,  # Convert degrees to meters approximately
+            popup=folium.Popup(popup_html, max_width=320),
+            tooltip=folium.Tooltip(f"Okrsek {district_code}: {vote_count:,} votes"),
+            color="black",
+            weight=2,
+            fillColor=color,
+            fillOpacity=0.7,
+        ).add_to(m)
+
+        # Add district label
+        folium.Marker(
+            location=[row.geometry.centroid.y, row.geometry.centroid.x],
+            icon=folium.DivIcon(
+                html=f'<div style="font-size: 10px; color: white; font-weight: bold; text-shadow: 1px 1px 1px black;">{district_code}</div>',
+                icon_size=(50, 20),
+                icon_anchor=(25, 10),
+            ),
+        ).add_to(m)
+
+    # Add enhanced cartogram legend
+    legend_html = f"""
+    <div style="position: fixed; 
+                bottom: 50px; left: 50px; width: 220px; height: auto; min-height: 160px;
+                background-color: white; border:2px solid grey; z-index:9999; 
+                font-size:11px; font-family: Arial; padding: 8px; box-sizing: border-box;">
+        <h5 style="margin: 0 0 8px 0; font-size: 13px;">Force-Directed Cartogram</h5>
+        <p style="margin: 3px 0; font-style: italic; font-weight: bold; font-size: 10px;">
+            ⭕ <strong>Circle Size</strong> = Vote Count (proportional)<br>
+            🎨 <strong>Circle Color</strong> = {viz_type}<br>
+            📍 <strong>Position</strong> = Collision-avoided
+        </p>
+        <hr style="margin: 5px 0;">
+    """
+
+    # Add color legend
+    if viz_type == "Turnout":
+        legend_html += """
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥60% turnout</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 50-59%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 40-49%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 30-39%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF6347"></i> <30% turnout</p>
+        """
+    elif viz_type == "Estimated Voters":
+        legend_html += """
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥800 voters</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 600-799</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 400-599</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 200-399</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF6347"></i> <200 voters</p>
+        """
+    elif viz_type == "Valid Votes":
+        legend_html += """
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥1000 votes</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 800-999</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 600-799</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 400-599</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF6347"></i> <400 votes</p>
+        """
+    elif viz_type == "Party Results":
+        legend_html += """
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥25% support</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 20-24%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#32CD32"></i> 15-19%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 10-14%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#87CEEB"></i> 5-9%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#4169E1"></i> <5% support</p>
+        """
+
+    legend_html += "</div>"
+
+    m.get_root().html.add_child(folium.Element(legend_html))
+
+    return m
 
 
 def main():
