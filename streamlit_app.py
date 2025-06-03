@@ -923,11 +923,11 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     if map_type == "Cartogram":
         st.subheader("🗺️ Cartogram View")
         st.info(
-            "📐 **Cartogram**: Areas are scaled by **vote count** (larger areas = more total votes). Colors show the selected visualization data."
+            "📐 **Cartogram**: Areas are scaled by **vote count** (larger areas = more total votes). Colors show the selected visualization data. By default, circles stay at true geographic positions - enable collision avoidance if overlap reduction is more important than geographic accuracy."
         )
 
         # Add base size control
-        col_a, col_b = st.columns([2, 1])
+        col_a, col_b, col_c = st.columns([2, 1, 1])
         with col_a:
             st.write("**Adjust Circle Size:**")
         with col_b:
@@ -940,10 +940,21 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 format="%.3f",
                 help="Controls the overall size of circles. Larger values = bigger circles.",
             )
+        with col_c:
+            collision_avoidance = st.checkbox(
+                "Collision Avoidance",
+                value=False,
+                help="When enabled, circles are moved to avoid overlaps but may drift from geographic accuracy. When disabled, circles stay at true geographic positions (recommended).",
+            )
 
         # Create cartogram
         cartogram_gdf = create_cartogram(
-            filtered_geojson, electoral_data, viz_type, selected_party, base_size
+            filtered_geojson,
+            electoral_data,
+            viz_type,
+            selected_party,
+            base_size,
+            collision_avoidance,
         )
 
         if cartogram_gdf is not None:
@@ -958,7 +969,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                     width=None,  # Full width
                     height=900,  # Taller map
                     returned_objects=["last_clicked", "last_object_clicked"],
-                    key=f"cartogram_{viz_type}_{selected_party}_{base_size}",  # Include base_size in key
+                    key=f"cartogram_{viz_type}_{selected_party}_{base_size}_{collision_avoidance}",  # Include collision_avoidance in key
                 )
             else:
                 st.error("Failed to create cartogram map")
@@ -1407,8 +1418,9 @@ def create_cartogram(
     viz_type="Turnout",
     selected_party=None,
     base_size=0.002,
+    collision_avoidance=False,
 ):
-    """Create a force-directed cartogram with areas proportional to vote counts and collision avoidance"""
+    """Create a force-directed cartogram with areas proportional to vote counts and optional collision avoidance"""
     if not geojson_data or "features" not in geojson_data:
         return None
 
@@ -1484,7 +1496,7 @@ def create_cartogram(
     if not vote_counts:
         return gdf
 
-    # Create cartogram with direct proportionality and collision avoidance
+    # Create cartogram with direct proportionality and optional collision avoidance
     cartogram_gdf = gdf.copy()
 
     # Calculate areas directly proportional to vote counts
@@ -1539,102 +1551,108 @@ def create_cartogram(
                 }
             )
 
-    # Force-directed algorithm to separate overlapping circles with gentle forces
-    def apply_forces(districts, iterations=100, force_strength=2.0, damping=0.9):
-        """Apply robust repulsive forces to eliminate overlaps while staying reasonably close to original positions"""
-        for iteration in range(iterations):
-            forces = {d["idx"]: {"fx": 0, "fy": 0} for d in districts}
-            overlaps_detected = 0
-            max_overlap = 0
+    # Only apply collision avoidance if requested
+    if collision_avoidance:
+        # Force-directed algorithm to separate overlapping circles with gentle forces
+        def apply_forces(districts, iterations=100, force_strength=2.0, damping=0.9):
+            """Apply robust repulsive forces to eliminate overlaps while staying reasonably close to original positions"""
+            for iteration in range(iterations):
+                forces = {d["idx"]: {"fx": 0, "fy": 0} for d in districts}
+                overlaps_detected = 0
+                max_overlap = 0
 
-            # Calculate repulsive forces for all overlapping pairs
-            for i, d1 in enumerate(districts):
-                for j, d2 in enumerate(districts[i + 1 :], i + 1):
-                    dx = d2["x"] - d1["x"]
-                    dy = d2["y"] - d1["y"]
-                    distance = np.sqrt(dx * dx + dy * dy)
+                # Calculate repulsive forces for all overlapping pairs
+                for i, d1 in enumerate(districts):
+                    for j, d2 in enumerate(districts[i + 1 :], i + 1):
+                        dx = d2["x"] - d1["x"]
+                        dy = d2["y"] - d1["y"]
+                        distance = np.sqrt(dx * dx + dy * dy)
 
-                    # Required minimum distance with small buffer
-                    min_distance = (d1["radius"] + d2["radius"]) * 1.02
+                        # Required minimum distance with small buffer
+                        min_distance = (d1["radius"] + d2["radius"]) * 1.02
 
-                    if distance < min_distance:
-                        overlaps_detected += 1
-                        overlap = min_distance - distance
-                        max_overlap = max(max_overlap, overlap)
+                        if distance < min_distance:
+                            overlaps_detected += 1
+                            overlap = min_distance - distance
+                            max_overlap = max(max_overlap, overlap)
 
-                        # Handle case where circles are exactly on top of each other
-                        if distance < 0.00001:
-                            # Push them apart in random directions
-                            angle = np.random.random() * 2 * np.pi
-                            dx = np.cos(angle) * min_distance
-                            dy = np.sin(angle) * min_distance
-                            distance = min_distance
+                            # Handle case where circles are exactly on top of each other
+                            if distance < 0.00001:
+                                # Push them apart in random directions
+                                angle = np.random.random() * 2 * np.pi
+                                dx = np.cos(angle) * min_distance
+                                dy = np.sin(angle) * min_distance
+                                distance = min_distance
 
-                        # Calculate repulsive force - stronger for larger overlaps
-                        force_magnitude = overlap * force_strength * 2
+                            # Calculate repulsive force - stronger for larger overlaps
+                            force_magnitude = overlap * force_strength * 2
 
-                        # Normalize direction and apply force
-                        fx = (dx / distance) * force_magnitude
-                        fy = (dy / distance) * force_magnitude
+                            # Normalize direction and apply force
+                            fx = (dx / distance) * force_magnitude
+                            fy = (dy / distance) * force_magnitude
 
-                        # Weight by circle size - smaller circles move more
-                        total_radius = d1["radius"] + d2["radius"]
-                        weight1 = (
-                            d2["radius"] / total_radius
-                        )  # d1 moves based on d2's size
-                        weight2 = (
-                            d1["radius"] / total_radius
-                        )  # d2 moves based on d1's size
+                            # Weight by circle size - smaller circles move more
+                            total_radius = d1["radius"] + d2["radius"]
+                            weight1 = (
+                                d2["radius"] / total_radius
+                            )  # d1 moves based on d2's size
+                            weight2 = (
+                                d1["radius"] / total_radius
+                            )  # d2 moves based on d1's size
 
-                        forces[d1["idx"]]["fx"] -= fx * weight1
-                        forces[d1["idx"]]["fy"] -= fy * weight1
-                        forces[d2["idx"]]["fx"] += fx * weight2
-                        forces[d2["idx"]]["fy"] += fy * weight2
+                            forces[d1["idx"]]["fx"] -= fx * weight1
+                            forces[d1["idx"]]["fy"] -= fy * weight1
+                            forces[d2["idx"]]["fx"] += fx * weight2
+                            forces[d2["idx"]]["fy"] += fy * weight2
 
-            # Moderate attraction force back to original position
-            for d in districts:
-                attraction_force = 0.1  # Balanced attraction
-                forces[d["idx"]]["fx"] += (d["original_x"] - d["x"]) * attraction_force
-                forces[d["idx"]]["fy"] += (d["original_y"] - d["y"]) * attraction_force
+                # Moderate attraction force back to original position
+                for d in districts:
+                    attraction_force = 0.1  # Balanced attraction
+                    forces[d["idx"]]["fx"] += (
+                        d["original_x"] - d["x"]
+                    ) * attraction_force
+                    forces[d["idx"]]["fy"] += (
+                        d["original_y"] - d["y"]
+                    ) * attraction_force
 
-            # Update positions with damping
-            for d in districts:
-                d["x"] += forces[d["idx"]]["fx"] * damping
-                d["y"] += forces[d["idx"]]["fy"] * damping
+                # Update positions with damping
+                for d in districts:
+                    d["x"] += forces[d["idx"]]["fx"] * damping
+                    d["y"] += forces[d["idx"]]["fy"] * damping
 
-            # Continue until no overlaps or very small overlap remains
-            if overlaps_detected == 0 or max_overlap < 0.00001:
-                break
+                # Continue until no overlaps or very small overlap remains
+                if overlaps_detected == 0 or max_overlap < 0.00001:
+                    break
 
-        # Final pass: if any overlaps remain, use direct separation
-        if overlaps_detected > 0:
-            for i, d1 in enumerate(districts):
-                for j, d2 in enumerate(districts[i + 1 :], i + 1):
-                    dx = d2["x"] - d1["x"]
-                    dy = d2["y"] - d1["y"]
-                    distance = np.sqrt(dx * dx + dy * dy)
-                    min_distance = (d1["radius"] + d2["radius"]) * 1.02
+            # Final pass: if any overlaps remain, use direct separation
+            if overlaps_detected > 0:
+                for i, d1 in enumerate(districts):
+                    for j, d2 in enumerate(districts[i + 1 :], i + 1):
+                        dx = d2["x"] - d1["x"]
+                        dy = d2["y"] - d1["y"]
+                        distance = np.sqrt(dx * dx + dy * dy)
+                        min_distance = (d1["radius"] + d2["radius"]) * 1.02
 
-                    if distance < min_distance:
-                        # Direct separation - move apart to minimum distance
-                        if distance < 0.00001:
-                            angle = np.random.random() * 2 * np.pi
-                            dx = np.cos(angle) * min_distance
-                            dy = np.sin(angle) * min_distance
-                            distance = min_distance
+                        if distance < min_distance:
+                            # Direct separation - move apart to minimum distance
+                            if distance < 0.00001:
+                                angle = np.random.random() * 2 * np.pi
+                                dx = np.cos(angle) * min_distance
+                                dy = np.sin(angle) * min_distance
+                                distance = min_distance
 
-                        # Calculate how much to move each circle
-                        separation_needed = min_distance - distance
-                        move_ratio = separation_needed / (2 * distance)
+                            # Calculate how much to move each circle
+                            separation_needed = min_distance - distance
+                            move_ratio = separation_needed / (2 * distance)
 
-                        # Move both circles apart equally
-                        d1["x"] -= dx * move_ratio
-                        d1["y"] -= dy * move_ratio
-                        d2["x"] += dx * move_ratio
-                        d2["y"] += dy * move_ratio
+                            # Move both circles apart equally
+                            d1["x"] -= dx * move_ratio
+                            d1["y"] -= dy * move_ratio
+                            d2["x"] += dx * move_ratio
+                            d2["y"] += dy * move_ratio
 
-    # Apply force-directed positioning
-    apply_forces(districts)
+        # Apply force-directed positioning only if collision avoidance is enabled
+        apply_forces(districts)
 
     # Create new geometries based on final positions
     for d in districts:
