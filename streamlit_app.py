@@ -66,11 +66,46 @@ def load_geojson_data():
     url = "https://www.volby.cz/opendata/kv2022/geo/vol_okrsky_2022g100.geojson"
 
     try:
-        response = requests.get(url, timeout=30)
+        st.info("🌐 Downloading electoral district boundaries (8MB)...")
+        response = requests.get(url, timeout=60)  # Increased timeout
         response.raise_for_status()
-        return response.json()
+
+        st.info("📊 Parsing GeoJSON data...")
+        geojson_data = response.json()
+
+        # Validate the data structure
+        if not isinstance(geojson_data, dict):
+            raise ValueError("Invalid GeoJSON format: not a dictionary")
+
+        if geojson_data.get("type") != "FeatureCollection":
+            raise ValueError(f"Invalid GeoJSON type: {geojson_data.get('type')}")
+
+        features = geojson_data.get("features", [])
+        if not features:
+            raise ValueError("No features found in GeoJSON")
+
+        st.success(f"✅ Loaded {len(features):,} electoral districts")
+        return geojson_data
+
+    except requests.exceptions.Timeout:
+        st.error(
+            "⏱️ Download timed out. The geographic data file is large (8MB). Please try again or check your internet connection."
+        )
+        return None
+    except requests.exceptions.ConnectionError:
+        st.error("🔌 Connection error. Please check your internet connection.")
+        return None
+    except requests.exceptions.HTTPError as e:
+        st.error(f"🌐 HTTP error downloading GeoJSON data: {e}")
+        return None
+    except ValueError as e:
+        st.error(f"📊 Data format error: {e}")
+        return None
     except Exception as e:
-        st.error(f"Failed to download GeoJSON data: {e}")
+        st.error(f"❌ Unexpected error loading GeoJSON data: {e}")
+        st.error(
+            "💡 Try refreshing the page or contact support if the problem persists."
+        )
         return None
 
 
@@ -755,11 +790,27 @@ def display_turnout_analysis(data):
 
 
 def display_geographic_analysis(geojson_data, electoral_data=None):
-    """Display geographic analysis with filtered electoral districts map for Prague 5 okrseks"""
-    st.subheader("🗺️ Geographic Analysis - Prague 5 Okrseks")
+    """Display geographic analysis with filtered electoral districts map for the selected municipality"""
+    st.subheader("🗺️ Geographic Analysis - Municipality Districts")
 
     if not geojson_data:
         st.error("Unable to load GeoJSON data. Please check your internet connection.")
+
+        # Add cache clearing option
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info(
+                "💡 If you're having repeated issues, try clearing the geographic data cache."
+            )
+        with col2:
+            if st.button(
+                "🔄 Clear Cache",
+                help="Clear cached geographic data and try downloading again",
+            ):
+                # Clear the cache for load_geojson_data
+                load_geojson_data.clear()
+                st.success("Cache cleared! Please refresh the page.")
+                st.rerun()
         return
 
     # Check if we have electoral data to overlay
@@ -770,37 +821,21 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     if electoral_data and "district_party_results" in electoral_data:
         party_data = electoral_data["district_party_results"]
 
-    # Filter GeoJSON for Prague 5 okrseks
-    prague5_features = []
-    prague5_municipality_code = "554782"  # Prague 5 municipality code
-
-    if "features" in geojson_data:
-        for feature in geojson_data["features"]:
-            properties = feature.get("properties", {})
-
-            # Check if this feature belongs to Prague 5
-            if properties.get("OBEC") == prague5_municipality_code:
-                # Check if CISLO (district number) matches our okrseks (5001-5081)
-                cislo = properties.get("CISLO", "")
-                try:
-                    district_num = int(cislo)
-                    if 5001 <= district_num <= 5081:
-                        prague5_features.append(feature)
-                except (ValueError, TypeError):
-                    continue
+    # Use the already filtered GeoJSON data (filtered by main function)
+    municipality_features = geojson_data.get("features", [])
 
     st.info(
-        f"Found {len(prague5_features)} Prague 5 okrseks in GeoJSON data out of {len(geojson_data.get('features', []))} total features"
+        f"Found {len(municipality_features)} electoral districts for this municipality"
     )
 
-    if not prague5_features:
+    if not municipality_features:
         st.warning(
-            "No Prague 5 okrseks found in GeoJSON data. Showing full map instead."
+            "No electoral districts found for this municipality in the geographic data."
         )
-        prague5_features = geojson_data.get("features", [])
+        return
 
-    # Create filtered GeoJSON for Prague 5 only
-    filtered_geojson = {"type": "FeatureCollection", "features": prague5_features}
+    # The geojson_data is already filtered for the selected municipality
+    filtered_geojson = geojson_data
 
     # Map visualization controls
     st.subheader("📊 Map Visualization Controls")
@@ -972,16 +1007,16 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Prague 5 Okrseks on Map", len(prague5_features))
+        st.metric("Electoral Districts on Map", len(municipality_features))
 
     with col2:
         if district_data is not None and isinstance(district_data, pd.DataFrame):
-            unique_okrseks = (
+            unique_districts = (
                 len(district_data["district_code"].unique())
                 if "district_code" in district_data.columns
                 else 0
             )
-            st.metric("Okrseks with Data", unique_okrseks)
+            st.metric("Districts with Data", unique_districts)
         else:
             st.metric("Electoral Data", "Not Available")
 
@@ -994,7 +1029,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 else set()
             )
             geojson_codes = set(
-                f.get("properties", {}).get("CISLO", "") for f in prague5_features
+                f.get("properties", {}).get("CISLO", "") for f in municipality_features
             )
             matches = len(available_codes.intersection(geojson_codes))
             st.metric("Map-Data Matches", matches)
@@ -1007,7 +1042,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         current_viz = f"{selected_party} results"
 
     st.info(
-        f"💡 Click on any okrsek (polling district) on the map to see its electoral data. Currently showing: **{current_viz}**"
+        f"💡 Click on any electoral district on the map to see its electoral data. Currently showing: **{current_viz}**"
     )
 
 
