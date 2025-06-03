@@ -1187,11 +1187,13 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         st.subheader("🔵 Dot Density Map")
         st.info(
             "🔵 **Dot Density**: Each dot represents a fixed number of votes (e.g., 1 dot = 100 votes). "
-            "Dots are evenly distributed within each electoral district. Count the dots to see vote distribution!"
+            "Dots are evenly distributed within each electoral district. "
+            "When color scaling is enabled, dot colors show vote share: 🔴 red (low) → 🟡 yellow (moderate) → 🟢 green (high). "
+            "Count the dots to see vote distribution!"
         )
 
         # Dot density controls
-        col_a, col_b, col_c = st.columns([1, 1, 1])
+        col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
         with col_a:
             votes_per_dot = st.selectbox(
                 "Votes per dot:",
@@ -1216,6 +1218,12 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 value=2,
                 help="Visual size of each dot on the map.",
             )
+        with col_d:
+            use_color_scale = st.checkbox(
+                "Color by vote share",
+                value=True,
+                help="Color dots based on vote share: red (low) to green (high). When disabled, uses single color.",
+            )
 
         # Create dot density map
         if district_data is not None and isinstance(district_data, pd.DataFrame):
@@ -1232,6 +1240,15 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                     "valid_votes"
                 ].fillna(0)
                 dot_color = "#de425b"  # Red for votes
+
+                # For color scaling with valid votes, use turnout percentage
+                if use_color_scale:
+                    color_scale_data = district_data.set_index("district_code")[
+                        "turnout_percentage"
+                    ].fillna(0)
+                else:
+                    color_scale_data = None
+
             elif viz_type == "Party Results" and selected_party:
                 # Use party votes for dot density
                 if party_data is not None and isinstance(party_data, pd.DataFrame):
@@ -1249,18 +1266,38 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                             0
                         )
                         dot_color = "#2166ac"  # Blue for party votes
+
+                        # For color scaling with party results, use party percentage
+                        if use_color_scale:
+                            # Calculate party percentage for each district
+                            party_percentages = party_subset.groupby("district_code")[
+                                "percentage"
+                            ].mean()
+                            color_scale_data = party_percentages.reindex(
+                                gdf["district_code"]
+                            ).fillna(0)
+                        else:
+                            color_scale_data = None
                     else:
                         vote_series = pd.Series(0, index=gdf["district_code"])
                         dot_color = "#de425b"
+                        color_scale_data = None
                 else:
                     vote_series = pd.Series(0, index=gdf["district_code"])
                     dot_color = "#de425b"
+                    color_scale_data = None
             else:
                 # Fallback to valid votes
                 vote_series = district_data.set_index("district_code")[
                     "valid_votes"
                 ].fillna(0)
                 dot_color = "#de425b"
+                if use_color_scale:
+                    color_scale_data = district_data.set_index("district_code")[
+                        "turnout_percentage"
+                    ].fillna(0)
+                else:
+                    color_scale_data = None
 
             # Create the icon fill layer
             try:
@@ -1289,11 +1326,44 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                     spacing_m=dot_spacing,
                     dot_radius_px=dot_size,
                     dot_color=dot_color,
+                    color_scale_data=color_scale_data,
+                    use_color_scale=use_color_scale,
                 )
                 icon_layer.add_to(dot_map)
 
                 # Add layer control
                 folium.LayerControl().add_to(dot_map)
+
+                # Add color scale legend when enabled
+                if use_color_scale:
+                    if viz_type == "Party Results" and selected_party:
+                        legend_title = f"{selected_party} Vote Share"
+                        legend_type = "Party Performance"
+                    else:
+                        legend_title = "Turnout Percentage"
+                        legend_type = "District Turnout"
+
+                    color_legend_html = f"""
+                    <div style="position: fixed; 
+                                bottom: 50px; right: 50px; width: 200px; height: auto;
+                                background-color: white; border:2px solid grey; z-index:9999; 
+                                font-size:11px; font-family: Arial; padding: 8px; box-sizing: border-box;">
+                        <h5 style="margin: 0 0 8px 0; font-size: 13px;">Dot Color Scale</h5>
+                        <p style="margin: 3px 0; font-weight: bold;">{legend_title}</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥25% (Excellent)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 20-24% (Very Good)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#32CD32"></i> 15-19% (Good)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 10-14% (Moderate)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF8C00"></i> 5-9% (Low)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF4500"></i> <5% (Very Low)</p>
+                        <hr style="margin: 5px 0;">
+                        <p style="font-size: 10px; color: #666;">
+                            🔵 Dot count = vote quantity<br>
+                            🎨 Dot color = {legend_type.lower()}
+                        </p>
+                    </div>
+                    """
+                    dot_map.get_root().html.add_child(folium.Element(color_legend_html))
 
                 # Auto-fit the map
                 if not gdf.empty:
@@ -1312,7 +1382,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                     width=None,
                     height=900,
                     returned_objects=["last_clicked", "last_object_clicked"],
-                    key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}",
+                    key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}_{use_color_scale}",
                 )
 
             except Exception as e:
@@ -2310,11 +2380,32 @@ def icon_fill_layer(
     dot_radius_px=2,
     dot_color="#de425b",
     seed=42,
+    color_scale_data=None,  # pd.Series indexed by district_code, holding percentages for color scaling
+    use_color_scale=False,  # Whether to use color scaling instead of single color
 ):
     """
     Returns a folium.FeatureGroup with dot-fills for every district.
     districts_gdf must contain columns: ['district_code', 'geometry'] in EPSG:4326.
+
+    If use_color_scale=True and color_scale_data is provided, dots will be colored
+    based on vote share percentages (red=low, green=high).
     """
+
+    def get_color_from_percentage(percentage):
+        """Convert percentage to color scale: red (low) to green (high)"""
+        if percentage >= 25:
+            return "#006400"  # Dark green (very high)
+        elif percentage >= 20:
+            return "#228B22"  # Forest green (high)
+        elif percentage >= 15:
+            return "#32CD32"  # Lime green (good)
+        elif percentage >= 10:
+            return "#FFD700"  # Gold (moderate)
+        elif percentage >= 5:
+            return "#FF8C00"  # Dark orange (low)
+        else:
+            return "#FF4500"  # Red orange (very low)
+
     rng = np.random.default_rng(seed)
 
     # Project to a metric CRS so 'spacing_m' means metres.
@@ -2350,15 +2441,24 @@ def icon_fill_layer(
         # back to lat-lon
         pts_ll = gpd.GeoSeries(pts, crs=3857).to_crs(4326)
 
+        # Determine dot color
+        if use_color_scale and color_scale_data is not None:
+            percentage = color_scale_data.get(code, 0)
+            dot_color_final = get_color_from_percentage(percentage)
+            tooltip_suffix = f" | {percentage:.1f}% vote share"
+        else:
+            dot_color_final = dot_color
+            tooltip_suffix = ""
+
         for p in pts_ll:
             marker = folium.CircleMarker(
                 location=[p.y, p.x],
                 radius=dot_radius_px,
-                color=dot_color,
+                color=dot_color_final,
                 fill=True,
                 fill_opacity=0.9,
                 stroke=False,
-                tooltip=f"Okrsek {code}: {votes:,} votes (1 dot = {k_votes_per_dot} votes)",
+                tooltip=f"Okrsek {code}: {votes:,} votes (1 dot = {k_votes_per_dot} votes){tooltip_suffix}",
             )
             features.append(marker)
 
