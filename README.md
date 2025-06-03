@@ -145,20 +145,52 @@ volebni-analyza/
 │   ├── visualizer.py            # Interactive chart generation
 │   ├── analyzer.py              # Statistical analysis engine
 │   └── main.py                  # Main pipeline script
+├── input/                        # Input data (source files)
+│   └── raw/                     # Raw source data files
+│       ├── *.xml               # Electoral district XML files
+│       ├── *.csv               # Election results CSV files
+│       └── ...                 # Other raw data sources
+├── output/                       # Generated data and outputs
+│   ├── processed/               # Processed and cleaned data
+│   │   ├── prague5_municipal_*.json
+│   │   └── prague5_comprehensive.json
+│   ├── detailed/                # Detailed analysis data
+│   │   └── prague5_electoral_districts.json
+│   ├── results/                 # Final analysis results
+│   │   ├── analysis_summary.json
+│   │   └── prague5_comprehensive_results.json
+│   ├── visualizations/          # Generated charts and maps
+│   │   ├── index.html
+│   │   ├── turnout_analysis.html
+│   │   └── districts_map.html
+│   └── reports/                 # Analysis reports
+│       ├── comprehensive_analysis_report.json
+│       └── analysis_summary.md
 ├── streamlit_app.py             # Interactive Streamlit dashboard
 ├── run_streamlit.py             # Streamlit launcher script
 ├── run_analysis.py              # Main analysis pipeline
-├── data/                        # Generated data and outputs
-│   ├── raw/                     # Raw data (XML batches, HTML responses)
-│   ├── processed/               # Cleaned datasets (CSV processing output)
-│   ├── detailed/                # District-level and granular results
-│   ├── results/                 # Complete election results (JSON)
-│   ├── visualizations/          # Interactive HTML charts
-│   └── reports/                 # Analysis reports
+├── migrate_data_structure.py    # Data structure migration utility
+├── DATA_STRUCTURE.md            # Documentation of directory structure
 ├── pyproject.toml              # Project dependencies and configuration
 ├── uv.lock                     # Dependency lock file
 └── README.md                   # This documentation
 ```
+
+### Directory Structure
+
+#### Input Directory (`input/`)
+- **`input/raw/`**: Original, unmodified source data files
+  - XML files with electoral district information from volby.cz API
+  - CSV files with election results (if available)
+  - Any other source data files
+
+#### Output Directory (`output/`)
+All generated/processed data is organized by type:
+- **`output/processed/`**: Cleaned and processed datasets ready for analysis
+- **`output/detailed/`**: Detailed analysis with enriched data
+- **`output/results/`**: Final analysis results and findings
+- **`output/visualizations/`**: Interactive HTML charts and maps
+- **`output/reports/`**: Generated analysis reports and documentation
 
 ## Generated Outputs
 
@@ -168,18 +200,18 @@ volebni-analyza/
 - **Real-time Analysis**: Live data exploration and visualization
 
 ### 📊 Complete Election Data
-- **`data/results/prague5_comprehensive_results.json`** - Complete results with all candidate data
-- **`data/results/prague5_complete_results.json`** - Main results page data
-- **`data/results/analysis_summary.json`** - Pipeline execution summary
+- **`output/results/prague5_comprehensive_results.json`** - Complete results with all candidate data
+- **`output/results/prague5_complete_results.json`** - Main results page data
+- **`output/results/analysis_summary.json`** - Pipeline execution summary
 
 ### 📑 Analysis Reports
-- **`data/reports/analysis_summary.md`** - Human-readable summary report  
-- **`comprehensive_analysis_report.json`** - Detailed statistical analysis
+- **`output/reports/analysis_summary.md`** - Human-readable summary report  
+- **`output/reports/comprehensive_analysis_report.json`** - Detailed statistical analysis
 
 ### 📦 Datasets
-- **`data/raw/prague5_districts.json`** - List of all 81 electoral districts
-- **`data/detailed/prague5_detailed_results.json`** - District-level results
-- **`data/processed/prague5_*.json`** - Processed datasets by year
+- **`output/processed/prague5_districts.json`** - List of all 81 electoral districts
+- **`output/detailed/prague5_detailed_results.json`** - District-level results
+- **`output/processed/prague5_*.json`** - Processed datasets by year
 
 ## Data Sources
 
@@ -202,9 +234,9 @@ volebni-analyza/
 - **Coverage**: Individual electoral districts (okrsky) with granular vote data
 - **Current Approach**: Downloads relevant batches, filters locally for Prague 5 data
 - **Files Generated**: 
-  - `data/raw/electoral_districts_batch_30.xml` - Contains Prague 5 district data
-  - `data/raw/prague5_districts_batch100.xml` - Additional Prague 5 data
-  - `data/detailed/prague5_electoral_districts.json` - Processed district results
+  - `input/raw/electoral_districts_batch_30.xml` - Contains Prague 5 district data
+  - `input/raw/prague5_districts_batch100.xml` - Additional Prague 5 data
+  - `output/detailed/prague5_electoral_districts.json` - Processed district results
 
 ### 🚀 Optimization Opportunity
 **TODO**: The XML API likely supports direct municipality/district filtering parameters that could eliminate the need to download and filter batches locally. Potential parameters to investigate:

@@ -6,6 +6,7 @@ import os
 import logging
 from shapely.geometry import Point, Polygon
 import numpy as np
+from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
@@ -19,12 +20,19 @@ class Prague5DataProcessor:
     Data processor for Prague 5 election and geographic data
     """
 
-    def __init__(self, data_dir="data"):
-        self.data_dir = data_dir
+    def __init__(self, output_dir="output", input_dir="input"):
+        self.output_dir = Path(output_dir)
+        self.input_dir = Path(input_dir)
         self.prague_5_code = "500143"  # Municipality code for Prague 5
         self.prague_5_districts = list(
             range(5001, 5082)
         )  # Electoral districts 5001-5081
+
+        # Ensure output directories exist
+        self.output_dir.mkdir(exist_ok=True)
+        (self.output_dir / "processed").mkdir(exist_ok=True)
+        (self.output_dir / "detailed").mkdir(exist_ok=True)
+        (self.output_dir / "results").mkdir(exist_ok=True)
 
     def read_csu_csv(self, filepath, encoding="utf-8"):
         """Read ČSÚ CSV files with proper encoding handling"""
@@ -124,8 +132,8 @@ class Prague5DataProcessor:
         """Process municipal election results for Prague 5"""
         logger.info(f"Processing municipal results for {year}")
 
-        results_dir = os.path.join(self.data_dir, "raw")
-        processed_dir = os.path.join(self.data_dir, "processed")
+        results_dir = self.input_dir / "raw"
+        processed_dir = self.output_dir / "processed"
 
         # Find relevant files
         candidates_file = None
@@ -136,13 +144,13 @@ class Prague5DataProcessor:
         for filename in os.listdir(results_dir):
             if year in filename and filename.endswith(".csv"):
                 if "kandidat" in filename.lower():
-                    candidates_file = os.path.join(results_dir, filename)
+                    candidates_file = results_dir / filename
                 elif "vysledek" in filename.lower() or "pv_" in filename.lower():
-                    results_file = os.path.join(results_dir, filename)
+                    results_file = results_dir / filename
                 elif "strana" in filename.lower():
-                    parties_file = os.path.join(results_dir, filename)
+                    parties_file = results_dir / filename
                 elif "okrsky" in filename.lower():
-                    districts_file = os.path.join(results_dir, filename)
+                    districts_file = results_dir / filename
 
         processed_data = {}
 
@@ -191,7 +199,7 @@ class Prague5DataProcessor:
                 self.validate_prague5_districts(prague5_districts)
 
         # Save processed data
-        output_file = os.path.join(processed_dir, f"prague5_municipal_{year}.json")
+        output_file = processed_dir / f"prague5_municipal_{year}.json"
 
         # Convert DataFrames to JSON-serializable format
         json_data = {}
@@ -378,7 +386,7 @@ class Prague5DataProcessor:
                 }
 
         # Process electoral districts XML files from raw directory
-        xml_dir = os.path.join(self.data_dir, "raw")
+        xml_dir = self.input_dir / "raw"
         if os.path.exists(xml_dir):
             all_prague5_districts = []
 
@@ -391,7 +399,7 @@ class Prague5DataProcessor:
             logger.info(f"Found {len(xml_files)} XML files to process")
 
             for xml_file in xml_files:  # Process all XML files to get all districts
-                xml_path = os.path.join(xml_dir, xml_file)
+                xml_path = xml_dir / xml_file
                 logger.info(f"Processing {xml_file}")
                 districts_df = self.parse_xml_electoral_districts(xml_path)
                 if districts_df is not None and not districts_df.empty:
@@ -423,9 +431,7 @@ class Prague5DataProcessor:
                     )
 
         # Save comprehensive results
-        output_file = os.path.join(
-            self.data_dir, "processed", "prague5_comprehensive.json"
-        )
+        output_file = self.output_dir / "processed" / "prague5_comprehensive.json"
 
         # Convert to JSON-serializable format
         json_data = {}

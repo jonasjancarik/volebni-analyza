@@ -70,37 +70,49 @@ def load_geojson_data():
 
 @st.cache_data
 def load_processed_data():
-    """Load processed electoral data from the analysis pipeline"""
-    data_dir = Path(__file__).parent / "data"
+    """Load processed election data from CSV files"""
+    csv_dir = "output/csv"
 
-    # Try to load different data sources
-    data_sources = {
-        "processed": data_dir / "processed",
-        "detailed": data_dir / "detailed",
-        "results": data_dir / "results",
-        "raw": data_dir / "raw",
-    }
+    if not os.path.exists(csv_dir):
+        st.error(f"CSV data directory not found: {csv_dir}")
+        st.info("Run the data conversion: `uv run python src/data_exporters.py`")
+        return {}
 
-    loaded_data = {}
+    data = {}
 
-    for source_name, source_path in data_sources.items():
-        if source_path.exists():
-            for file_path in source_path.glob("*.json"):
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        loaded_data[f"{source_name}_{file_path.stem}"] = json.load(f)
-                except Exception as e:
-                    st.warning(f"Could not load {file_path}: {e}")
+    # Load party results
+    party_file = os.path.join(csv_dir, "party_results.csv")
+    if os.path.exists(party_file):
+        try:
+            data["party_results"] = pd.read_csv(party_file)
+            st.success(f"✅ Loaded {len(data['party_results'])} parties from CSV")
+        except Exception as e:
+            st.error(f"Failed to load party results: {e}")
 
-            for file_path in source_path.glob("*.csv"):
-                try:
-                    loaded_data[f"{source_name}_{file_path.stem}"] = pd.read_csv(
-                        file_path
-                    )
-                except Exception as e:
-                    st.warning(f"Could not load {file_path}: {e}")
+    # Load district data
+    district_file = os.path.join(csv_dir, "district_data.csv")
+    if os.path.exists(district_file):
+        try:
+            data["district_data"] = pd.read_csv(district_file)
+            st.success(f"✅ Loaded {len(data['district_data'])} districts from CSV")
+        except Exception as e:
+            st.error(f"Failed to load district data: {e}")
 
-    return loaded_data
+    # Load summary statistics
+    summary_file = os.path.join(csv_dir, "summary_statistics.csv")
+    if os.path.exists(summary_file):
+        try:
+            summary_df = pd.read_csv(summary_file)
+            # Convert summary to dictionary format for compatibility
+            data["summary_statistics"] = {}
+            for _, row in summary_df.iterrows():
+                if row["category"] == "statistics":
+                    data["summary_statistics"][row["metric"]] = row["value"]
+            st.success(f"✅ Loaded summary statistics from CSV")
+        except Exception as e:
+            st.error(f"Failed to load summary statistics: {e}")
+
+    return data
 
 
 def create_folium_map(geojson_data, electoral_data=None):
@@ -128,315 +140,303 @@ def create_folium_map(geojson_data, electoral_data=None):
 
 
 def display_electoral_overview(data):
-    """Display overview statistics"""
+    """Display overview statistics using CSV data"""
     st.subheader("📊 Electoral Overview")
 
     # Create columns for metrics
     col1, col2, col3, col4 = st.columns(4)
 
-    # Try to extract meaningful statistics from available data
+    # Extract statistics from CSV data
     total_districts = 0
     avg_turnout = 0
     total_voters = 0
     total_parties = 0
 
-    # Look for relevant data in loaded datasets
-    for key, dataset in data.items():
-        if isinstance(dataset, dict):
-            # Check for detailed statistics first
-            if "detailed_statistics" in dataset:
-                stats = dataset["detailed_statistics"]
-                total_districts = stats.get("total_districts_analyzed", 0)
-                avg_turnout = stats.get("average_turnout", 0)
-                total_voters = stats.get("total_eligible_voters", 0)
-                break
+    # Get summary statistics
+    if "summary_statistics" in data:
+        stats = data["summary_statistics"]
+        total_voters = (
+            int(stats.get("registered_voters", 0))
+            if stats.get("registered_voters")
+            else 0
+        )
+        avg_turnout = (
+            float(stats.get("turnout_percentage", 0))
+            if stats.get("turnout_percentage")
+            else 0
+        )
+        total_districts = (
+            int(stats.get("electoral_districts", 0))
+            if stats.get("electoral_districts")
+            else 0
+        )
 
-            # Check for summary statistics
-            elif "summary_statistics" in dataset:
-                stats = dataset["summary_statistics"]
-                total_voters = stats.get("registered_voters", 0)
-                turnout_pct = stats.get("turnout_percentage", 0)
-                if isinstance(turnout_pct, (int, float)):
-                    avg_turnout = turnout_pct
+    # Get party count from party results
+    if "party_results" in data and isinstance(data["party_results"], pd.DataFrame):
+        total_parties = len(data["party_results"])
 
-            # Check for districts list
-            elif "districts" in dataset and isinstance(dataset["districts"], list):
-                total_districts = len(dataset["districts"])
+    # Get district count from district data
+    if "district_data" in data and isinstance(data["district_data"], pd.DataFrame):
+        district_count = len(data["district_data"])
+        if district_count > total_districts:
+            total_districts = district_count
 
-            # Check for party results
-            elif "party_results" in dataset and isinstance(
-                dataset["party_results"], list
-            ):
-                total_parties = len(dataset["party_results"])
-
-                # Try to extract summary info from party results
-                if not total_voters and "summary_statistics" in dataset:
-                    summary = dataset["summary_statistics"]
-                    total_voters = summary.get("registered_voters", 0)
-                    if "turnout_percentage" in summary:
-                        avg_turnout = summary["turnout_percentage"]
-
+    # Display metrics
     with col1:
-        if total_districts > 0:
-            st.metric("Electoral Districts", f"{total_districts:,}")
-        else:
-            st.metric("Electoral Districts", "N/A")
+        st.metric(
+            "Electoral Districts",
+            f"{total_districts:,}" if total_districts > 0 else "N/A",
+        )
 
     with col2:
-        if avg_turnout > 0:
-            st.metric("Average Turnout", f"{avg_turnout:.1f}%")
-        else:
-            st.metric("Average Turnout", "N/A")
+        st.metric(
+            "Average Turnout", f"{avg_turnout:.1f}%" if avg_turnout > 0 else "N/A"
+        )
 
     with col3:
-        if total_voters > 0:
-            st.metric("Registered Voters", f"{total_voters:,}")
-        else:
-            st.metric("Registered Voters", "N/A")
+        st.metric(
+            "Registered Voters", f"{total_voters:,}" if total_voters > 0 else "N/A"
+        )
 
     with col4:
-        st.metric("Data Sources", len(data))
+        st.metric(
+            "Political Parties", f"{total_parties:,}" if total_parties > 0 else "N/A"
+        )
 
-    # Show additional metrics if we have party data
-    if total_parties > 0:
-        st.metric("Political Parties", total_parties)
+    # Display party results if available
+    if "party_results" in data and isinstance(data["party_results"], pd.DataFrame):
+        party_df = data["party_results"].copy()
 
-    # Show data source breakdown
-    if data:
-        st.subheader("📁 Data Sources Loaded")
-        for i, (key, dataset) in enumerate(data.items(), 1):
-            data_type = "Unknown"
-            size_info = ""
+        if not party_df.empty:
+            st.subheader("🏛️ Party Results Overview")
 
-            if isinstance(dataset, dict):
-                if "party_results" in dataset:
-                    data_type = "Electoral Results"
-                    size_info = f"({len(dataset['party_results'])} parties)"
-                elif "districts" in dataset:
-                    data_type = "District Data"
-                    size_info = f"({len(dataset['districts'])} districts)"
-                elif "summary_statistics" in dataset:
-                    data_type = "Summary Statistics"
-                else:
-                    data_type = "JSON Data"
-                    size_info = f"({len(dataset)} keys)"
-            elif isinstance(dataset, pd.DataFrame):
-                data_type = "CSV Data"
-                size_info = f"({dataset.shape[0]} rows, {dataset.shape[1]} cols)"
-            elif isinstance(dataset, list):
-                data_type = "List Data"
-                size_info = f"({len(dataset)} items)"
+            # Create visualization
+            # Limit to top 10 parties for readability
+            top_parties = party_df.head(10)
 
-            st.write(f"{i}. **{key}** - {data_type} {size_info}")
+            if len(top_parties) > 0:
+                # Add option to show estimated voters vs total votes
+                col_chart1, col_chart2 = st.columns(2)
 
-    # Show party results if available
-    for key, dataset in data.items():
-        if isinstance(dataset, dict) and "party_results" in dataset:
-            party_results = dataset["party_results"]
-            if isinstance(party_results, list) and len(party_results) > 0:
-                st.subheader("🏛️ Party Results Overview")
-
-                # Create a DataFrame for party results
-                party_data = []
-                for party in party_results[:10]:  # Show top 10 parties
-                    if isinstance(party, dict):
-                        name = party.get("name", party.get("party_name", "Unknown"))
-                        votes = party.get("votes", party.get("total_votes", 0))
-                        percentage = party.get(
-                            "percentage", party.get("vote_percentage", 0)
-                        )
-                        mandates = party.get("mandates", party.get("seats", 0))
-
-                        # Handle different data types
-                        if isinstance(votes, str):
-                            try:
-                                votes = int(votes.replace(" ", "").replace(",", ""))
-                            except:
-                                votes = 0
-
-                        if isinstance(percentage, str):
-                            try:
-                                percentage = float(
-                                    percentage.replace("%", "").replace(",", ".")
-                                )
-                            except:
-                                percentage = 0
-
-                        if isinstance(mandates, str):
-                            try:
-                                mandates = int(mandates)
-                            except:
-                                mandates = 0
-
-                        party_data.append(
-                            {
-                                "Party": name,
-                                "Votes": votes,
-                                "Percentage": percentage,
-                                "Mandates": mandates,
-                            }
-                        )
-
-                if party_data:
-                    party_df = pd.DataFrame(party_data)
-
-                    # Display party results chart
-                    fig = px.bar(
-                        party_df.head(8),
-                        x="Party",
-                        y="Percentage",
+                with col_chart1:
+                    # Percentage chart (always show)
+                    fig_pct = px.bar(
+                        top_parties,
+                        x="party_name",
+                        y="votes_percentage",
                         title="Vote Share by Party (%)",
                         labels={
-                            "Percentage": "Vote Share (%)",
-                            "Party": "Political Party",
+                            "votes_percentage": "Vote Share (%)",
+                            "party_name": "Political Party",
                         },
+                        text="votes_percentage",
+                        color_discrete_sequence=["#1f77b4"],
                     )
-                    fig.update_xaxis(tickangle=45)
-                    st.plotly_chart(fig, use_container_width=True)
+                    fig_pct.update_xaxes(tickangle=45)
+                    fig_pct.update_traces(
+                        texttemplate="%{text:.1f}%", textposition="outside"
+                    )
+                    st.plotly_chart(fig_pct, use_container_width=True)
 
-                    # Display results table
-                    st.subheader("📊 Detailed Results")
-                    st.dataframe(party_df, use_container_width=True)
+                with col_chart2:
+                    # Show estimated voters if available, otherwise total votes
+                    if "estimated_voters" in top_parties.columns:
+                        fig_voters = px.bar(
+                            top_parties,
+                            x="party_name",
+                            y="estimated_voters",
+                            title="Estimated Number of Voters",
+                            labels={
+                                "estimated_voters": "Est. Voters",
+                                "party_name": "Political Party",
+                            },
+                            text="estimated_voters",
+                            color_discrete_sequence=["#ff7f0e"],
+                        )
+                        fig_voters.update_xaxes(tickangle=45)
+                        fig_voters.update_traces(
+                            texttemplate="%{text:,}", textposition="outside"
+                        )
+                        st.plotly_chart(fig_voters, use_container_width=True)
+                    else:
+                        # Fallback to total votes
+                        fig_votes = px.bar(
+                            top_parties,
+                            x="party_name",
+                            y="votes_absolute",
+                            title="Total Votes (All Candidates)",
+                            labels={
+                                "votes_absolute": "Total Votes",
+                                "party_name": "Political Party",
+                            },
+                            text="votes_absolute",
+                            color_discrete_sequence=["#2ca02c"],
+                        )
+                        fig_votes.update_xaxes(tickangle=45)
+                        fig_votes.update_traces(
+                            texttemplate="%{text:,}", textposition="outside"
+                        )
+                        st.plotly_chart(fig_votes, use_container_width=True)
 
-                break
+                # Display results table
+                st.subheader("📊 Detailed Results")
+
+                # Prepare display dataframe
+                display_df = party_df.copy()
+                display_df["votes_percentage"] = display_df["votes_percentage"].apply(
+                    lambda x: f"{x:.2f}%"
+                )
+                display_df["votes_absolute"] = display_df["votes_absolute"].apply(
+                    lambda x: f"{x:,}"
+                )
+
+                # Format estimated voters if available
+                if "estimated_voters" in display_df.columns:
+                    display_df["estimated_voters"] = display_df[
+                        "estimated_voters"
+                    ].apply(lambda x: f"{x:,}" if pd.notna(x) else "N/A")
+
+                # Rename columns for display
+                column_renames = {
+                    "party_name": "Party",
+                    "votes_absolute": "Total Votes",
+                    "votes_percentage": "Percentage",
+                    "estimated_voters": "Est. Voters",
+                    "list_number": "List #",
+                }
+
+                display_df = display_df.rename(columns=column_renames)
+
+                # Select and reorder columns
+                display_cols = [
+                    "List #",
+                    "Party",
+                    "Total Votes",
+                    "Est. Voters",
+                    "Percentage",
+                ]
+                available_cols = [
+                    col for col in display_cols if col in display_df.columns
+                ]
+
+                st.dataframe(display_df[available_cols], use_container_width=True)
+
+                # Add explanation
+                if "estimated_voters" in party_df.columns:
+                    seats_used = (
+                        party_df["num_seats_used"].iloc[0]
+                        if "num_seats_used" in party_df.columns
+                        else 41
+                    )
+                    st.info(
+                        f"💡 **Est. Voters** = Total Votes ÷ {seats_used} seats "
+                        f"(voters can vote for up to {seats_used} candidates)"
+                    )
+
+        else:
+            st.warning("No party results data available")
+
+    # Show data source information
+    st.subheader("📁 Data Sources Loaded")
+    for i, (key, dataset) in enumerate(data.items(), 1):
+        if isinstance(dataset, pd.DataFrame):
+            st.write(
+                f"{i}. **{key}** - CSV Data ({dataset.shape[0]} rows, {dataset.shape[1]} columns)"
+            )
+        elif isinstance(dataset, dict):
+            st.write(f"{i}. **{key}** - Dictionary ({len(dataset)} keys)")
+        else:
+            st.write(f"{i}. **{key}** - {type(dataset).__name__}")
 
 
 def display_turnout_analysis(data):
-    """Display turnout analysis visualizations"""
+    """Display turnout analysis visualizations using CSV data"""
     st.subheader("📈 Turnout Analysis")
 
-    # Look for turnout data
-    turnout_data = None
+    # Check for district-level turnout data
+    if "district_data" in data and isinstance(data["district_data"], pd.DataFrame):
+        district_df = data["district_data"]
 
-    for key, dataset in data.items():
-        if isinstance(dataset, dict) and "districts" in dataset:
-            districts = dataset["districts"]
-            if isinstance(districts, list) and len(districts) > 0:
-                # Try to extract turnout information
-                turnout_list = []
-                district_names = []
+        # Filter out summary rows and check for meaningful district data
+        district_df_filtered = district_df[
+            (district_df["district_id"] != "TOTAL")
+            & (district_df["turnout_percentage"].notna())
+            & (district_df["turnout_percentage"] > 0)
+        ]
 
-                for district in districts:
-                    if isinstance(district, dict):
-                        district_name = district.get(
-                            "name", district.get("district_id", "Unknown")
-                        )
+        if not district_df_filtered.empty:
+            # Create turnout visualization
+            fig = px.bar(
+                district_df_filtered.head(20),  # Show top 20 for readability
+                x="district_name",
+                y="turnout_percentage",
+                title="Voter Turnout by District",
+                labels={
+                    "turnout_percentage": "Turnout (%)",
+                    "district_name": "Electoral District",
+                },
+            )
+            fig.update_xaxes(tickangle=45)
+            st.plotly_chart(fig, use_container_width=True)
 
-                        # Try multiple ways to get turnout value
-                        turnout = None
+            # Summary statistics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(
+                    "Highest Turnout",
+                    f"{district_df_filtered['turnout_percentage'].max():.1f}%",
+                )
+            with col2:
+                st.metric(
+                    "Lowest Turnout",
+                    f"{district_df_filtered['turnout_percentage'].min():.1f}%",
+                )
 
-                        # Try different possible keys for turnout
-                        for turnout_key in [
-                            "turnout_percentage",
-                            "turnout",
-                            "voter_turnout",
-                            "participation",
-                        ]:
-                            if turnout_key in district:
-                                turnout_value = district[turnout_key]
-
-                                # Handle different data types
-                                if isinstance(turnout_value, (int, float)):
-                                    turnout = float(turnout_value)
-                                    break
-                                elif isinstance(turnout_value, str):
-                                    try:
-                                        # Try to extract number from string (e.g., "42.5%" -> 42.5)
-                                        number_match = re.search(
-                                            r"[\d,]+\.?\d*",
-                                            turnout_value.replace(",", ""),
-                                        )
-                                        if number_match:
-                                            turnout = float(number_match.group())
-                                            break
-                                    except (ValueError, AttributeError):
-                                        continue
-                                elif isinstance(turnout_value, dict):
-                                    # If it's a dict, try to find a numeric value inside
-                                    for sub_key, sub_value in turnout_value.items():
-                                        if isinstance(sub_value, (int, float)):
-                                            turnout = float(sub_value)
-                                            break
-                                    if turnout is not None:
-                                        break
-
-                        if turnout is not None and turnout > 0:
-                            turnout_list.append(turnout)
-                            district_names.append(district_name)
-
-                if turnout_list:
-                    turnout_data = pd.DataFrame(
-                        {"District": district_names, "Turnout": turnout_list}
-                    )
-                    break
-
-        # Also try to look for party results with turnout info
-        elif isinstance(dataset, dict) and "party_results" in dataset:
-            party_results = dataset["party_results"]
-            if isinstance(party_results, list) and len(party_results) > 0:
-                # Extract overall statistics if available
-                summary_stats = dataset.get("summary_statistics", {})
-                if "turnout_percentage" in summary_stats:
-                    overall_turnout = summary_stats["turnout_percentage"]
-                    if isinstance(overall_turnout, (int, float)):
-                        st.info(f"Overall Prague 5 Turnout: {overall_turnout:.1f}%")
-
-    if turnout_data is not None and not turnout_data.empty:
-        # Create turnout visualization
-        fig = px.bar(
-            turnout_data.head(20),  # Show top 20 for readability
-            x="District",
-            y="Turnout",
-            title="Voter Turnout by District",
-            labels={"Turnout": "Turnout (%)", "District": "Electoral District"},
-        )
-        fig.update_xaxis(tickangle=45)
-        st.plotly_chart(fig, use_container_width=True)
-
-        # Summary statistics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Highest Turnout", f"{turnout_data['Turnout'].max():.1f}%")
-        with col2:
-            st.metric("Lowest Turnout", f"{turnout_data['Turnout'].min():.1f}%")
-
-        # Show district count
-        st.metric("Districts with Data", len(turnout_data))
-
-    else:
-        st.info("No district-level turnout data found in the current dataset.")
-
-        # Try to show any available summary statistics instead
-        for key, dataset in data.items():
-            if isinstance(dataset, dict):
-                summary_stats = dataset.get("summary_statistics", {})
-                if summary_stats:
-                    st.subheader("Available Summary Statistics")
-
-                    # Display any turnout-related info we can find
-                    col1, col2, col3 = st.columns(3)
-
-                    if "turnout_percentage" in summary_stats:
-                        with col1:
-                            st.metric(
-                                "Turnout", f"{summary_stats['turnout_percentage']:.1f}%"
-                            )
-
-                    if "registered_voters" in summary_stats:
-                        with col2:
-                            st.metric(
-                                "Registered Voters",
-                                f"{summary_stats['registered_voters']:,}",
-                            )
-
-                    if "valid_votes" in summary_stats:
-                        with col3:
-                            st.metric(
-                                "Valid Votes", f"{summary_stats['valid_votes']:,}"
-                            )
-                    break
+            # Show district count
+            st.metric("Districts with Data", len(district_df_filtered))
         else:
-            st.warning("Run the analysis pipeline first to generate turnout data.")
+            # Show summary turnout data if available
+            summary_row = district_df[district_df["district_id"] == "TOTAL"]
+            if not summary_row.empty and summary_row.iloc[0]["turnout_percentage"] > 0:
+                turnout_pct = summary_row.iloc[0]["turnout_percentage"]
+                st.info(f"Overall Prague 5 Turnout: {turnout_pct:.1f}%")
+
+                # Create a simple single-bar chart
+                fig = px.bar(
+                    x=["Praha 5"],
+                    y=[turnout_pct],
+                    title="Overall Voter Turnout",
+                    labels={"y": "Turnout (%)", "x": "District"},
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No district-level turnout data found.")
+
+    # Show summary statistics from summary_statistics if available
+    if "summary_statistics" in data:
+        stats = data["summary_statistics"]
+        st.subheader("📊 Summary Statistics")
+
+        col1, col2, col3 = st.columns(3)
+
+        if "turnout_percentage" in stats:
+            with col1:
+                st.metric("Turnout", f"{stats['turnout_percentage']:.1f}%")
+
+        if "registered_voters" in stats:
+            with col2:
+                st.metric("Registered Voters", f"{stats['registered_voters']:,}")
+
+        if "valid_votes" in stats:
+            with col3:
+                st.metric("Valid Votes", f"{stats['valid_votes']:,}")
+
+    # If no meaningful data is found, suggest running the analysis pipeline
+    if ("district_data" not in data or data["district_data"].empty) and (
+        "summary_statistics" not in data or not data["summary_statistics"]
+    ):
+        st.warning("Run the analysis pipeline first to generate turnout data.")
+        st.code("uv run python run_analysis.py")
 
 
 def display_geographic_analysis(geojson_data):

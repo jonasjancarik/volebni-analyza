@@ -49,22 +49,28 @@ def print_results_summary():
     print_section("ANALYSIS COMPLETE")
 
     project_root = Path(__file__).parent
-    data_dir = project_root / "data"
+    output_dir = project_root / "output"
 
     # Check what was generated
     outputs = {
-        "📊 Interactive Visualizations": data_dir / "visualizations" / "index.html",
-        "📈 Turnout Analysis Chart": data_dir
+        "📊 Interactive Visualizations": output_dir / "visualizations" / "index.html",
+        "📈 Turnout Analysis Chart": output_dir
         / "visualizations"
         / "turnout_analysis.html",
-        "🗺️ Electoral Districts Map": data_dir / "visualizations" / "districts_map.html",
-        "📋 Summary Dashboard": data_dir / "visualizations" / "summary_dashboard.html",
-        "📑 Analysis Report (JSON)": data_dir
+        "🗺️ Electoral Districts Map": output_dir
+        / "visualizations"
+        / "districts_map.html",
+        "📋 Summary Dashboard": output_dir
+        / "visualizations"
+        / "summary_dashboard.html",
+        "📑 Analysis Report (JSON)": output_dir
         / "reports"
         / "comprehensive_analysis_report.json",
-        "📝 Analysis Summary (Markdown)": data_dir / "reports" / "analysis_summary.md",
-        "📦 Raw District Data": data_dir / "raw" / "prague5_districts.json",
-        "🔍 Detailed Results Data": data_dir
+        "📝 Analysis Summary (Markdown)": output_dir
+        / "reports"
+        / "analysis_summary.md",
+        "📦 Raw District Data": output_dir / "processed" / "prague5_districts.json",
+        "🔍 Detailed Results Data": output_dir
         / "detailed"
         / "prague5_detailed_results.json",
     }
@@ -81,7 +87,7 @@ def print_results_summary():
     try:
         import json
 
-        report_file = data_dir / "reports" / "comprehensive_analysis_report.json"
+        report_file = output_dir / "reports" / "comprehensive_analysis_report.json"
         if report_file.exists():
             with open(report_file, "r", encoding="utf-8") as f:
                 report = json.load(f)
@@ -104,8 +110,8 @@ def print_results_summary():
         logger.warning(f"Could not load report summary: {e}")
 
     print("\n🚀 Next Steps:")
-    print("   1. Open data/visualizations/index.html in your browser")
-    print("   2. Review data/reports/analysis_summary.md for detailed insights")
+    print("   1. Open output/visualizations/index.html in your browser")
+    print("   2. Review output/reports/analysis_summary.md for detailed insights")
     print("   3. Share findings with stakeholders")
     print("   4. Implement recommended actions")
 
@@ -115,15 +121,16 @@ def main():
     print_banner()
 
     project_root = Path(__file__).parent
-    data_dir = project_root / "data"
+    output_dir = project_root / "output"
+    input_dir = project_root / "input"
 
     try:
         # Phase 1: Data Collection
         print_section("DATA COLLECTION")
 
         print("🔄 Initializing collectors...")
-        collector = Prague5DataCollector(str(data_dir))
-        improved_collector = ImprovedPrague5Collector(str(data_dir))
+        collector = Prague5DataCollector(str(output_dir))
+        improved_collector = ImprovedPrague5Collector(str(output_dir))
 
         print("📡 Collecting Prague 5 district information...")
         web_data = collector.scrape_prague5_results_web()
@@ -139,7 +146,9 @@ def main():
         print_section("DATA PROCESSING")
 
         print("⚙️ Processing election data...")
-        processor = Prague5DataProcessor(str(data_dir))
+        processor = Prague5DataProcessor(
+            output_dir=str(output_dir), input_dir=str(input_dir)
+        )
         processed_data = processor.process_all_data()
         print("   ✅ Data processing completed")
 
@@ -147,7 +156,7 @@ def main():
         print_section("VISUALIZATION GENERATION")
 
         print("📊 Creating interactive visualizations...")
-        visualizer = Prague5Visualizer(str(data_dir))
+        visualizer = Prague5Visualizer(str(output_dir))
         viz_results = visualizer.generate_all_visualizations()
         print(f"   ✅ Generated {len(viz_results)} visualization components")
 
@@ -155,7 +164,7 @@ def main():
         print_section("STATISTICAL ANALYSIS")
 
         print("🔍 Performing comprehensive analysis...")
-        analyzer = Prague5ElectionAnalyzer(str(data_dir))
+        analyzer = Prague5ElectionAnalyzer(str(output_dir))
         analysis_report = analyzer.generate_comprehensive_report()
 
         if analysis_report:
@@ -184,7 +193,7 @@ if __name__ == "__main__":
     success = main()
     if success:
         print("\n🎉 Prague 5 Election Analysis completed successfully!")
-        print("📱 Check data/visualizations/index.html to explore your results")
+        print("📱 Check output/visualizations/index.html to explore your results")
     else:
         print("\n❌ Analysis pipeline encountered errors")
         print("📋 Check the logs above for troubleshooting information")
