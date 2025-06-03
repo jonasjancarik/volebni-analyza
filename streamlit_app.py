@@ -1917,12 +1917,11 @@ def main():
         st.sidebar.metric("Data Sources Loaded", len(electoral_data))
 
     if geojson_data and "features" in geojson_data:
-        # Filter geojson for this municipality
-        geographic_code = get_geographic_municipality_code(selected_municipality_code)
+        # Filter geojson for this municipality using MOMC field (electoral municipality code)
         municipality_districts = []
         for feature in geojson_data["features"]:
             props = feature.get("properties", {})
-            if props.get("OBEC") == geographic_code:
+            if props.get("MOMC") == selected_municipality_code:
                 municipality_districts.append(feature)
 
         if municipality_districts:
@@ -1936,18 +1935,13 @@ def main():
         display_turnout_analysis(electoral_data)
 
     elif page == "Geographic Analysis":
-        # Filter geojson for this municipality
+        # Filter geojson for this municipality using MOMC field (electoral municipality code)
         municipality_geojson = None
         if geojson_data and "features" in geojson_data:
-            # Map electoral code to geographic code
-            geographic_code = get_geographic_municipality_code(
-                selected_municipality_code
-            )
-
             municipality_districts = []
             for feature in geojson_data["features"]:
                 props = feature.get("properties", {})
-                if props.get("OBEC") == geographic_code:
+                if props.get("MOMC") == selected_municipality_code:
                     municipality_districts.append(feature)
 
             if municipality_districts:
@@ -1960,7 +1954,7 @@ def main():
                 )
             else:
                 st.sidebar.warning(
-                    f"⚠️ No geographic districts found for municipality {selected_municipality_code} (mapped to {geographic_code})"
+                    f"⚠️ No geographic districts found for municipality {selected_municipality_code}"
                 )
 
         display_geographic_analysis(municipality_geojson, electoral_data)
