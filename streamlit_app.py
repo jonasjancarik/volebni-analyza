@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Prague 5 Election Analysis - Streamlit Dashboard
-Interactive visualization dashboard for electoral analysis
+Czech Municipalities Election Analysis - Streamlit Dashboard
+Interactive visualization dashboard for electoral analysis of any Czech municipality
 """
 
 import streamlit as st
@@ -24,10 +24,13 @@ from shapely.affinity import scale
 # Add src to path for importing our modules
 sys.path.append(str(Path(__file__).parent / "src"))
 
+# Import our municipality selector
+from streamlit_municipality_selector import MunicipalitySelector
+
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Prague 5 Electoral Analysis Dashboard",
-    page_icon="🗳️",
+    page_title="Czech Municipalities Electoral Analysis",
+    page_icon="🏛️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -72,71 +75,153 @@ def load_geojson_data():
 
 
 @st.cache_data
-def load_processed_data():
-    """Load processed election data from CSV files"""
-    csv_dir = "output/csv"
-
-    if not os.path.exists(csv_dir):
-        st.error(f"CSV data directory not found: {csv_dir}")
-        st.info("Run the data conversion: `uv run python src/data_exporters.py`")
+def load_municipality_data(municipality_code: str):
+    """Load processed election data for a specific municipality"""
+    if not municipality_code:
         return {}
 
-    data = {}
+    # Load from our all municipalities data
+    selector = MunicipalitySelector()
+    municipality_data = selector.get_municipality_data(municipality_code)
 
-    # Load party results
-    party_file = os.path.join(csv_dir, "party_results.csv")
-    if os.path.exists(party_file):
-        try:
-            data["party_results"] = pd.read_csv(party_file)
-            st.success(f"✅ Loaded {len(data['party_results'])} parties from CSV")
-        except Exception as e:
-            st.error(f"Failed to load party results: {e}")
+    if not municipality_data:
+        st.error(f"No data found for municipality {municipality_code}")
+        return {}
 
-    # Load district data
-    district_file = os.path.join(csv_dir, "district_data.csv")
-    if os.path.exists(district_file):
-        try:
-            data["district_data"] = pd.read_csv(district_file)
-            st.success(f"✅ Loaded {len(data['district_data'])} districts from CSV")
-        except Exception as e:
-            st.error(f"Failed to load district data: {e}")
+    # Convert to format expected by visualization functions
+    converted_data = {}
 
-    # Load summary statistics
-    summary_file = os.path.join(csv_dir, "summary_statistics.csv")
-    if os.path.exists(summary_file):
-        try:
-            summary_df = pd.read_csv(summary_file)
-            # Convert summary to dictionary format for compatibility
-            data["summary_statistics"] = {}
-            for _, row in summary_df.iterrows():
-                if row["category"] == "statistics":
-                    data["summary_statistics"][row["metric"]] = row["value"]
-            st.success(f"✅ Loaded summary statistics from CSV")
-        except Exception as e:
-            st.error(f"Failed to load summary statistics: {e}")
+    # Convert party results
+    party_results = municipality_data.get("party_results", [])
+    if party_results:
+        party_df = pd.DataFrame(party_results)
+        party_df = party_df.rename(
+            columns={
+                "votes": "votes_absolute",
+                "percentage": "votes_percentage",
+                "party_name": "party_name",
+                "list_number": "list_number",
+            }
+        )
+        converted_data["party_results"] = party_df
 
-    # Load district party results
-    district_party_file = os.path.join(csv_dir, "district_party_results.csv")
-    if os.path.exists(district_party_file):
-        try:
-            data["district_party_results"] = pd.read_csv(district_party_file)
-            st.success(
-                f"✅ Loaded {len(data['district_party_results'])} district-party combinations from CSV"
+    # Convert district data
+    district_data = municipality_data.get("district_data", [])
+    if district_data:
+        districts = []
+        for district in district_data:
+            district_info = {
+                "district_code": district.get("district_code", ""),
+                "registered_voters": district.get("turnout", {}).get(
+                    "registered_voters", 0
+                ),
+                "returned_ballots": district.get("turnout", {}).get(
+                    "returned_ballots", 0
+                ),
+                "valid_votes": district.get("turnout", {}).get("valid_votes", 0),
+                "turnout_percentage": district.get("turnout", {}).get(
+                    "turnout_percentage", 0
+                ),
+            }
+            districts.append(district_info)
+
+        if districts:
+            converted_data["district_data"] = pd.DataFrame(districts)
+
+    # Convert summary statistics
+    stats = municipality_data.get("summary_statistics", {})
+    converted_data["summary_statistics"] = stats
+
+    # Create district party results
+    district_party_results = []
+    for district in district_data:
+        district_code = district.get("district_code", "")
+        party_votes = district.get("party_votes", [])
+        total_votes = sum(pv.get("votes", 0) for pv in party_votes)
+
+        for party_vote in party_votes:
+            party_list_num = party_vote.get("party_list_number")
+            votes = party_vote.get("votes", 0)
+
+            # Find party name from party results
+            party_name = f"Party List {party_list_num}"
+            for party in party_results:
+                if str(party.get("list_number")) == str(party_list_num):
+                    party_name = party.get("party_name", party_name)
+                    break
+
+            district_party_results.append(
+                {
+                    "district_id": f"{district_code}-1",
+                    "district_code": district_code,
+                    "party_name": party_name,
+                    "list_number": party_list_num,
+                    "votes": votes,
+                    "total_district_votes": total_votes,
+                    "percentage": (votes / total_votes * 100) if total_votes > 0 else 0,
+                }
             )
-        except Exception as e:
-            st.error(f"Failed to load district party results: {e}")
 
-    return data
+    if district_party_results:
+        converted_data["district_party_results"] = pd.DataFrame(district_party_results)
+
+    return converted_data
 
 
 def create_folium_map(
     geojson_data, electoral_data=None, viz_type="Turnout", selected_party=None
 ):
     """Create an interactive Folium map with electoral districts and optional data overlay"""
-    # Center on Prague 5 (more specific location)
-    prague5_center = [50.0705, 14.4132]  # Prague 5 center
 
-    m = folium.Map(location=prague5_center, zoom_start=13, tiles="OpenStreetMap")
+    # Calculate map center from geojson data
+    map_center = [50.0755, 14.4378]  # Default to Prague center
+    zoom_start = 10
+
+    if geojson_data and "features" in geojson_data:
+        # Calculate bounding box from districts
+        lats = []
+        lons = []
+
+        for feature in geojson_data["features"]:
+            if feature.get("geometry") and feature["geometry"].get("coordinates"):
+                coords = feature["geometry"]["coordinates"]
+
+                # Handle different geometry types
+                if feature["geometry"]["type"] == "Polygon":
+                    for ring in coords:
+                        for coord in ring:
+                            lons.append(coord[0])
+                            lats.append(coord[1])
+                elif feature["geometry"]["type"] == "MultiPolygon":
+                    for polygon in coords:
+                        for ring in polygon:
+                            for coord in ring:
+                                lons.append(coord[0])
+                                lats.append(coord[1])
+
+        if lats and lons:
+            # Calculate center
+            center_lat = (min(lats) + max(lats)) / 2
+            center_lon = (min(lons) + max(lons)) / 2
+            map_center = [center_lat, center_lon]
+
+            # Calculate appropriate zoom level based on area
+            lat_range = max(lats) - min(lats)
+            lon_range = max(lons) - min(lons)
+            max_range = max(lat_range, lon_range)
+
+            if max_range < 0.01:  # Very small area
+                zoom_start = 15
+            elif max_range < 0.05:  # Small area
+                zoom_start = 13
+            elif max_range < 0.1:  # Medium area
+                zoom_start = 12
+            elif max_range < 0.5:  # Large area
+                zoom_start = 10
+            else:  # Very large area
+                zoom_start = 8
+
+    m = folium.Map(location=map_center, zoom_start=zoom_start, tiles="OpenStreetMap")
 
     if geojson_data and "features" in geojson_data:
         # Prepare electoral data lookup based on visualization type
@@ -447,35 +532,55 @@ def display_electoral_overview(data):
             top_parties = party_df.head(10)
 
             if len(top_parties) > 0:
-                fig_pct = px.bar(
-                    top_parties,
-                    x="party_name",
-                    y="votes_percentage",
-                    title="Vote Share by Party (%)",
-                    labels={
-                        "votes_percentage": "Vote Share (%)",
-                        "party_name": "Political Party",
-                    },
-                    text="votes_percentage",
-                    color_discrete_sequence=["#1f77b4"],
-                )
-                fig_pct.update_xaxes(tickangle=45)
-                fig_pct.update_traces(
-                    texttemplate="%{text:.1f}%", textposition="outside"
-                )
-                st.plotly_chart(fig_pct, use_container_width=True)
+                # Check which percentage column exists
+                percentage_col = None
+                if "votes_percentage" in party_df.columns:
+                    percentage_col = "votes_percentage"
+                elif "percentage" in party_df.columns:
+                    percentage_col = "percentage"
+
+                if percentage_col:
+                    fig_pct = px.bar(
+                        top_parties,
+                        x="party_name",
+                        y=percentage_col,
+                        title="Vote Share by Party (%)",
+                        labels={
+                            percentage_col: "Vote Share (%)",
+                            "party_name": "Political Party",
+                        },
+                        text=percentage_col,
+                        color_discrete_sequence=["#1f77b4"],
+                    )
+                    fig_pct.update_xaxes(tickangle=45)
+                    fig_pct.update_traces(
+                        texttemplate="%{text:.1f}%", textposition="outside"
+                    )
+                    st.plotly_chart(fig_pct, use_container_width=True)
 
                 # Display results table
                 st.subheader("📊 Detailed Results")
 
                 # Prepare display dataframe
                 display_df = party_df.copy()
-                display_df["votes_percentage"] = display_df["votes_percentage"].apply(
-                    lambda x: f"{x:.2f}%"
-                )
-                display_df["votes_absolute"] = display_df["votes_absolute"].apply(
-                    lambda x: f"{x:,}"
-                )
+
+                # Format percentage column
+                if percentage_col and percentage_col in display_df.columns:
+                    display_df[percentage_col] = display_df[percentage_col].apply(
+                        lambda x: f"{x:.2f}%"
+                    )
+
+                # Format votes column
+                votes_col = None
+                if "votes_absolute" in display_df.columns:
+                    votes_col = "votes_absolute"
+                elif "votes" in display_df.columns:
+                    votes_col = "votes"
+
+                if votes_col:
+                    display_df[votes_col] = display_df[votes_col].apply(
+                        lambda x: f"{x:,}"
+                    )
 
                 # Format estimated voters if available
                 if "estimated_voters" in display_df.columns:
@@ -486,27 +591,38 @@ def display_electoral_overview(data):
                 # Rename columns for display
                 column_renames = {
                     "party_name": "Party",
-                    "votes_absolute": "Total Votes",
-                    "votes_percentage": "Percentage",
-                    "estimated_voters": "Est. Voters",
                     "list_number": "List #",
                 }
+
+                if votes_col:
+                    column_renames[votes_col] = "Total Votes"
+                if percentage_col:
+                    column_renames[percentage_col] = "Percentage"
+                if "estimated_voters" in display_df.columns:
+                    column_renames["estimated_voters"] = "Est. Voters"
 
                 display_df = display_df.rename(columns=column_renames)
 
                 # Select and reorder columns
-                display_cols = [
-                    "List #",
-                    "Party",
-                    "Total Votes",
-                    "Est. Voters",
-                    "Percentage",
-                ]
+                display_cols = []
+                if "List #" in display_df.columns:
+                    display_cols.append("List #")
+                if "Party" in display_df.columns:
+                    display_cols.append("Party")
+                if "Total Votes" in display_df.columns:
+                    display_cols.append("Total Votes")
+                if "Est. Voters" in display_df.columns:
+                    display_cols.append("Est. Voters")
+                if "Percentage" in display_df.columns:
+                    display_cols.append("Percentage")
+
+                # Use available columns
                 available_cols = [
                     col for col in display_cols if col in display_df.columns
                 ]
 
-                st.dataframe(display_df[available_cols], use_container_width=True)
+                if available_cols:
+                    st.dataframe(display_df[available_cols], use_container_width=True)
 
                 # Add explanation
                 if "estimated_voters" in party_df.columns:
@@ -1669,20 +1785,50 @@ def main():
 
     # Header
     st.markdown(
-        '<h1 class="main-header">🗳️ Prague 5 Electoral Analysis Dashboard</h1>',
+        '<h1 class="main-header">🏛️ Czech Municipalities Electoral Analysis</h1>',
         unsafe_allow_html=True,
     )
 
-    # Sidebar
-    st.sidebar.title("Navigation")
+    # Municipality Selection
+    st.sidebar.title("🏛️ Municipality Selection")
     st.sidebar.markdown("---")
 
-    # Load data
-    with st.spinner("Loading data..."):
-        geojson_data = load_geojson_data()
-        electoral_data = load_processed_data()
+    # Initialize municipality selector
+    selector = MunicipalitySelector()
+    selected_municipality_code = selector.create_municipality_selector()
+
+    if not selected_municipality_code:
+        st.info("👈 Please select a municipality from the sidebar to begin analysis.")
+        st.markdown("---")
+
+        # Show overall municipalities overview
+        st.subheader("📊 Available Analysis Features")
+        st.markdown("""
+        **Once you select a municipality, you'll have access to:**
+        
+        • **Overview** - Key statistics and party results
+        • **Turnout Analysis** - Detailed voter participation analysis  
+        • **Geographic Analysis** - Interactive maps and visualizations
+        • **Data Explorer** - Detailed data tables and filtering
+        • **District Analysis** - Electoral district breakdown
+        
+        **Select any of the 6,377+ Czech municipalities from the sidebar!**
+        """)
+        return
+
+    # Get municipality info for title
+    municipality_data = selector.get_municipality_data(selected_municipality_code)
+    municipality_name = "Unknown Municipality"
+    if municipality_data:
+        municipality_name = municipality_data.get("metadata", {}).get(
+            "municipality_name", "Unknown Municipality"
+        )
+
+    st.subheader(f"📍 Analysis for: **{municipality_name}**")
 
     # Navigation
+    st.sidebar.markdown("---")
+    st.sidebar.title("📊 Analysis Views")
     page = st.sidebar.selectbox(
         "Choose a view:",
         [
@@ -1690,51 +1836,84 @@ def main():
             "Turnout Analysis",
             "Geographic Analysis",
             "Data Explorer",
-            "Okrsek Analysis",
+            "District Analysis",
         ],
     )
+
+    # Load data for selected municipality
+    with st.spinner(f"Loading data for {municipality_name}..."):
+        geojson_data = load_geojson_data()
+        electoral_data = load_municipality_data(selected_municipality_code)
 
     # Sidebar info
     st.sidebar.markdown("---")
     st.sidebar.info(
-        "This dashboard visualizes electoral data for Prague 5. "
-        "Make sure to run the analysis pipeline first to generate the data."
+        "This dashboard visualizes electoral data for Czech municipalities. "
+        "Use the municipality selector above to switch between different locations."
     )
 
     # Quick stats in sidebar
     if electoral_data:
-        st.sidebar.subheader("Quick Stats")
+        st.sidebar.subheader("📈 Quick Stats")
+        if "summary_statistics" in electoral_data:
+            stats = electoral_data["summary_statistics"]
+            st.sidebar.metric(
+                "Electoral Districts", stats.get("electoral_districts", "N/A")
+            )
+            st.sidebar.metric(
+                "Registered Voters", f"{stats.get('registered_voters', 0):,}"
+            )
+            st.sidebar.metric("Turnout %", f"{stats.get('turnout_percentage', 0):.1f}%")
+
         st.sidebar.metric("Data Sources Loaded", len(electoral_data))
 
     if geojson_data and "features" in geojson_data:
-        st.sidebar.metric("Electoral Districts", len(geojson_data["features"]))
+        # Filter geojson for this municipality
+        municipality_districts = []
+        for feature in geojson_data["features"]:
+            props = feature.get("properties", {})
+            if props.get("KODZASTUP") == selected_municipality_code:
+                municipality_districts.append(feature)
+
+        if municipality_districts:
+            st.sidebar.metric("Geographic Districts Found", len(municipality_districts))
 
     # Main content based on navigation
     if page == "Overview":
         display_electoral_overview(electoral_data)
 
-        # Show sample data if available
-        if electoral_data:
-            st.subheader("Available Datasets")
-            for key in electoral_data.keys():
-                st.write(f"• {key}")
-
     elif page == "Turnout Analysis":
         display_turnout_analysis(electoral_data)
 
     elif page == "Geographic Analysis":
-        display_geographic_analysis(geojson_data, electoral_data)
+        # Filter geojson for this municipality
+        municipality_geojson = None
+        if geojson_data and "features" in geojson_data:
+            municipality_districts = []
+            for feature in geojson_data["features"]:
+                props = feature.get("properties", {})
+                if props.get("KODZASTUP") == selected_municipality_code:
+                    municipality_districts.append(feature)
+
+            if municipality_districts:
+                municipality_geojson = {
+                    "type": "FeatureCollection",
+                    "features": municipality_districts,
+                }
+
+        display_geographic_analysis(municipality_geojson, electoral_data)
 
     elif page == "Data Explorer":
         display_data_explorer(electoral_data)
 
-    elif page == "Okrsek Analysis":
+    elif page == "District Analysis":
         display_district_analysis(electoral_data)
 
     # Footer
     st.markdown("---")
     st.markdown(
-        "**Prague 5 Electoral Analysis** | "
+        f"**Czech Municipalities Electoral Analysis** | "
+        f"**{municipality_name}** | "
         "Built with Streamlit | "
         f"Data sources: {len(electoral_data)} loaded"
     )
