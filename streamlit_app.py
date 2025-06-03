@@ -1907,7 +1907,7 @@ def main():
         municipality_districts = []
         for feature in geojson_data["features"]:
             props = feature.get("properties", {})
-            if props.get("KODZASTUP") == selected_municipality_code:
+            if props.get("OBEC") == selected_municipality_code:
                 municipality_districts.append(feature)
 
         if municipality_districts:
@@ -1927,7 +1927,7 @@ def main():
             municipality_districts = []
             for feature in geojson_data["features"]:
                 props = feature.get("properties", {})
-                if props.get("KODZASTUP") == selected_municipality_code:
+                if props.get("OBEC") == selected_municipality_code:
                     municipality_districts.append(feature)
 
             if municipality_districts:
@@ -1935,6 +1935,13 @@ def main():
                     "type": "FeatureCollection",
                     "features": municipality_districts,
                 }
+                st.sidebar.success(
+                    f"✅ Found {len(municipality_districts)} districts for mapping"
+                )
+            else:
+                st.sidebar.warning(
+                    f"⚠️ No geographic districts found for municipality {selected_municipality_code}"
+                )
 
         display_geographic_analysis(municipality_geojson, electoral_data)
 
