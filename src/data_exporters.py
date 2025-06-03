@@ -122,8 +122,40 @@ def export_district_data_csv(data: Dict[str, Any], output_dir: str) -> str:
 
     district_data = []
 
-    # Look for district data in various possible locations
-    if "districts" in data:
+    # Look for district data in the new structure
+    if "district_data" in data and isinstance(data["district_data"], dict):
+        district_info = data["district_data"]
+
+        if "districts" in district_info and isinstance(
+            district_info["districts"], list
+        ):
+            for district in district_info["districts"]:
+                if isinstance(district, dict):
+                    # Extract basic district info
+                    district_id = f"{district.get('district_code', '')}-{district.get('obvod_number', '')}"
+                    district_name = f"District {district.get('obvod_number', 'Unknown')} ({district.get('type', '')})"
+
+                    # Extract turnout information
+                    turnout_info = district.get("turnout", {})
+
+                    district_record = {
+                        "district_id": district_id,
+                        "district_name": district_name,
+                        "district_code": district.get("district_code", ""),
+                        "obvod_number": district.get("obvod_number", ""),
+                        "type": district.get("type", ""),
+                        "turnout_percentage": turnout_info.get("turnout_percentage"),
+                        "registered_voters": turnout_info.get("registered_voters"),
+                        "issued_ballots": turnout_info.get("issued_ballots"),
+                        "returned_ballots": turnout_info.get("returned_ballots"),
+                        "valid_votes": turnout_info.get("valid_votes"),
+                        "processing_time": district.get("processing_time", ""),
+                    }
+
+                    district_data.append(district_record)
+
+    # Look for legacy district data structure as fallback
+    elif "districts" in data:
         districts = data["districts"]
         if isinstance(districts, list):
             for district in districts:
@@ -136,30 +168,36 @@ def export_district_data_csv(data: Dict[str, Any], output_dir: str) -> str:
                             "district_name": district.get(
                                 "name", district.get("district_name", "")
                             ),
+                            "district_code": district.get("district_code", ""),
+                            "obvod_number": district.get("obvod_number", ""),
+                            "type": district.get("type", ""),
                             "turnout_percentage": district.get(
                                 "turnout_percentage", district.get("turnout")
                             ),
                             "registered_voters": district.get("registered_voters"),
+                            "issued_ballots": district.get("issued_ballots"),
+                            "returned_ballots": district.get("returned_ballots"),
                             "valid_votes": district.get("valid_votes"),
-                            "total_votes": district.get("total_votes"),
-                            "district_type": district.get("district_type", ""),
-                            "address": district.get("address", ""),
+                            "processing_time": district.get("processing_time", ""),
                         }
                     )
 
-    # If no districts found, try to extract from metadata
+    # If no districts found, try to extract from metadata as summary
     if not district_data and "summary_statistics" in data:
         stats = data["summary_statistics"]
         district_data.append(
             {
                 "district_id": "TOTAL",
                 "district_name": "Praha 5 - Total",
+                "district_code": "",
+                "obvod_number": "",
+                "type": "summary",
                 "turnout_percentage": stats.get("turnout_percentage"),
                 "registered_voters": stats.get("registered_voters"),
+                "issued_ballots": None,
+                "returned_ballots": None,
                 "valid_votes": stats.get("valid_votes"),
-                "total_votes": None,
-                "district_type": "summary",
-                "address": "",
+                "processing_time": "",
             }
         )
 
@@ -173,8 +211,9 @@ def export_district_data_csv(data: Dict[str, Any], output_dir: str) -> str:
         numeric_cols = [
             "turnout_percentage",
             "registered_voters",
+            "issued_ballots",
+            "returned_ballots",
             "valid_votes",
-            "total_votes",
         ]
         for col in numeric_cols:
             if col in df.columns:
@@ -260,6 +299,113 @@ def export_summary_stats_csv(data: Dict[str, Any], output_dir: str) -> str:
     return output_path
 
 
+def export_district_party_results_csv(data: Dict[str, Any], output_dir: str) -> str:
+    """
+    Export district-level party results for comparative analysis.
+
+    Args:
+        data: Electoral data dictionary
+        output_dir: Output directory path
+
+    Returns:
+        Path to created CSV file
+    """
+    ensure_directory(output_dir)
+
+    district_party_data = []
+
+    # Create party name mapping from main party results
+    party_mapping = {}
+    if "party_results" in data:
+        for party in data["party_results"]:
+            list_num = party.get("list_number")
+            if list_num:
+                party_mapping[int(list_num)] = party.get(
+                    "party_name", f"Party {list_num}"
+                )
+
+    # Extract district-level party results
+    if "district_data" in data and isinstance(data["district_data"], dict):
+        district_info = data["district_data"]
+
+        if "districts" in district_info and isinstance(
+            district_info["districts"], list
+        ):
+            for district in district_info["districts"]:
+                if isinstance(district, dict):
+                    district_id = f"{district.get('district_code', '')}-{district.get('obvod_number', '')}"
+                    district_name = f"District {district.get('obvod_number', 'Unknown')} ({district.get('type', '')})"
+                    obvod_number = district.get("obvod_number", "")
+                    district_type = district.get("type", "")
+
+                    # Get turnout info for context
+                    turnout_info = district.get("turnout", {})
+                    total_valid_votes = turnout_info.get("valid_votes", 0)
+
+                    # Extract party votes for this district
+                    party_votes = district.get("party_votes", [])
+
+                    for party_vote in party_votes:
+                        if isinstance(party_vote, dict):
+                            party_list_num = party_vote.get("party_list_number")
+                            votes = party_vote.get("votes", 0)
+
+                            # Skip parties with zero votes
+                            if votes > 0:
+                                party_name = party_mapping.get(
+                                    party_list_num, f"Party {party_list_num}"
+                                )
+
+                                # Calculate percentage for this district
+                                percentage = (
+                                    (votes / total_valid_votes * 100)
+                                    if total_valid_votes > 0
+                                    else 0
+                                )
+
+                                district_party_data.append(
+                                    {
+                                        "district_id": district_id,
+                                        "district_name": district_name,
+                                        "obvod_number": obvod_number,
+                                        "district_type": district_type,
+                                        "party_list_number": party_list_num,
+                                        "party_name": party_name,
+                                        "votes": votes,
+                                        "percentage": percentage,
+                                        "total_district_votes": total_valid_votes,
+                                    }
+                                )
+
+    df = pd.DataFrame(district_party_data)
+
+    if not df.empty:
+        # Clean party names
+        df["party_name"] = df["party_name"].str.replace('^„|"$', "", regex=True)
+        df["party_name"] = df["party_name"].str.replace(
+            r"^Party List \d+$", "", regex=True
+        )
+
+        # Remove rows with empty party names
+        df = df[df["party_name"].str.len() > 0]
+
+        # Ensure numeric columns are properly typed
+        numeric_cols = ["votes", "percentage", "total_district_votes"]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        # Sort by district and then by votes within district
+        df = df.sort_values(["district_id", "votes"], ascending=[True, False])
+        df = df.reset_index(drop=True)
+
+    output_path = os.path.join(output_dir, "district_party_results.csv")
+    df.to_csv(output_path, index=False)
+
+    logger.info(f"Exported {len(df)} district-party records to {output_path}")
+    return output_path
+
+
 def convert_json_to_csv_format(input_json_path: str, output_dir: str) -> Dict[str, str]:
     """
     Convert existing JSON results to CSV format.
@@ -298,6 +444,13 @@ def convert_json_to_csv_format(input_json_path: str, output_dir: str) -> Dict[st
     except Exception as e:
         logger.error(f"Failed to export summary statistics: {e}")
 
+    try:
+        created_files["district_party_results"] = export_district_party_results_csv(
+            data, output_dir
+        )
+    except Exception as e:
+        logger.error(f"Failed to export district party results: {e}")
+
     return created_files
 
 
@@ -316,6 +469,7 @@ def load_csv_data(csv_dir: str) -> Dict[str, pd.DataFrame]:
         "party_results": "party_results.csv",
         "district_data": "district_data.csv",
         "summary_stats": "summary_statistics.csv",
+        "district_party_results": "district_party_results.csv",
     }
 
     for key, filename in csv_files.items():
