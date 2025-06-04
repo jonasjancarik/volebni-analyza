@@ -1112,7 +1112,7 @@ def display_turnout_analysis(data):
 
 def display_geographic_analysis(geojson_data, electoral_data=None):
     """Display geographic analysis with filtered electoral districts map for the selected municipality"""
-    st.subheader("🗺️ Geographic Analysis - Municipality Districts")
+    # Removed redundant subheader since it's now handled in main()
 
     # Get URL parameters
     url_params = get_url_params()
@@ -2721,11 +2721,11 @@ def main():
 
     # Analysis Views as prominent tabs with URL parameter support
     tab_options = [
-        "📊 Overview",
-        "📈 Turnout Analysis",
-        "🗺️ Geographic Analysis",
-        "🔍 Data Explorer",
-        "🏘️ District Analysis",
+        "Overview",
+        "Turnout Analysis",
+        "Geographic Analysis",
+        "Data Explorer",
+        "District Analysis",
     ]
 
     # Get default tab from URL params
@@ -2733,15 +2733,21 @@ def main():
     if default_tab not in tab_options:
         default_tab = tab_options[0]
 
-    # Create tabs and get the selected one
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(tab_options)
+    # Create a selectbox for tab selection that updates URL immediately
+    st.subheader("📊 Select Analysis View")
+    selected_tab = st.selectbox(
+        "Choose analysis view:",
+        tab_options,
+        index=tab_options.index(default_tab),
+        key="main_tab_selector",
+        help="Select which analysis view to display. URL will update automatically for sharing.",
+    )
 
-    # Determine which tab is active based on URL param or default to first
-    active_tab_index = tab_options.index(default_tab)
+    # Update URL parameter for tab selection immediately when selection changes
+    update_url_params(tab=selected_tab)
 
-    # Update URL parameter for tab selection - we'll do this within each tab
-    if default_tab != tab_options[0]:  # Only update if not default
-        update_url_params(tab=default_tab)
+    # Add some visual separation
+    st.markdown("---")
 
     # Sidebar info - simplified
     st.sidebar.markdown("---")
@@ -2825,17 +2831,17 @@ def main():
                         len(municipality_districts),
                     )
 
-    # Main content based on tabs
-    with tab1:
-        update_url_params(tab=tab_options[0])
+    # Display content based on selected tab
+    if selected_tab == "Overview":
+        st.header("📊 Electoral Overview")
         display_electoral_overview(electoral_data)
 
-    with tab2:
-        update_url_params(tab=tab_options[1])
+    elif selected_tab == "Turnout Analysis":
+        st.header("📈 Turnout Analysis")
         display_turnout_analysis(electoral_data)
 
-    with tab3:
-        update_url_params(tab=tab_options[2])
+    elif selected_tab == "Geographic Analysis":
+        st.header("🗺️ Geographic Analysis")
         # Filter geojson for this municipality
         municipality_geojson = None
         if geojson_data and "features" in geojson_data:
@@ -2963,12 +2969,12 @@ def main():
                     "• District Analysis - Polling district breakdown"
                 )
 
-    with tab4:
-        update_url_params(tab=tab_options[3])
+    elif selected_tab == "Data Explorer":
+        st.header("🔍 Data Explorer")
         display_data_explorer(electoral_data)
 
-    with tab5:
-        update_url_params(tab=tab_options[4])
+    elif selected_tab == "District Analysis":
+        st.header("🏘️ District Analysis")
         display_district_analysis(electoral_data)
 
     # Footer
