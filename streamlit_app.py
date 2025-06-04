@@ -1193,7 +1193,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 map_data = st_folium(
                     cartogram_map,
                     width=None,  # Full width
-                    height=900,  # Taller map
+                    height="1200",
                     returned_objects=["last_clicked", "last_object_clicked"],
                     key=f"cartogram_{viz_type}_{selected_party}_{base_size}_{collision_avoidance}",  # Include collision_avoidance in key
                 )
@@ -1412,7 +1412,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 map_data = st_folium(
                     dot_map,
                     width=None,
-                    height=900,
+                    height="1200",
                     returned_objects=["last_clicked", "last_object_clicked"],
                     key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}_{use_color_scale}_{base_map_style}",
                 )
@@ -1430,7 +1430,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 map_data = st_folium(
                     map_obj,
                     width=None,
-                    height=900,
+                    height="1200",
                     returned_objects=["last_clicked", "last_object_clicked"],
                     key=f"fallback_map_{viz_type}_{selected_party}_{base_map_style}",
                 )
@@ -1452,7 +1452,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         map_data = st_folium(
             map_obj,
             width=None,  # Full width
-            height=900,  # Taller map
+            height="1200",
             returned_objects=["last_clicked", "last_object_clicked"],
             key=f"map_{viz_type}_{selected_party}_{base_map_style_main}",  # Include base map style in key
         )
