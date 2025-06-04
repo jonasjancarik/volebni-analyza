@@ -279,16 +279,6 @@ def create_map_with_tiles(location, zoom_start, base_map_style):
         return folium.Map(
             location=location, zoom_start=zoom_start, tiles="CartoDB voyager"
         )
-    elif base_map_style == "Stamen Toner":
-        # Create base map without tiles, then add custom tile layer
-        m = folium.Map(location=location, zoom_start=zoom_start, tiles=None)
-        folium.raster_layers.TileLayer(
-            tiles="https://stamen-tiles-{s}.a.ssl.fastly.net/toner/{z}/{x}/{y}.png",
-            attr='Map tiles by <a href="http://stamen.com">Stamen Design</a>, under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>. Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.',
-            name="Stamen Toner",
-            control=True,
-        ).add_to(m)
-        return m
     else:
         # Default fallback
         return folium.Map(
@@ -1150,7 +1140,6 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 "OpenStreetMap",
                 "CartoDB Positron",
                 "CartoDB Dark Matter",
-                "Stamen Toner",
                 "CartoDB Voyager",
             ],
             index=0,  # Default to OpenStreetMap
