@@ -96,7 +96,6 @@ def load_geojson_data():
     # Check if file already exists
     if cache_file.exists():
         try:
-            st.info("📁 Loading electoral districts from local cache...")
             with open(cache_file, "r", encoding="utf-8") as f:
                 geojson_data = json.load(f)
 
@@ -107,9 +106,6 @@ def load_geojson_data():
             ):
                 features = geojson_data.get("features", [])
                 if features:
-                    st.success(
-                        f"✅ Loaded {len(features):,} electoral districts from cache"
-                    )
                     return geojson_data
 
             st.warning("⚠️ Cached file appears corrupted, re-downloading...")
@@ -937,7 +933,7 @@ def display_turnout_analysis(data):
 
         # Filter out summary rows and check for meaningful district data
         district_df_filtered = district_df[
-            (district_df["district_id"] != "TOTAL")
+            (district_df["district_code"] != "TOTAL")
             & (district_df["turnout_percentage"].notna())
             & (district_df["turnout_percentage"] > 0)
         ]
@@ -946,12 +942,12 @@ def display_turnout_analysis(data):
             # Create turnout visualization
             fig = px.bar(
                 district_df_filtered.head(20),  # Show top 20 for readability
-                x="district_name",
+                x="district_code",
                 y="turnout_percentage",
                 title="Voter Turnout by District",
                 labels={
                     "turnout_percentage": "Turnout (%)",
-                    "district_name": "Electoral District",
+                    "district_code": "Electoral District",
                 },
             )
             fig.update_xaxes(tickangle=45)
@@ -974,14 +970,14 @@ def display_turnout_analysis(data):
             st.metric("Districts with Data", len(district_df_filtered))
         else:
             # Show summary turnout data if available
-            summary_row = district_df[district_df["district_id"] == "TOTAL"]
+            summary_row = district_df[district_df["district_code"] == "TOTAL"]
             if not summary_row.empty and summary_row.iloc[0]["turnout_percentage"] > 0:
                 turnout_pct = summary_row.iloc[0]["turnout_percentage"]
-                st.info(f"Overall Prague 5 Turnout: {turnout_pct:.1f}%")
+                st.info(f"Overall Turnout: {turnout_pct:.1f}%")
 
                 # Create a simple single-bar chart
                 fig = px.bar(
-                    x=["Praha 5"],
+                    x=["Municipality"],
                     y=[turnout_pct],
                     title="Overall Voter Turnout",
                     labels={"y": "Turnout (%)", "x": "District"},
@@ -1212,7 +1208,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         )
 
         # Dot density controls
-        col_a, col_b, col_c, col_d, col_e = st.columns([1, 1, 1, 1, 1])
+        col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
         with col_a:
             votes_per_dot = st.selectbox(
                 "Votes per dot:",
@@ -1242,19 +1238,6 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 "Color by vote share",
                 value=True,
                 help="Color dots based on vote share: red (low) to green (high). When disabled, uses single color.",
-            )
-        with col_e:
-            base_map_style = st.selectbox(
-                "Base map style:",
-                [
-                    "CartoDB Positron",
-                    "CartoDB Dark Matter",
-                    "Stamen Toner",
-                    "OpenStreetMap",
-                    "CartoDB Voyager",
-                ],
-                index=0,  # Default to CartoDB Positron (light, muted)
-                help="Choose a base map style. Muted styles help color-coded dots stand out better.",
             )
 
         # Create dot density map
@@ -1336,7 +1319,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 dot_map = folium.Map(
                     location=[50.0755, 14.4378],  # Default center
                     zoom_start=12,
-                    tiles=base_map_style,
+                    tiles=base_map_style_main,
                 )
 
                 # Add district boundaries as background (light gray)
@@ -1414,7 +1397,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                     width=None,
                     height="1200",
                     returned_objects=["last_clicked", "last_object_clicked"],
-                    key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}_{use_color_scale}_{base_map_style}",
+                    key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}_{use_color_scale}_{base_map_style_main}",
                 )
 
             except Exception as e:
@@ -1425,14 +1408,14 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                     electoral_data,
                     viz_type,
                     selected_party,
-                    base_map_style,
+                    base_map_style_main,
                 )
                 map_data = st_folium(
                     map_obj,
                     width=None,
                     height="1200",
                     returned_objects=["last_clicked", "last_object_clicked"],
-                    key=f"fallback_map_{viz_type}_{selected_party}_{base_map_style}",
+                    key=f"fallback_map_{viz_type}_{selected_party}_{base_map_style_main}",
                 )
         else:
             st.warning("No district data available for dot density visualization.")
@@ -1629,22 +1612,24 @@ def display_district_analysis(data):
     district_party_df = data["district_party_results"]
 
     # Filter out summary rows
-    district_df_filtered = district_df[district_df["district_id"] != "TOTAL"]
+    district_df_filtered = district_df[district_df["district_code"] != "TOTAL"]
 
     if district_df_filtered.empty or district_party_df.empty:
         st.warning("No district-level data available for analysis.")
         return
 
-    # Extract district codes from district_id (e.g., "5001-1" -> "5001")
+    # The district_code is already available directly in our data structure
     district_df_filtered = district_df_filtered.copy()
-    district_df_filtered["district_code"] = (
-        district_df_filtered["district_id"].str.split("-").str[0]
-    )
 
+    # For party data, we may need to extract district_code from district_id if it exists
     district_party_df = district_party_df.copy()
-    district_party_df["district_code"] = (
-        district_party_df["district_id"].str.split("-").str[0]
-    )
+    if (
+        "district_id" in district_party_df.columns
+        and "district_code" not in district_party_df.columns
+    ):
+        district_party_df["district_code"] = (
+            district_party_df["district_id"].str.split("-").str[0]
+        )
 
     # Get unique okrseks (use district_code as the unique identifier for polling districts)
     # Each district_code represents a physical polling location/okrsek
@@ -2574,26 +2559,23 @@ def main():
 
     st.subheader(f"📍 Analysis for: **{municipality_name}** - {election_type}")
 
-    # Navigation
-    st.sidebar.markdown("---")
-    st.sidebar.title("📊 Analysis Views")
-    page = st.sidebar.selectbox(
-        "Choose a view:",
-        [
-            "Overview",
-            "Turnout Analysis",
-            "Geographic Analysis",
-            "Data Explorer",
-            "District Analysis",
-        ],
-    )
-
     # Load data for selected municipality/zastupitelstvo
     with st.spinner(f"Loading data for {municipality_name} {election_type}..."):
         geojson_data = load_geojson_data()
         electoral_data = load_municipality_data(selected_zastupitelstvo_code)
 
-    # Sidebar info
+    # Analysis Views as prominent tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        [
+            "📊 Overview",
+            "📈 Turnout Analysis",
+            "🗺️ Geographic Analysis",
+            "🔍 Data Explorer",
+            "🏘️ District Analysis",
+        ]
+    )
+
+    # Sidebar info - simplified
     st.sidebar.markdown("---")
     st.sidebar.info(
         "This dashboard visualizes electoral data for Czech council elections. "
@@ -2672,47 +2654,145 @@ def main():
                         len(municipality_districts),
                     )
 
-    # Main content based on navigation
-    if page == "Overview":
+    # Main content based on tabs
+    with tab1:
         display_electoral_overview(electoral_data)
 
-    elif page == "Turnout Analysis":
+    with tab2:
         display_turnout_analysis(electoral_data)
 
-    elif page == "Geographic Analysis":
+    with tab3:
         # Filter geojson for this municipality
         municipality_geojson = None
         if geojson_data and "features" in geojson_data:
             municipality_districts = []
+
+            # First, try municipality-level matching (more precise)
             for feature in geojson_data["features"]:
                 props = feature.get("properties", {})
-                # Try matching against any of our geographic codes
+
+                # Strategy 1: Match using MOMC field
                 if props.get("MOMC") in geographic_municipality_codes:
                     municipality_districts.append(feature)
+
+                # Strategy 2: Match using OBEC field
+                elif props.get("OBEC") in geographic_municipality_codes:
+                    municipality_districts.append(feature)
+
+                # Strategy 3: Match using CIS_OBEC field
+                elif props.get("CIS_OBEC") in geographic_municipality_codes:
+                    municipality_districts.append(feature)
+
+            # If no municipality-level matches found, try district-level matching as fallback
+            if (
+                not municipality_districts
+                and electoral_data
+                and "district_data" in electoral_data
+            ):
+                electoral_districts = electoral_data["district_data"]
+                if hasattr(electoral_districts, "index"):  # It's a DataFrame
+                    district_codes = set(
+                        electoral_districts["district_code"].astype(str).tolist()
+                    )
+                else:  # It's a list of dicts
+                    district_codes = set(
+                        str(d.get("district_code", "")) for d in electoral_districts
+                    )
+
+                # Only match districts if we're confident about the municipality
+                for feature in geojson_data["features"]:
+                    props = feature.get("properties", {})
+                    feature_district_code = str(props.get("CISLO", ""))
+
+                    # More conservative district matching - only if we have a reasonable number of matches
+                    if feature_district_code in district_codes:
+                        municipality_districts.append(feature)
+
+                # Safety check - if we get too many districts, something is wrong
+                if (
+                    len(municipality_districts) > 200
+                ):  # Reasonable upper limit for any municipality
+                    municipality_districts = []  # Clear the overly broad match
 
             if municipality_districts:
                 municipality_geojson = {
                     "type": "FeatureCollection",
                     "features": municipality_districts,
                 }
-                st.sidebar.success(
-                    f"✅ Found {len(municipality_districts)} districts for mapping"
-                )
+                display_geographic_analysis(municipality_geojson, electoral_data)
             else:
-                st.sidebar.warning(
-                    f"⚠️ No geographic districts found for municipality {selected_zastupitelstvo_code}"
+                # Enhanced debugging for municipality matching
+                st.subheader("🗺️ Geographic Analysis - Debugging Municipality Match")
+                st.warning(
+                    f"📍 **No geographic boundaries found** for {municipality_name}"
                 )
-                # Show debugging info
-                st.sidebar.write(f"**Debug Info:**")
-                st.sidebar.write(f"Zastupitelstvo Code: {selected_zastupitelstvo_code}")
-                st.sidebar.write(f"Geographic Codes: {geographic_municipality_codes}")
 
-        display_geographic_analysis(municipality_geojson, electoral_data)
+                # Show detailed debugging info
+                with st.expander("🔧 Detailed Matching Analysis", expanded=True):
+                    st.write(f"**Municipality:** {municipality_name}")
+                    st.write(f"**Zastupitelstvo Code:** {selected_zastupitelstvo_code}")
+                    st.write(
+                        f"**Municipality Codes Searched:** {geographic_municipality_codes}"
+                    )
 
-    elif page == "Data Explorer":
+                    # Sample some GeoJSON features to understand the structure
+                    if geojson_data and "features" in geojson_data:
+                        st.write(
+                            f"**Total GeoJSON Features:** {len(geojson_data.get('features', []))}"
+                        )
+
+                        # Show sample of available municipality codes in GeoJSON
+                        sample_features = geojson_data["features"][
+                            :50
+                        ]  # Sample first 50
+
+                        momc_codes = set()
+                        obec_codes = set()
+                        cis_obec_codes = set()
+
+                        for feature in sample_features:
+                            props = feature.get("properties", {})
+                            if props.get("MOMC"):
+                                momc_codes.add(props.get("MOMC"))
+                            if props.get("OBEC"):
+                                obec_codes.add(props.get("OBEC"))
+                            if props.get("CIS_OBEC"):
+                                cis_obec_codes.add(props.get("CIS_OBEC"))
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.write("**Sample MOMC codes:**")
+                            st.write(sorted(list(momc_codes))[:10])
+                        with col2:
+                            st.write("**Sample OBEC codes:**")
+                            st.write(sorted(list(obec_codes))[:10])
+                        with col3:
+                            st.write("**Sample CIS_OBEC codes:**")
+                            st.write(sorted(list(cis_obec_codes))[:10])
+
+                        # Show a sample feature structure
+                        st.write("**Sample GeoJSON feature properties:**")
+                        if sample_features:
+                            sample_props = sample_features[0].get("properties", {})
+                            st.json(
+                                dict(list(sample_props.items())[:10])
+                            )  # Show first 10 properties
+
+                st.info(
+                    "**This suggests that the municipality codes in our electoral data don't match "
+                    "the codes used in the GeoJSON boundary data.** This is a common issue when "
+                    "different Czech government systems use different coding schemes.\n\n"
+                    "**Available analysis for this municipality:**\n"
+                    "• Overview - Party results and statistics\n"
+                    "• Turnout Analysis - Voter participation data\n"
+                    "• Data Explorer - Raw electoral data\n"
+                    "• District Analysis - Polling district breakdown"
+                )
+
+    with tab4:
         display_data_explorer(electoral_data)
 
-    elif page == "District Analysis":
+    with tab5:
         display_district_analysis(electoral_data)
 
     # Footer

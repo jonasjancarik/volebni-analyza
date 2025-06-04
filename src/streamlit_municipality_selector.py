@@ -139,67 +139,14 @@ class MunicipalitySelector:
         df["name_key"] = df.index
         df = df.reset_index(drop=True)
 
-        # Add filters
-        st.sidebar.subheader("Filters")
-
-        # Search by name
-        search_term = st.sidebar.text_input(
-            "Search by name:", placeholder="e.g., Praha, Brno, Ostrava"
-        )
-
-        if search_term:
-            df = df[df["name"].str.contains(search_term, case=False, na=False)]
-
-        # Filter by size (number of mandates)
-        if len(df) > 0:
-            mandates_min = int(df["mandates"].min())
-            mandates_max = int(df["mandates"].max())
-
-            # Handle case where all municipalities have same number of mandates
-            if mandates_min == mandates_max:
-                st.sidebar.info(f"All municipalities have {mandates_min} council seats")
-                min_mandates = mandates_min
-            else:
-                min_mandates = st.sidebar.slider(
-                    "Minimum council seats:",
-                    min_value=mandates_min,
-                    max_value=mandates_max,
-                    value=mandates_min,
-                )
-            df = df[df["mandates"] >= min_mandates]
-
-            # Filter by turnout
-            min_turnout = st.sidebar.slider(
-                "Minimum turnout %:",
-                min_value=0.0,
-                max_value=100.0,
-                value=0.0,
-                step=0.1,
-            )
-            df = df[df["turnout"] >= min_turnout]
-
-        # Sort options
-        sort_options = {
-            "Name (A-Z)": ("name", True),
-            "Name (Z-A)": ("name", False),
-            "Council Seats (Most)": ("mandates", False),
-            "Council Seats (Least)": ("mandates", True),
-            "Turnout (Highest)": ("turnout", False),
-            "Turnout (Lowest)": ("turnout", True),
-            "Districts (Most)": ("districts", False),
-        }
-
-        sort_choice = st.sidebar.selectbox("Sort by:", list(sort_options.keys()))
-        sort_column, ascending = sort_options[sort_choice]
-        df = df.sort_values(sort_column, ascending=ascending)
+        # Default sort by name
+        df = df.sort_values("name", ascending=True)
 
         # Show statistics
-        st.sidebar.info(f"**Found {len(df)} municipalities**")
+        st.sidebar.info(f"**{len(df)} council elections available**")
 
-        # Display top municipalities
+        # Display all municipalities
         if len(df) > 0:
-            st.sidebar.subheader("Select Election")
-
             # Prioritize OBEC (Municipal Council) elections by bringing them to the top
             obec_entries = df[df["election_type"] == "Municipal Council"]
             mcmo_entries = df[df["election_type"] == "City District Council"]
@@ -214,21 +161,21 @@ class MunicipalitySelector:
                 [obec_entries, mcmo_entries, other_entries], ignore_index=True
             )
 
-            # Create selection with municipality and election type info
+            # Create selection with simplified municipality info
             municipality_options = []
-            for _, row in df_prioritized.head(
-                50
-            ).iterrows():  # Increased from 20 to 50 for better coverage
-                election_type = row.get("election_type", "Council")
-                option_text = f"{row['name']} - {election_type} ({row['mandates']} seats, {row['turnout']:.1f}% turnout)"
+            for (
+                _,
+                row,
+            ) in df_prioritized.iterrows():  # Show all municipalities, not just top 50
+                option_text = f"{row['name']} ({row['zastupitelstvo_code']})"
                 municipality_options.append((option_text, row["zastupitelstvo_code"]))
 
             if municipality_options:
                 selected_option = st.sidebar.selectbox(
-                    "Choose election:",
+                    "Choose municipality:",
                     municipality_options,
                     format_func=lambda x: x[0],
-                    help="Each entry represents a specific council election. Some areas may have multiple elections (municipal + district).",
+                    help="Start typing to search for a municipality. Each entry represents a specific council election.",
                 )
 
                 if selected_option:
@@ -255,40 +202,16 @@ class MunicipalitySelector:
         metadata = municipality_data["metadata"]
         stats = municipality_data["summary_statistics"]
 
-        # Determine election type from district data
-        election_type = "Council Election"
-        districts = municipality_data.get("district_data", [])
-        if districts:
-            first_district = districts[0]
-            oznac_typu = first_district.get("type", "")
-
-            if oznac_typu == "OBEC":
-                election_type = "Municipal Council Election"
-            elif oznac_typu == "MCMO":
-                election_type = "City District Council Election"
-
-        st.sidebar.subheader("Election Info")
-        st.sidebar.write(f"**Municipality:** {metadata['municipality_name']}")
-        st.sidebar.write(f"**Election Type:** {election_type}")
-        st.sidebar.write(f"**Code:** {metadata['municipality_code']}")
-        st.sidebar.write(f"**Council Seats:** {metadata['total_mandates']}")
-        st.sidebar.write(f"**Seats Won:** {metadata.get('mandates_won', 0)}")
+        # st.sidebar.write(f"**Seats Won:** {metadata.get('mandates_won', 0)}")  # todo: check if this can be different from total_mandates
 
         st.sidebar.subheader("Election Statistics")
+        st.sidebar.write(f"**Council Seats:** {metadata['total_mandates']}")
         st.sidebar.write(f"**Electoral Districts:** {stats['electoral_districts']}")
         st.sidebar.write(f"**Registered Voters:** {stats['registered_voters']:,}")
         st.sidebar.write(f"**Turnout:** {stats['turnout_percentage']:.2f}%")
         st.sidebar.write(f"**Valid Votes:** {stats['valid_votes']:,}")
         st.sidebar.write(f"**Parties:** {stats['parties_participating']}")
         st.sidebar.write(f"**Parties with Seats:** {stats['parties_with_mandates']}")
-
-        # Show a note about election type
-        if oznac_typu == "OBEC":
-            st.sidebar.info("🏛️ This is a **municipal council** election (OBEC)")
-        elif oznac_typu == "MCMO":
-            st.sidebar.info("🏢 This is a **city district council** election (MCMO)")
-        else:
-            st.sidebar.info(f"📊 Election type: {oznac_typu}")
 
     def get_municipality_data(self, zastupitelstvo_code: str) -> Optional[Dict]:
         """Get complete data for a specific zastupitelstvo (council election)"""
