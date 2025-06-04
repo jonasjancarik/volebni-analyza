@@ -59,6 +59,53 @@ st.markdown(
 )
 
 
+def get_url_params():
+    """Get URL parameters using the appropriate Streamlit method"""
+    try:
+        # Try newer st.query_params first (Streamlit 1.30+)
+        if hasattr(st, "query_params"):
+            return dict(st.query_params)
+        else:
+            # Fallback to experimental method
+            return st.experimental_get_query_params()
+    except Exception:
+        return {}
+
+
+def update_url_params(**params):
+    """Update URL parameters using the appropriate Streamlit method"""
+    try:
+        # Try newer st.query_params first (Streamlit 1.30+)
+        if hasattr(st, "query_params"):
+            for key, value in params.items():
+                if value is not None:
+                    st.query_params[key] = str(value)
+                elif key in st.query_params:
+                    del st.query_params[key]
+        else:
+            # Fallback to experimental method
+            current_params = st.experimental_get_query_params()
+            for key, value in params.items():
+                if value is not None:
+                    current_params[key] = [str(value)]
+                elif key in current_params:
+                    del current_params[key]
+            st.experimental_set_query_params(**current_params)
+    except Exception:
+        pass  # Silently fail if URL params not supported
+
+
+def get_param_value(params, key, default=None):
+    """Get a parameter value from URL params dict, handling both list and string formats"""
+    if key not in params:
+        return default
+
+    value = params[key]
+    if isinstance(value, list):
+        return value[0] if value else default
+    return value
+
+
 def get_seat_count(electoral_data):
     """Get the number of seats for the current municipality from electoral data"""
     if not electoral_data or "summary_statistics" not in electoral_data:
@@ -1054,6 +1101,9 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     """Display geographic analysis with filtered electoral districts map for the selected municipality"""
     st.subheader("🗺️ Geographic Analysis - Municipality Districts")
 
+    # Get URL parameters
+    url_params = get_url_params()
+
     # Initialize map_data to avoid UnboundLocalError
     map_data = None
 
@@ -1114,36 +1164,57 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
+        # Get default from URL or use first option
+        viz_options = [
+            "Turnout",
+            "Estimated Voters",
+            "Valid Votes",
+            "Valid Votes (dots)",
+            "Party Results",
+        ]
+        default_viz_type = get_param_value(url_params, "viz_type", viz_options[0])
+        if default_viz_type not in viz_options:
+            default_viz_type = viz_options[0]
+
         viz_type = st.selectbox(
             "Choose what to visualize:",
-            [
-                "Turnout",
-                "Estimated Voters",
-                "Valid Votes",
-                "Valid Votes (dots)",
-                "Party Results",
-            ],
+            viz_options,
+            index=viz_options.index(default_viz_type),
             help="Select the data to display on the map with color coding",
+            key="viz_type_select",
         )
 
     with col2:
+        map_options = ["Geographic Map", "Cartogram", "Dot Density"]
+        default_map_type = get_param_value(url_params, "map_type", map_options[0])
+        if default_map_type not in map_options:
+            default_map_type = map_options[0]
+
         map_type = st.selectbox(
             "Map type:",
-            ["Geographic Map", "Cartogram", "Dot Density"],
+            map_options,
+            index=map_options.index(default_map_type),
             help="Choose between geographic accuracy, data-proportional areas, or dot-fill visualization",
+            key="map_type_select",
         )
 
     with col3:
+        style_options = [
+            "OpenStreetMap",
+            "CartoDB Positron",
+            "CartoDB Dark Matter",
+            "CartoDB Voyager",
+        ]
+        default_style = get_param_value(url_params, "base_map_style", style_options[0])
+        if default_style not in style_options:
+            default_style = style_options[0]
+
         base_map_style_main = st.selectbox(
             "Base map style:",
-            [
-                "OpenStreetMap",
-                "CartoDB Positron",
-                "CartoDB Dark Matter",
-                "CartoDB Voyager",
-            ],
-            index=0,  # Default to OpenStreetMap
+            style_options,
+            index=style_options.index(default_style),
             help="Choose a base map style. Muted styles help overlays stand out better.",
+            key="base_map_style_select",
         )
 
     selected_party = None
@@ -1156,14 +1227,30 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 else []
             )
             if available_parties:
+                default_party = get_param_value(
+                    url_params, "selected_party", available_parties[0]
+                )
+                if default_party not in available_parties:
+                    default_party = available_parties[0]
+
                 selected_party = st.selectbox(
                     "Select party:",
                     available_parties,
+                    index=available_parties.index(default_party),
                     help="Choose which party's results to visualize",
+                    key="selected_party_select",
                 )
             else:
                 st.warning("No party data available")
                 viz_type = "Turnout"  # Fallback
+
+    # Update URL parameters when filters change
+    update_url_params(
+        viz_type=viz_type,
+        map_type=map_type,
+        base_map_style=base_map_style_main,
+        selected_party=selected_party if viz_type == "Party Results" else None,
+    )
 
     # Create and display the map based on type
     if map_type == "Cartogram":
@@ -1177,21 +1264,33 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         with col_a:
             st.write("**Adjust Circle Size:**")
         with col_b:
+            default_base_size = float(
+                get_param_value(url_params, "base_size", "0.0015")
+            )
             base_size = st.slider(
                 "Base size",
                 min_value=0.001,
                 max_value=0.005,
-                value=0.0015,
+                value=default_base_size,
                 step=0.0001,
                 format="%.10f",
                 help="Controls the overall size of circles. Larger values = bigger circles.",
+                key="base_size_slider",
             )
         with col_c:
+            default_collision = (
+                get_param_value(url_params, "collision_avoidance", "false").lower()
+                == "true"
+            )
             collision_avoidance = st.checkbox(
                 "Collision Avoidance",
-                value=False,
+                value=default_collision,
                 help="When enabled, circles are moved to avoid overlaps but may drift from geographic accuracy. When disabled, circles stay at true geographic positions (recommended).",
+                key="collision_avoidance_checkbox",
             )
+
+        # Update URL parameters for cartogram controls
+        update_url_params(base_size=base_size, collision_avoidance=collision_avoidance)
 
         # Create cartogram
         cartogram_gdf = create_cartogram(
@@ -1234,35 +1333,59 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         # Dot density controls
         col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
         with col_a:
+            votes_per_dot_options = [50, 100, 150, 200, 250]
+            default_votes_per_dot = int(
+                get_param_value(url_params, "votes_per_dot", "100")
+            )
+            if default_votes_per_dot not in votes_per_dot_options:
+                default_votes_per_dot = 100
+
             votes_per_dot = st.selectbox(
                 "Votes per dot:",
-                [50, 100, 150, 200, 250],
-                index=1,  # Default to 100
+                votes_per_dot_options,
+                index=votes_per_dot_options.index(default_votes_per_dot),
                 help="How many votes each dot represents. Smaller values = more dots = finer detail.",
+                key="votes_per_dot_select",
             )
         with col_b:
+            default_dot_spacing = int(get_param_value(url_params, "dot_spacing", "70"))
             dot_spacing = st.slider(
                 "Dot spacing (meters)",
                 min_value=30,
                 max_value=120,
-                value=70,
+                value=default_dot_spacing,
                 step=10,
                 help="Distance between dots in meters. Affects dot density within districts.",
+                key="dot_spacing_slider",
             )
         with col_c:
+            default_dot_size = int(get_param_value(url_params, "dot_size", "2"))
             dot_size = st.slider(
                 "Dot size",
                 min_value=1,
                 max_value=5,
-                value=2,
+                value=default_dot_size,
                 help="Visual size of each dot on the map.",
+                key="dot_size_slider",
             )
         with col_d:
+            default_color_scale = (
+                get_param_value(url_params, "use_color_scale", "true").lower() == "true"
+            )
             use_color_scale = st.checkbox(
                 "Color by vote share",
-                value=True,
+                value=default_color_scale,
                 help="Color dots based on vote share: red (low) to green (high). When disabled, uses single color.",
+                key="use_color_scale_checkbox",
             )
+
+        # Update URL parameters for dot density controls
+        update_url_params(
+            votes_per_dot=votes_per_dot,
+            dot_spacing=dot_spacing,
+            dot_size=dot_size,
+            use_color_scale=use_color_scale,
+        )
 
         # Create dot density map
         if district_data is not None and isinstance(district_data, pd.DataFrame):
@@ -1481,51 +1604,18 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
 
         with col2:
             # Try to find electoral data for this okrsek
-            if district_data is not None and isinstance(district_data, pd.DataFrame):
-                # Filter district data for this okrsek
-                okrsek_data = district_data[
-                    district_data["district_code"] == str(district_code)
-                ]
-
-                if not okrsek_data.empty:
-                    # Get first row (or aggregate if multiple)
-                    data_row = okrsek_data.iloc[0]
-
-                    st.write("**Electoral Data:**")
-                    if "turnout_percentage" in data_row:
-                        st.metric("Turnout", f"{data_row['turnout_percentage']:.1f}%")
-                    if "registered_voters" in data_row:
-                        st.metric(
-                            "Registered Voters", f"{data_row['registered_voters']:,}"
-                        )
-                    if "valid_votes" in data_row:
-                        st.metric("Valid Votes", f"{data_row['valid_votes']:,}")
-                else:
-                    st.write("*No electoral data available for this okrsek*")
-
-            # Show party results for this okrsek if available
-            if party_data is not None and isinstance(party_data, pd.DataFrame):
-                okrsek_party_data = party_data[
-                    party_data["district_id"].str.startswith(str(district_code) + "-")
-                ]
-
-                if not okrsek_party_data.empty:
-                    # Aggregate party results for this okrsek
-                    party_summary = (
-                        okrsek_party_data.groupby("party_name")["votes"]
-                        .sum()
-                        .sort_values(ascending=False)
-                    )
-
-                    st.write("**Top 3 Parties in this Okrsek:**")
-                    for i, (party, votes) in enumerate(party_summary.head(3).items()):
-                        total_votes = (
-                            okrsek_party_data["total_district_votes"].iloc[0]
-                            if not okrsek_party_data.empty
-                            else 1
-                        )
-                        pct = (votes / total_votes * 100) if total_votes > 0 else 0
-                        st.write(f"{i + 1}. {party}: {votes:,} votes ({pct:.1f}%)")
+            okrsek_data = district_data[district_data["district_code"] == district_code]
+            if not okrsek_data.empty:
+                st.write("**Electoral Data:**")
+                st.metric(
+                    "Turnout", f"{okrsek_data['turnout_percentage'].iloc[0]:.1f}%"
+                )
+                st.metric(
+                    "Registered Voters", f"{okrsek_data['registered_voters'].iloc[0]:,}"
+                )
+                st.metric("Valid Votes", f"{okrsek_data['valid_votes'].iloc[0]:,}")
+            else:
+                st.write("*No electoral data available for this okrsek*")
 
         # Show raw data in expander
         with st.expander("Raw GeoJSON Properties"):
@@ -2520,6 +2610,9 @@ def icon_fill_layer(
 def main():
     """Main Streamlit application"""
 
+    # Get URL parameters early
+    url_params = get_url_params()
+
     # Header
     st.markdown(
         '<h1 class="main-header">🏛️ Czech Municipalities Electoral Analysis</h1>',
@@ -2532,7 +2625,13 @@ def main():
 
     # Initialize municipality selector
     selector = MunicipalitySelector()
+
+    # Get default municipality from URL params (we'll handle this via session state if needed)
+    default_municipality = get_param_value(url_params, "municipality")
     selected_zastupitelstvo_code = selector.create_municipality_selector()
+
+    # Update URL parameter for municipality selection
+    update_url_params(municipality=selected_zastupitelstvo_code)
 
     if not selected_zastupitelstvo_code:
         st.info(
@@ -2586,16 +2685,29 @@ def main():
         geojson_data = load_geojson_data()
         electoral_data = load_municipality_data(selected_zastupitelstvo_code)
 
-    # Analysis Views as prominent tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        [
-            "📊 Overview",
-            "📈 Turnout Analysis",
-            "🗺️ Geographic Analysis",
-            "🔍 Data Explorer",
-            "🏘️ District Analysis",
-        ]
-    )
+    # Analysis Views as prominent tabs with URL parameter support
+    tab_options = [
+        "📊 Overview",
+        "📈 Turnout Analysis",
+        "🗺️ Geographic Analysis",
+        "🔍 Data Explorer",
+        "🏘️ District Analysis",
+    ]
+
+    # Get default tab from URL params
+    default_tab = get_param_value(url_params, "tab", tab_options[0])
+    if default_tab not in tab_options:
+        default_tab = tab_options[0]
+
+    # Create tabs and get the selected one
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(tab_options)
+
+    # Determine which tab is active based on URL param or default to first
+    active_tab_index = tab_options.index(default_tab)
+
+    # Update URL parameter for tab selection - we'll do this within each tab
+    if default_tab != tab_options[0]:  # Only update if not default
+        update_url_params(tab=default_tab)
 
     # Sidebar info - simplified
     st.sidebar.markdown("---")
@@ -2614,6 +2726,13 @@ def main():
             st.sidebar.metric("Turnout %", f"{stats.get('turnout_percentage', 0):.1f}%")
 
         st.sidebar.metric("Data Sources Loaded", len(electoral_data))
+
+    # Add URL sharing info in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🔗 Share This Analysis")
+    st.sidebar.info(
+        "💡 The URL automatically updates with your filter settings. Copy and share the link to let others see the same view!"
+    )
 
     # For geographic analysis, we need to map zastupitelstvo_code to geographic municipality code
     # since the GeoJSON uses different codes (CIS_OBEC vs KODZASTUP)
@@ -2674,12 +2793,15 @@ def main():
 
     # Main content based on tabs
     with tab1:
+        update_url_params(tab=tab_options[0])
         display_electoral_overview(electoral_data)
 
     with tab2:
+        update_url_params(tab=tab_options[1])
         display_turnout_analysis(electoral_data)
 
     with tab3:
+        update_url_params(tab=tab_options[2])
         # Filter geojson for this municipality
         municipality_geojson = None
         if geojson_data and "features" in geojson_data:
@@ -2808,9 +2930,11 @@ def main():
                 )
 
     with tab4:
+        update_url_params(tab=tab_options[3])
         display_data_explorer(electoral_data)
 
     with tab5:
+        update_url_params(tab=tab_options[4])
         display_district_analysis(electoral_data)
 
     # Footer
