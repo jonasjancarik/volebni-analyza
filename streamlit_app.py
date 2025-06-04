@@ -261,6 +261,41 @@ def load_municipality_data(zastupitelstvo_code: str):
     return converted_data
 
 
+def create_map_with_tiles(location, zoom_start, base_map_style):
+    """Create a Folium map with proper tile handling and attribution"""
+    if base_map_style == "OpenStreetMap":
+        return folium.Map(
+            location=location, zoom_start=zoom_start, tiles="OpenStreetMap"
+        )
+    elif base_map_style == "CartoDB Positron":
+        return folium.Map(
+            location=location, zoom_start=zoom_start, tiles="CartoDB positron"
+        )
+    elif base_map_style == "CartoDB Dark Matter":
+        return folium.Map(
+            location=location, zoom_start=zoom_start, tiles="CartoDB dark_matter"
+        )
+    elif base_map_style == "CartoDB Voyager":
+        return folium.Map(
+            location=location, zoom_start=zoom_start, tiles="CartoDB voyager"
+        )
+    elif base_map_style == "Stamen Toner":
+        # Create base map without tiles, then add custom tile layer
+        m = folium.Map(location=location, zoom_start=zoom_start, tiles=None)
+        folium.raster_layers.TileLayer(
+            tiles="https://stamen-tiles-{s}.a.ssl.fastly.net/toner/{z}/{x}/{y}.png",
+            attr='Map tiles by <a href="http://stamen.com">Stamen Design</a>, under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>. Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.',
+            name="Stamen Toner",
+            control=True,
+        ).add_to(m)
+        return m
+    else:
+        # Default fallback
+        return folium.Map(
+            location=location, zoom_start=zoom_start, tiles="OpenStreetMap"
+        )
+
+
 def create_folium_map(
     geojson_data,
     electoral_data=None,
@@ -305,8 +340,8 @@ def create_folium_map(
             # Use a more conservative initial zoom, we'll fit bounds after adding features
             zoom_start = 10
 
-    # Create map with initial center
-    m = folium.Map(location=map_center, zoom_start=zoom_start, tiles=base_map_style)
+    # Create map with initial center and proper tile handling
+    m = create_map_with_tiles(map_center, zoom_start, base_map_style)
 
     # Calculate bounds for auto-fitting after we add all features
     bounds = None
@@ -1316,10 +1351,10 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
 
             # Create the icon fill layer
             try:
-                dot_map = folium.Map(
-                    location=[50.0755, 14.4378],  # Default center
-                    zoom_start=12,
-                    tiles=base_map_style_main,
+                dot_map = create_map_with_tiles(
+                    [50.0755, 14.4378],  # Default center
+                    12,
+                    base_map_style_main,
                 )
 
                 # Add district boundaries as background (light gray)
@@ -2142,9 +2177,7 @@ def create_cartogram_map(
     center_lat = (bounds[1] + bounds[3]) / 2
     center_lon = (bounds[0] + bounds[2]) / 2
 
-    m = folium.Map(
-        location=[center_lat, center_lon], zoom_start=12, tiles="OpenStreetMap"
-    )
+    m = create_map_with_tiles([center_lat, center_lon], 12, "OpenStreetMap")
 
     # Color mapping function (uses display_value, not vote_count)
     def get_color_for_value(value, viz_type):
@@ -2577,10 +2610,6 @@ def main():
 
     # Sidebar info - simplified
     st.sidebar.markdown("---")
-    st.sidebar.info(
-        "This dashboard visualizes electoral data for Czech council elections. "
-        "Use the election selector above to switch between different councils and election types."
-    )
 
     # Quick stats in sidebar
     if electoral_data:
