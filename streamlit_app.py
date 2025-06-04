@@ -344,7 +344,7 @@ def create_folium_map(
 
     # Calculate map center and bounds from geojson data
     map_center = [50.0755, 14.4378]  # Default to Prague center
-    zoom_start = 10
+    zoom_start = 11  # Fixed zoom level for tabs
 
     if geojson_data and "features" in geojson_data:
         # Calculate bounding box from districts
@@ -374,22 +374,36 @@ def create_folium_map(
             center_lon = (min(lons) + max(lons)) / 2
             map_center = [center_lat, center_lon]
 
-            # Use a more conservative initial zoom, we'll fit bounds after adding features
-            zoom_start = 10
+            # Calculate appropriate zoom based on geographic extent
+            lat_range = max(lats) - min(lats)
+            lon_range = max(lons) - min(lons)
+            max_range = max(lat_range, lon_range)
+
+            # Set zoom based on geographic extent
+            if max_range < 0.01:  # Very small area
+                zoom_start = 16
+            elif max_range < 0.05:  # Small area
+                zoom_start = 14
+            elif max_range < 0.1:  # Medium area
+                zoom_start = 14
+            elif max_range < 0.2:  # Large area
+                zoom_start = 13
+            else:  # Very large area
+                zoom_start = 12
 
     # Create map with initial center and proper tile handling
     m = create_map_with_tiles(map_center, zoom_start, base_map_style)
 
-    # Calculate bounds for auto-fitting after we add all features
+    # Calculate bounds for auto-fitting after we add all features - but don't use fit_bounds in tabs
     bounds = None
     if geojson_data and "features" in geojson_data and lats and lons:
         # Calculate bounds with a small padding
         lat_min, lat_max = min(lats), max(lats)
         lon_min, lon_max = min(lons), max(lons)
 
-        # Add 2.5% padding to ensure districts aren't at the very edge
-        lat_padding = (lat_max - lat_min) * 0.025
-        lon_padding = (lon_max - lon_min) * 0.025
+        # Add 5% padding to ensure districts aren't at the very edge
+        lat_padding = (lat_max - lat_min) * 0.05
+        lon_padding = (lon_max - lon_min) * 0.05
 
         bounds = [
             [lat_min - lat_padding, lon_min - lon_padding],  # Southwest corner
@@ -793,9 +807,8 @@ def create_folium_map(
 
             m.get_root().html.add_child(folium.Element(legend_html))
 
-    # Auto-fit the map to show all districts with padding
-    if bounds is not None:
-        m.fit_bounds(bounds, padding=(20, 20))  # 20px padding on all sides
+    # Don't use auto-fit in tabs - it causes zoom issues
+    # The calculated zoom_start should be sufficient
 
     return m
 
@@ -1311,8 +1324,8 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 # Display the cartogram map
                 map_data = st_folium(
                     cartogram_map,
-                    width=None,  # Full width
-                    height="1200",
+                    width="100%",  # Explicit width
+                    height=1000,  # Fixed height for tabs
                     returned_objects=["last_clicked", "last_object_clicked"],
                     key=f"cartogram_{viz_type}_{selected_party}_{base_size}_{collision_avoidance}",  # Include collision_avoidance in key
                 )
@@ -1463,9 +1476,31 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
 
             # Create the icon fill layer
             try:
+                # Calculate center and zoom from GeoDataFrame bounds
+                bounds = gdf.total_bounds
+                center_lat = (bounds[1] + bounds[3]) / 2
+                center_lon = (bounds[0] + bounds[2]) / 2
+
+                # Calculate zoom based on geographic extent
+                lat_range = bounds[3] - bounds[1]
+                lon_range = bounds[2] - bounds[0]
+                max_range = max(lat_range, lon_range)
+
+                # Set zoom based on geographic extent
+                if max_range < 0.01:  # Very small area
+                    zoom_start = 16
+                elif max_range < 0.05:  # Small area
+                    zoom_start = 15
+                elif max_range < 0.1:  # Medium area
+                    zoom_start = 14
+                elif max_range < 0.2:  # Large area
+                    zoom_start = 14
+                else:  # Very large area
+                    zoom_start = 13
+
                 dot_map = create_map_with_tiles(
-                    [50.0755, 14.4378],  # Default center
-                    12,
+                    [center_lat, center_lon],
+                    zoom_start,
                     base_map_style_main,
                 )
 
@@ -1527,22 +1562,14 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                     """
                     dot_map.get_root().html.add_child(folium.Element(color_legend_html))
 
-                # Auto-fit the map
-                if not gdf.empty:
-                    bounds = gdf.total_bounds
-                    lat_padding = (bounds[3] - bounds[1]) * 0.05
-                    lon_padding = (bounds[2] - bounds[0]) * 0.05
-                    fit_bounds = [
-                        [bounds[1] - lat_padding, bounds[0] - lon_padding],
-                        [bounds[3] + lat_padding, bounds[2] + lon_padding],
-                    ]
-                    dot_map.fit_bounds(fit_bounds, padding=(20, 20))
+                # Don't use auto-fit in tabs - the calculated zoom should work
+                # Auto-fit causes issues in Streamlit tabs
 
                 # Display the dot density map
                 map_data = st_folium(
                     dot_map,
-                    width=None,
-                    height="1200",
+                    width="100%",  # Explicit width
+                    height=1000,  # Fixed height for tabs
                     returned_objects=["last_clicked", "last_object_clicked"],
                     key=f"dots_{viz_type}_{selected_party}_{votes_per_dot}_{dot_spacing}_{dot_size}_{use_color_scale}_{base_map_style_main}",
                 )
@@ -1559,8 +1586,8 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 )
                 map_data = st_folium(
                     map_obj,
-                    width=None,
-                    height="1200",
+                    width="100%",  # Explicit width
+                    height=1000,  # Fixed height for tabs
                     returned_objects=["last_clicked", "last_object_clicked"],
                     key=f"fallback_map_{viz_type}_{selected_party}_{base_map_style_main}",
                 )
@@ -1581,8 +1608,8 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
         # Display the map
         map_data = st_folium(
             map_obj,
-            width=None,  # Full width
-            height="1200",
+            width="100%",  # Explicit width
+            height=1000,  # Fixed height for tabs
             returned_objects=["last_clicked", "last_object_clicked"],
             key=f"map_{viz_type}_{selected_party}_{base_map_style_main}",  # Include base map style in key
         )
@@ -2251,12 +2278,29 @@ def create_cartogram_map(
     if cartogram_gdf is None or cartogram_gdf.empty:
         return None
 
-    # Calculate map center
+    # Calculate map center and appropriate zoom
     bounds = cartogram_gdf.total_bounds
     center_lat = (bounds[1] + bounds[3]) / 2
     center_lon = (bounds[0] + bounds[2]) / 2
 
-    m = create_map_with_tiles([center_lat, center_lon], 12, "OpenStreetMap")
+    # Calculate zoom based on geographic extent
+    lat_range = bounds[3] - bounds[1]
+    lon_range = bounds[2] - bounds[0]
+    max_range = max(lat_range, lon_range)
+
+    # Set zoom based on geographic extent
+    if max_range < 0.01:  # Very small area
+        zoom_start = 15
+    elif max_range < 0.05:  # Small area
+        zoom_start = 13
+    elif max_range < 0.1:  # Medium area
+        zoom_start = 12
+    elif max_range < 0.2:  # Large area
+        zoom_start = 11
+    else:  # Very large area
+        zoom_start = 10
+
+    m = create_map_with_tiles([center_lat, center_lon], zoom_start, "OpenStreetMap")
 
     # Color mapping function (uses display_value, not vote_count)
     def get_color_for_value(value, viz_type):
@@ -2479,18 +2523,8 @@ def create_cartogram_map(
 
     m.get_root().html.add_child(folium.Element(legend_html))
 
-    # Auto-fit the map to show all cartogram circles with padding
-    if not cartogram_gdf.empty:
-        bounds = cartogram_gdf.total_bounds
-        # Add 5% padding to ensure circles aren't at the very edge
-        lat_padding = (bounds[3] - bounds[1]) * 0.05
-        lon_padding = (bounds[2] - bounds[0]) * 0.05
-
-        fit_bounds = [
-            [bounds[1] - lat_padding, bounds[0] - lon_padding],  # Southwest corner
-            [bounds[3] + lat_padding, bounds[2] + lon_padding],  # Northeast corner
-        ]
-        m.fit_bounds(fit_bounds, padding=(20, 20))  # 20px padding on all sides
+    # Don't use fit_bounds in tabs - the calculated zoom should work
+    # Auto-fit causes issues in Streamlit tabs
 
     return m
 
