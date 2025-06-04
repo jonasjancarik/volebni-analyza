@@ -18,6 +18,7 @@ This tool provides **comprehensive electoral analysis** for any Czech municipali
 - **🔍 Advanced Filtering**: Search by name, size, turnout, and more
 - **📈 Data Visualization**: Charts, maps, and comprehensive dashboards
 - **💾 Multiple Formats**: JSON, CSV, and interactive displays
+- **🚀 Auto-Setup**: Streamlit app automatically runs data collection when needed
 
 ## 🚀 Quick Start
 
@@ -35,7 +36,21 @@ uv sync
 pip install -r requirements.txt
 ```
 
-### 2. Data Collection
+### 2. Launch Analysis Dashboard (Auto-Setup)
+
+The Streamlit app will automatically detect if data is missing and offer to run the data collection for you!
+
+```bash
+# Launch the comprehensive analysis dashboard
+uv run python run_streamlit.py
+
+# Or run directly
+streamlit run streamlit_app.py
+```
+
+### 3. Manual Data Collection (Optional)
+
+If you prefer to collect data manually first:
 
 ```bash
 # Collect data for ALL municipalities (one-time setup)
@@ -48,50 +63,23 @@ uv run python run_all_municipalities.py
 # - Generate comprehensive analysis for all municipalities
 ```
 
-### 3. Launch Analysis Interface
+## 📊 Analysis Dashboard
 
-```bash
-# Option 1: Simple Municipality Selector
-uv run python run_streamlit.py --app selector
+**Comprehensive analysis with interactive visualizations**
 
-# Option 2: Comprehensive Analysis Dashboard  
-uv run python run_streamlit.py --app dashboard
-
-# Option 3: Both apps simultaneously
-uv run python run_streamlit.py --app both
-```
-
-## 📱 Available Interfaces
-
-### 🔍 Municipal Selector (`streamlit_municipality_selector.py`)
-**Simple, fast interface for exploring municipalities**
-
-- 🎯 **Purpose**: Quick municipality lookup and comparison
-- 🏛️ **Coverage**: All 6,377+ Czech municipalities
-- 📊 **Features**: 
-  - Advanced filtering (name, size, turnout)
-  - Municipality comparison
-  - Key statistics and party results
-  - Fast loading and responsive
-
-```bash
-# Launch simple selector
-streamlit run streamlit_municipality_selector.py
-```
-
-### 📊 Analysis Dashboard (`streamlit_app.py`)
-**Comprehensive analysis with geographic visualizations**
-
-- 🎯 **Purpose**: Deep-dive analysis for selected municipalities  
+- 🎯 **Purpose**: Complete electoral analysis for any Czech municipality
+- 🏛️ **Coverage**: All 6,377+ Czech municipalities  
 - 🗺️ **Features**:
+  - Municipality selection with advanced filtering
   - Interactive geographic maps
   - District-level breakdowns
   - Advanced turnout analysis
   - Data exploration tools
   - Cartographic visualizations
+  - **Auto-setup**: Runs data collection if missing
 
 ```bash
-# Launch comprehensive dashboard
+# Launch the dashboard
 streamlit run streamlit_app.py
 ```
 
@@ -111,13 +99,16 @@ volebni-analyza/
 │   ├── processed/              # Intermediate data
 │   ├── csv/                    # CSV exports
 │   └── reports/                # Generated reports
-├── 🔧 src/                     # Source code
+├── 🔧 src/                     # Source code modules
 │   ├── all_municipalities_scraper.py
 │   ├── municipality_registry.py
-│   └── ...
-├── 🚀 streamlit_municipality_selector.py  # Simple interface
-├── 📊 streamlit_app.py                    # Comprehensive dashboard
-└── 🎛️ run_streamlit.py                   # App launcher
+│   ├── data_processor.py
+│   ├── analyzer.py
+│   ├── visualizer.py
+│   └── data_exporters.py
+├── 📊 streamlit_app.py                    # Main analysis dashboard
+├── 🎛️ run_streamlit.py                   # App launcher
+└── 📋 run_all_municipalities.py           # Data collection script
 ```
 
 ## 🛠️ Command Line Tools
@@ -136,17 +127,14 @@ uv run python run_all_municipalities.py --no-download
 
 ### 🚀 App Launcher
 ```bash
-# Simple selector interface
-uv run python run_streamlit.py --app selector
-
-# Comprehensive dashboard
-uv run python run_streamlit.py --app dashboard  
-
-# Both apps on different ports
-uv run python run_streamlit.py --app both
+# Launch the dashboard
+uv run python run_streamlit.py
 
 # Custom port
-uv run python run_streamlit.py --app selector --port 8080
+uv run python run_streamlit.py --port 8080
+
+# Development mode with auto-reload
+uv run python run_streamlit.py --dev
 ```
 
 ## 📈 Data Sources
@@ -168,10 +156,20 @@ uv run python run_streamlit.py --app selector --port 8080
 ### Testing
 ```bash
 # Test data structure
-uv run python -c "from streamlit_municipality_selector import MunicipalitySelector; s=MunicipalitySelector(); print('✅ Data loaded successfully')"
+uv run python -c "
+import json
+from pathlib import Path
+data_file = Path('output/results/municipality_index.json')
+if data_file.exists():
+    with open(data_file) as f:
+        data = json.load(f)
+    print(f'✅ Data loaded successfully: {len(data)} municipalities')
+else:
+    print('❌ Data file not found')
+"
 
 # Run with development mode
-uv run python run_streamlit.py --app selector --dev
+uv run python run_streamlit.py --dev
 ```
 
 ### Data Export
@@ -187,10 +185,12 @@ uv run python src/data_exporters.py --format json,csv
 
 ### Find Large Municipalities
 ```python
-from streamlit_municipality_selector import MunicipalitySelector
+import json
+from pathlib import Path
 
-selector = MunicipalitySelector()
-data = selector.load_municipality_data()
+# Load municipality data
+with open("output/results/municipality_index.json") as f:
+    data = json.load(f)
 
 # Get municipalities with 40+ council seats
 large_cities = {k: v for k, v in data.items() if v.get('mandates', 0) >= 40}
@@ -200,35 +200,45 @@ print(f"Found {len(large_cities)} large cities")
 ### Analyze Turnout Patterns
 ```python
 import pandas as pd
-import json
 
-# Load municipality index
-with open('output/results/municipality_index.json') as f:
-    municipalities = json.load(f)
+# Load comprehensive data
+with open("output/results/all_municipalities_comprehensive.json") as f:
+    comprehensive = json.load(f)
 
-df = pd.DataFrame.from_dict(municipalities, orient='index')
+# Extract turnout data
+turnout_data = []
+for code, municipality in comprehensive["municipalities"].items():
+    stats = municipality.get("summary_statistics", {})
+    turnout_data.append({
+        "name": municipality["metadata"]["municipality_name"],
+        "turnout": stats.get("turnout_percentage", 0),
+        "voters": stats.get("registered_voters", 0)
+    })
+
+df = pd.DataFrame(turnout_data)
 print(f"Average turnout: {df['turnout'].mean():.1f}%")
-print(f"Highest turnout: {df.loc[df['turnout'].idxmax(), 'name']} ({df['turnout'].max():.1f}%)")
 ```
+
+## 📱 User Interface
+
+The dashboard provides several analysis views:
+
+- **📊 Overview**: Key statistics and party results
+- **📈 Turnout Analysis**: Detailed voter participation analysis
+- **🗺️ Geographic Analysis**: Interactive maps with district boundaries
+- **🔍 Data Explorer**: Raw data tables with filtering options
+- **🏘️ District Analysis**: Polling district breakdown and comparison
 
 ## 🤝 Contributing
 
-1. **Fork** the repository
-2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
-3. **Commit** changes: `git commit -m 'Add amazing feature'`
-4. **Push** to branch: `git push origin feature/amazing-feature`
-5. **Open** a Pull Request
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 🔗 Links
+## 🙏 Acknowledgments
 
-- **Data Source**: [Czech Statistical Office (ČSÚ)](https://www.volby.cz/)
-- **Election Results**: [2022 Municipal Elections](https://www.volby.cz/pls/kv2022/kv2022)
-- **Geographic Data**: [Electoral District Boundaries](https://www.volby.cz/opendata/kv2022/geo/)
-
----
-
-**Built with ❤️ for Czech electoral transparency and analysis**
+- Czech Statistical Office (ČSÚ) for providing open electoral data
+- Streamlit team for the excellent visualization framework
+- Czech Pirate Party for supporting open data initiatives

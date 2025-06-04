@@ -23,8 +23,11 @@ from PIL import Image
 from shapely.geometry import Point, Polygon
 from shapely.affinity import scale
 from itertools import product
+import subprocess
+import logging
+from typing import Dict, List, Optional
 
-from src.streamlit_municipality_selector import MunicipalitySelector
+logger = logging.getLogger(__name__)
 
 # Configure Streamlit page
 st.set_page_config(
@@ -34,29 +37,247 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS
-st.markdown(
-    """
-<style>
-    .main-header {
-        font-size: 2.5em;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 20px;
+
+def run_data_collection():
+    """Run the data collection script if data is missing"""
+    st.info("🔄 Data not found. Running data collection...")
+
+    # Create a progress bar
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    try:
+        status_text.text("Starting data collection...")
+        progress_bar.progress(10)
+
+        # Run the data collection script
+        process = subprocess.Popen(
+            ["uv", "run", "python", "run_all_municipalities.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+        )
+
+        # Monitor progress (simplified)
+        progress_steps = [
+            ("Processing municipality registry...", 30),
+            ("Downloading electoral data...", 60),
+            ("Processing all municipalities...", 90),
+            ("Finalizing data...", 100),
+        ]
+
+        step_idx = 0
+        while process.poll() is None:
+            if step_idx < len(progress_steps):
+                text, progress = progress_steps[step_idx]
+                status_text.text(text)
+                progress_bar.progress(progress)
+                step_idx += 1
+
+            # Simple delay to simulate progress
+            import time
+
+            time.sleep(2)
+
+        # Check if successful
+        return_code = process.returncode
+
+        if return_code == 0:
+            progress_bar.progress(100)
+            status_text.text("✅ Data collection completed successfully!")
+            st.success("Data collection completed! Please refresh the page.")
+            st.balloons()
+            return True
+        else:
+            stdout, stderr = process.communicate()
+            st.error(f"❌ Data collection failed (exit code: {return_code})")
+            if stderr:
+                st.code(stderr)
+            return False
+
+    except Exception as e:
+        st.error(f"❌ Error running data collection: {e}")
+        return False
+
+
+def load_all_municipality_data(data_dir="output"):
+    """Load municipality index and comprehensive data"""
+    data_dir = Path(data_dir)
+
+    try:
+        # Load municipality index
+        index_file = data_dir / "results" / "municipality_index.json"
+        if not index_file.exists():
+            return None, None
+
+        with open(index_file, "r", encoding="utf-8") as f:
+            municipality_index = json.load(f)
+
+        # Load comprehensive data
+        comprehensive_file = (
+            data_dir / "results" / "all_municipalities_comprehensive.json"
+        )
+        if not comprehensive_file.exists():
+            return None, None
+
+        with open(comprehensive_file, "r", encoding="utf-8") as f:
+            comprehensive_data = json.load(f)
+
+        return municipality_index, comprehensive_data
+
+    except Exception as e:
+        logger.error(f"Error loading municipality data: {e}")
+        return None, None
+
+
+def ensure_data_exists():
+    """Ensure data exists, run collection if missing"""
+    municipality_index, comprehensive_data = load_all_municipality_data()
+
+    if municipality_index and comprehensive_data:
+        return municipality_index, comprehensive_data
+
+    # Check if user wants to run data collection
+    st.warning("⚠️ Municipality data not found!")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🚀 Run Data Collection", type="primary"):
+            if run_data_collection():
+                st.rerun()  # Refresh the app after data collection
+
+    with col2:
+        st.info(
+            "This will download and process data for all 6,377+ Czech municipalities. It may take a few minutes."
+        )
+
+    return None, None
+
+
+def create_municipality_selector(municipality_index, comprehensive_data):
+    """Create municipality selection interface"""
+    st.sidebar.header("🏛️ Municipality Selection")
+
+    # Convert to DataFrame for easier filtering
+    df = pd.DataFrame.from_dict(municipality_index, orient="index")
+    df["code"] = df.index
+    df = df.reset_index(drop=True)
+
+    # Add filters
+    st.sidebar.subheader("Filters")
+
+    # Search by name
+    search_term = st.sidebar.text_input(
+        "Search by name:", placeholder="e.g., Praha, Brno, Ostrava"
+    )
+
+    if search_term:
+        df = df[df["name"].str.contains(search_term, case=False, na=False)]
+
+    # Filter by size (number of mandates)
+    mandates_min = int(df["mandates"].min())
+    mandates_max = int(df["mandates"].max())
+
+    # Handle case where all municipalities have same number of mandates
+    if mandates_min == mandates_max:
+        st.sidebar.info(f"All municipalities have {mandates_min} council seats")
+        min_mandates = mandates_min
+    else:
+        min_mandates = st.sidebar.slider(
+            "Minimum council seats:",
+            min_value=mandates_min,
+            max_value=mandates_max,
+            value=mandates_min,
+        )
+    df = df[df["mandates"] >= min_mandates]
+
+    # Filter by turnout
+    min_turnout = st.sidebar.slider(
+        "Minimum turnout %:", min_value=0.0, max_value=100.0, value=0.0, step=0.1
+    )
+    df = df[df["turnout"] >= min_turnout]
+
+    # Sort options
+    sort_options = {
+        "Name (A-Z)": ("name", True),
+        "Name (Z-A)": ("name", False),
+        "Council Seats (Most)": ("mandates", False),
+        "Council Seats (Least)": ("mandates", True),
+        "Turnout (Highest)": ("turnout", False),
+        "Turnout (Lowest)": ("turnout", True),
+        "Districts (Most)": ("districts", False),
     }
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 5px 0;
-    }
-    .sidebar .sidebar-content {
-        background-color: #fafafa;
-    }
-</style>
-""",
-    unsafe_allow_html=True,
-)
+
+    sort_choice = st.sidebar.selectbox("Sort by:", list(sort_options.keys()))
+    sort_column, ascending = sort_options[sort_choice]
+    df = df.sort_values(sort_column, ascending=ascending)
+
+    # Show statistics
+    st.sidebar.info(f"**Found {len(df)} municipalities**")
+
+    # Display top municipalities
+    if len(df) > 0:
+        st.sidebar.subheader("Select Municipality")
+
+        # Create selection with municipality info
+        municipality_options = []
+        for _, row in df.head(20).iterrows():  # Limit to top 20 for performance
+            option_text = f"{row['name']} ({row['mandates']} seats, {row['turnout']:.1f}% turnout)"
+            municipality_options.append((option_text, row["code"]))
+
+        if municipality_options:
+            selected_option = st.sidebar.selectbox(
+                "Choose municipality:",
+                municipality_options,
+                format_func=lambda x: x[0],
+            )
+
+            if selected_option:
+                selected_code = selected_option[1]
+                display_municipality_sidebar_info(selected_code, comprehensive_data)
+                return selected_code
+    else:
+        st.sidebar.warning("No municipalities match your criteria.")
+
+    return None
+
+
+def display_municipality_sidebar_info(municipality_code, comprehensive_data):
+    """Display detailed information about selected municipality in sidebar"""
+    if not comprehensive_data:
+        return
+
+    municipality_data = comprehensive_data["municipalities"].get(municipality_code)
+    if not municipality_data:
+        st.sidebar.error("Municipality data not found")
+        return
+
+    metadata = municipality_data["metadata"]
+    stats = municipality_data["summary_statistics"]
+
+    st.sidebar.subheader("Municipality Info")
+    st.sidebar.write(f"**Name:** {metadata['municipality_name']}")
+    st.sidebar.write(f"**Code:** {metadata['municipality_code']}")
+    st.sidebar.write(f"**Council Seats:** {metadata['total_mandates']}")
+    st.sidebar.write(f"**Seats Won:** {metadata.get('mandates_won', 0)}")
+
+    st.sidebar.subheader("Election Statistics")
+    st.sidebar.write(f"**Electoral Districts:** {stats['electoral_districts']}")
+    st.sidebar.write(f"**Registered Voters:** {stats['registered_voters']:,}")
+    st.sidebar.write(f"**Turnout:** {stats['turnout_percentage']:.2f}%")
+    st.sidebar.write(f"**Valid Votes:** {stats['valid_votes']:,}")
+    st.sidebar.write(f"**Parties:** {stats['parties_participating']}")
+    st.sidebar.write(f"**Parties with Seats:** {stats['parties_with_mandates']}")
+
+
+def get_municipality_data(municipality_code: str, comprehensive_data) -> Optional[Dict]:
+    """Get complete data for a specific municipality"""
+    if not comprehensive_data:
+        return None
+    return comprehensive_data["municipalities"].get(municipality_code)
 
 
 def get_url_params():
@@ -221,8 +442,8 @@ def load_municipality_data(zastupitelstvo_code: str):
         return {}
 
     # Load from our all municipalities data using zastupitelstvo_code
-    selector = MunicipalitySelector()
-    municipality_data = selector.get_municipality_data(zastupitelstvo_code)
+    _, comprehensive_data = load_all_municipality_data()
+    municipality_data = get_municipality_data(zastupitelstvo_code, comprehensive_data)
 
     if not municipality_data:
         st.error(f"No data found for zastupitelstvo {zastupitelstvo_code}")
@@ -2657,12 +2878,17 @@ def main():
     st.sidebar.title("🏛️ Election Selection")
     st.sidebar.markdown("---")
 
-    # Initialize municipality selector
-    selector = MunicipalitySelector()
+    # Load municipality data and create selector
+    municipality_index, comprehensive_data = ensure_data_exists()
+
+    if not municipality_index or not comprehensive_data:
+        return
 
     # Get default municipality from URL params (we'll handle this via session state if needed)
     default_municipality = get_param_value(url_params, "municipality")
-    selected_zastupitelstvo_code = selector.create_municipality_selector()
+    selected_zastupitelstvo_code = create_municipality_selector(
+        municipality_index, comprehensive_data
+    )
 
     # Update URL parameter for municipality selection
     update_url_params(municipality=selected_zastupitelstvo_code)
@@ -2693,7 +2919,9 @@ def main():
         return
 
     # Get municipality info for title
-    municipality_data = selector.get_municipality_data(selected_zastupitelstvo_code)
+    municipality_data = get_municipality_data(
+        selected_zastupitelstvo_code, comprehensive_data
+    )
     municipality_name = "Unknown Municipality"
     election_type = "Council Election"
 

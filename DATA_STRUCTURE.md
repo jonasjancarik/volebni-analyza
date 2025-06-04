@@ -1,6 +1,6 @@
 # Data Directory Structure
 
-This document explains the reorganized data directory structure that separates input and output data for better organization and clarity, along with detailed descriptions of all data files and their contents.
+This document explains the organized data directory structure that separates input and output data for better organization and clarity, along with detailed descriptions of all data files and their contents.
 
 ## Directory Structure
 
@@ -19,13 +19,13 @@ volebni-analyza/
 │   │   ├── summary_statistics.csv
 │   │   └── district_party_results.csv
 │   ├── processed/             # Processed and cleaned data
-│   │   ├── prague5_municipal_*.json
-│   │   └── prague5_comprehensive.json
+│   │   ├── municipality_registry.json
+│   │   └── intermediate processing files
 │   ├── detailed/              # Detailed analysis data
-│   │   └── prague5_electoral_districts.json
+│   │   └── detailed analysis results
 │   ├── results/               # Final analysis results
-│   │   ├── analysis_summary.json
-│   │   └── prague5_comprehensive_results.json
+│   │   ├── all_municipalities_comprehensive.json
+│   │   └── municipality_index.json
 │   ├── visualizations/        # Generated charts and maps
 │   │   ├── index.html
 │   │   ├── turnout_analysis.html
@@ -34,12 +34,34 @@ volebni-analyza/
 │       ├── comprehensive_analysis_report.json
 │       └── analysis_summary.md
 │
-└── data/                      # (Legacy - to be removed)
-    ├── raw/
-    ├── processed/
-    ├── detailed/
-    └── results/
+├── src/                       # Source code modules
+│   ├── all_municipalities_scraper.py
+│   ├── municipality_registry.py
+│   ├── data_processor.py
+│   ├── analyzer.py
+│   ├── visualizer.py
+│   └── data_exporters.py
+│
+├── streamlit_app.py                    # Main analysis dashboard
+├── run_streamlit.py                    # App launcher
+└── run_all_municipalities.py           # Data collection script
 ```
+
+## Auto-Setup Feature
+
+The Streamlit applications now include **auto-setup functionality**:
+
+- **Automatic Detection**: Apps detect when required data files are missing
+- **One-Click Setup**: Users can run data collection directly from the web interface
+- **Progress Monitoring**: Real-time progress updates during data collection
+- **Seamless Experience**: No need to run command-line tools manually
+
+### How Auto-Setup Works
+
+1. **Data Check**: App checks for `output/results/municipality_index.json` and `output/results/all_municipalities_comprehensive.json`
+2. **Missing Data Alert**: If files are missing, shows a user-friendly warning with setup button
+3. **Background Collection**: Runs `run_all_municipalities.py` in the background with progress updates
+4. **Auto-Refresh**: Automatically refreshes the app once data collection completes
 
 ## Input Data Files (`input/raw/`)
 
@@ -208,15 +230,15 @@ district_id,party_name,votes,percentage,total_district_votes
 ### JSON Files (`output/processed/`, `output/detailed/`, `output/results/`)
 
 #### Processed Data
-- **`prague5_municipal_*.json`**: Intermediate processing files
-- **`prague5_comprehensive.json`**: Combined dataset with all information
+- **`municipality_registry.json`**: Intermediate processing files
+- **`intermediate processing files`**: Additional intermediate processing files
 
 #### Detailed Analysis
-- **`prague5_electoral_districts.json`**: Enhanced district data with geographic info
+- **`detailed analysis results`**: Detailed analysis results
 
 #### Results
-- **`analysis_summary.json`**: Key findings and statistics
-- **`prague5_comprehensive_results.json`**: Complete analysis results
+- **`municipality_index.json`**: Key findings and statistics
+- **`all_municipalities_comprehensive.json`**: Complete analysis results
 
 ### Visualization Files (`output/visualizations/`)
 
