@@ -161,86 +161,30 @@ def create_municipality_selector(municipality_index, comprehensive_data):
     """Create municipality selection interface"""
     st.sidebar.header("🏛️ Municipality Selection")
 
-    # Convert to DataFrame for easier filtering
+    # Convert to DataFrame and sort alphabetically by name
     df = pd.DataFrame.from_dict(municipality_index, orient="index")
     df["code"] = df.index
     df = df.reset_index(drop=True)
+    df = df.sort_values("name", ascending=True)
 
-    # Add filters
-    st.sidebar.subheader("Filters")
+    # Create simple dropdown with all municipalities
+    municipality_options = []
+    for _, row in df.iterrows():
+        option_text = f"{row['name']} ({row['code']})"
+        municipality_options.append((option_text, row["code"]))
 
-    # Search by name
-    search_term = st.sidebar.text_input(
-        "Search by name:", placeholder="e.g., Praha, Brno, Ostrava"
-    )
-
-    if search_term:
-        df = df[df["name"].str.contains(search_term, case=False, na=False)]
-
-    # Filter by size (number of mandates)
-    mandates_min = int(df["mandates"].min())
-    mandates_max = int(df["mandates"].max())
-
-    # Handle case where all municipalities have same number of mandates
-    if mandates_min == mandates_max:
-        st.sidebar.info(f"All municipalities have {mandates_min} council seats")
-        min_mandates = mandates_min
-    else:
-        min_mandates = st.sidebar.slider(
-            "Minimum council seats:",
-            min_value=mandates_min,
-            max_value=mandates_max,
-            value=mandates_min,
+    if municipality_options:
+        selected_option = st.sidebar.selectbox(
+            "Choose municipality:",
+            municipality_options,
+            format_func=lambda x: x[0],
+            help=f"Select from {len(municipality_options)} municipalities",
         )
-    df = df[df["mandates"] >= min_mandates]
 
-    # Filter by turnout
-    min_turnout = st.sidebar.slider(
-        "Minimum turnout %:", min_value=0.0, max_value=100.0, value=0.0, step=0.1
-    )
-    df = df[df["turnout"] >= min_turnout]
-
-    # Sort options
-    sort_options = {
-        "Name (A-Z)": ("name", True),
-        "Name (Z-A)": ("name", False),
-        "Council Seats (Most)": ("mandates", False),
-        "Council Seats (Least)": ("mandates", True),
-        "Turnout (Highest)": ("turnout", False),
-        "Turnout (Lowest)": ("turnout", True),
-        "Districts (Most)": ("districts", False),
-    }
-
-    sort_choice = st.sidebar.selectbox("Sort by:", list(sort_options.keys()))
-    sort_column, ascending = sort_options[sort_choice]
-    df = df.sort_values(sort_column, ascending=ascending)
-
-    # Show statistics
-    st.sidebar.info(f"**Found {len(df)} municipalities**")
-
-    # Display top municipalities
-    if len(df) > 0:
-        st.sidebar.subheader("Select Municipality")
-
-        # Create selection with municipality info
-        municipality_options = []
-        for _, row in df.head(20).iterrows():  # Limit to top 20 for performance
-            option_text = f"{row['name']} ({row['mandates']} seats, {row['turnout']:.1f}% turnout)"
-            municipality_options.append((option_text, row["code"]))
-
-        if municipality_options:
-            selected_option = st.sidebar.selectbox(
-                "Choose municipality:",
-                municipality_options,
-                format_func=lambda x: x[0],
-            )
-
-            if selected_option:
-                selected_code = selected_option[1]
-                display_municipality_sidebar_info(selected_code, comprehensive_data)
-                return selected_code
-    else:
-        st.sidebar.warning("No municipalities match your criteria.")
+        if selected_option:
+            selected_code = selected_option[1]
+            display_municipality_sidebar_info(selected_code, comprehensive_data)
+            return selected_code
 
     return None
 
