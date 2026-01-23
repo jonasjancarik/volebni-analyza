@@ -27,6 +27,15 @@ import subprocess
 import logging
 from typing import Dict, List, Optional
 
+# Add src directory to path
+sys.path.append(str(Path(__file__).parent / "src"))
+
+from election_config import (
+    get_election_config,
+    get_election_info,
+    list_available_elections,
+)
+
 logger = logging.getLogger(__name__)
 
 # Configure Streamlit page
@@ -38,128 +47,193 @@ st.set_page_config(
 )
 
 
-def run_data_collection():
+def run_data_collection(election_id="kv2022"):
     """Run the data collection script if data is missing"""
-    st.info("🔄 Data not found. Running data collection...")
+    st.info(f"🔄 Starting data collection for {election_id}...")
 
-    # Create a progress bar
+    # Create a progress bar and output display
     progress_bar = st.progress(0)
     status_text = st.empty()
+    output_container = st.expander("📋 View Live Output", expanded=True)
+    output_text = output_container.empty()
 
     try:
-        status_text.text("Starting data collection...")
-        progress_bar.progress(10)
+        status_text.text("🚀 Starting data collection...")
+        progress_bar.progress(5)
 
-        # Run the data collection script
+        # Run the data collection script with election parameter
+        # Use STDOUT redirection but don't capture stderr (let it show in terminal)
         process = subprocess.Popen(
-            ["uv", "run", "python", "run_all_municipalities.py"],
+            [
+                "uv",
+                "run",
+                "python",
+                "run_all_municipalities.py",
+                "--election",
+                election_id,
+            ],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout
             text=True,
             bufsize=1,
             universal_newlines=True,
         )
 
-        # Monitor progress (simplified)
-        progress_steps = [
-            ("Processing municipality registry...", 30),
-            ("Downloading electoral data...", 60),
-            ("Processing all municipalities...", 90),
-            ("Finalizing data...", 100),
-        ]
+        # Read output in real-time
+        output_lines = []
+        progress = 5
 
-        step_idx = 0
-        while process.poll() is None:
-            if step_idx < len(progress_steps):
-                text, progress = progress_steps[step_idx]
-                status_text.text(text)
-                progress_bar.progress(progress)
-                step_idx += 1
+        for line in iter(process.stdout.readline, ""):
+            if not line:
+                break
 
-            # Simple delay to simulate progress
-            import time
+            output_lines.append(line.rstrip())
 
-            time.sleep(2)
+            # Keep only last 50 lines for display
+            if len(output_lines) > 50:
+                output_lines.pop(0)
+
+            # Update output display
+            output_text.code("\n".join(output_lines[-30:]), language="log")
+
+            # Update progress based on keywords in output
+            if "STEP 1" in line or "Processing" in line:
+                progress = max(progress, 20)
+            elif "STEP 2" in line or "Collecting" in line or "Downloading" in line:
+                progress = max(progress, 40)
+            elif "Downloaded" in line or "Loaded" in line:
+                progress = min(progress + 2, 80)
+            elif "Generating" in line:
+                progress = max(progress, 85)
+            elif "Saved" in line or "complete" in line.lower():
+                progress = min(progress + 5, 95)
+
+            progress_bar.progress(progress)
+
+            # Update status based on current activity
+            if "ERROR" in line:
+                status_text.text(f"⚠️ {line[:80]}")
+            elif "STEP" in line:
+                status_text.text(f"📊 {line.split('INFO - ')[-1][:80]}")
+
+        # Wait for process to complete
+        process.stdout.close()
+        return_code = process.wait()
 
         # Check if successful
-        return_code = process.returncode
-
         if return_code == 0:
             progress_bar.progress(100)
             status_text.text("✅ Data collection completed successfully!")
-            st.success("Data collection completed! Please refresh the page.")
+            st.success(
+                "✅ Data collection completed! The page will refresh automatically."
+            )
             st.balloons()
+            import time
+
+            time.sleep(2)
             return True
         else:
-            stdout, stderr = process.communicate()
             st.error(f"❌ Data collection failed (exit code: {return_code})")
-            if stderr:
-                st.code(stderr)
+            st.warning(
+                "Check the output above for error details, or view: all_municipalities_analysis.log"
+            )
             return False
 
     except Exception as e:
         st.error(f"❌ Error running data collection: {e}")
+        st.exception(e)
         return False
 
 
-def load_all_municipality_data(data_dir="output"):
-    """Load municipality index and comprehensive data"""
-    data_dir = Path(data_dir)
-
+def load_all_municipality_data(election_id="kv2022"):
+    """Load municipality/district index and comprehensive data for a specific election"""
     try:
-        # Load municipality index
-        index_file = data_dir / "results" / "municipality_index.json"
+        # Get election configuration
+        election_config = get_election_config(election_id)
+
+        # Check election type and load appropriate files
+        if election_config.election_type == "parliamentary":
+            # Parliamentary elections use different file names
+            index_file = election_config.results_dir / "district_index.json"
+            comprehensive_file = (
+                election_config.results_dir / "parliamentary_election_results.json"
+            )
+        else:
+            # Municipal elections
+            index_file = election_config.results_dir / "municipality_index.json"
+            comprehensive_file = (
+                election_config.results_dir / "all_municipalities_comprehensive.json"
+            )
+
+        # Load index
         if not index_file.exists():
             return None, None
 
         with open(index_file, "r", encoding="utf-8") as f:
-            municipality_index = json.load(f)
+            index_data = json.load(f)
 
         # Load comprehensive data
-        comprehensive_file = (
-            data_dir / "results" / "all_municipalities_comprehensive.json"
-        )
         if not comprehensive_file.exists():
             return None, None
 
         with open(comprehensive_file, "r", encoding="utf-8") as f:
             comprehensive_data = json.load(f)
 
-        return municipality_index, comprehensive_data
+        return index_data, comprehensive_data
 
     except Exception as e:
-        logger.error(f"Error loading municipality data: {e}")
+        logger.error(f"Error loading data for {election_id}: {e}")
         return None, None
 
 
-def ensure_data_exists():
+def ensure_data_exists(election_id="kv2022"):
     """Ensure data exists, run collection if missing"""
-    municipality_index, comprehensive_data = load_all_municipality_data()
+    index_data, comprehensive_data = load_all_municipality_data(election_id)
 
-    if municipality_index and comprehensive_data:
-        return municipality_index, comprehensive_data
+    if index_data and comprehensive_data:
+        return index_data, comprehensive_data
 
     # Check if user wants to run data collection
-    st.warning("⚠️ Municipality data not found!")
+    election_config = get_election_config(election_id)
+    st.warning(f"⚠️ Election data not found for {election_config.election_name}!")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🚀 Run Data Collection", type="primary"):
-            if run_data_collection():
+        if st.button(
+            "🚀 Run Data Collection", type="primary", key=f"collect_{election_id}"
+        ):
+            if run_data_collection(election_id):
                 st.rerun()  # Refresh the app after data collection
 
     with col2:
-        st.info(
-            "This will download and process data for all 6,377+ Czech municipalities. It may take a few minutes."
-        )
+        if election_config.election_type == "parliamentary":
+            st.info(
+                "This will download and process parliamentary election data for 14 electoral districts. It may take a minute."
+            )
+        else:
+            st.info(
+                "This will download and process data for all 6,377+ Czech municipalities. It may take a few minutes."
+            )
 
     return None, None
 
 
 def create_municipality_selector(municipality_index, comprehensive_data):
-    """Create municipality selection interface"""
-    st.sidebar.header("🏛️ Municipality Selection")
+    """Create municipality/district selection interface"""
+    # Determine if this is parliamentary or municipal data
+    is_parliamentary = (
+        "electoral_districts" in comprehensive_data if comprehensive_data else False
+    )
+
+    if is_parliamentary:
+        st.sidebar.header("🗳️ Electoral District Selection")
+        label = "Choose electoral district:"
+        help_text = f"Select from {len(municipality_index)} electoral districts"
+    else:
+        st.sidebar.header("🏛️ Municipality Selection")
+        label = "Choose municipality:"
+        help_text = f"Select from {len(municipality_index)} municipalities"
 
     # Convert to DataFrame and sort alphabetically by name
     df = pd.DataFrame.from_dict(municipality_index, orient="index")
@@ -167,18 +241,18 @@ def create_municipality_selector(municipality_index, comprehensive_data):
     df = df.reset_index(drop=True)
     df = df.sort_values("name", ascending=True)
 
-    # Create simple dropdown with all municipalities
-    municipality_options = []
+    # Create simple dropdown with all items
+    options = []
     for _, row in df.iterrows():
         option_text = f"{row['name']} ({row['code']})"
-        municipality_options.append((option_text, row["code"]))
+        options.append((option_text, row["code"]))
 
-    if municipality_options:
+    if options:
         selected_option = st.sidebar.selectbox(
-            "Choose municipality:",
-            municipality_options,
+            label,
+            options,
             format_func=lambda x: x[0],
-            help=f"Select from {len(municipality_options)} municipalities",
+            help=help_text,
         )
 
         if selected_option:
@@ -189,39 +263,90 @@ def create_municipality_selector(municipality_index, comprehensive_data):
     return None
 
 
+def get_data_by_code(code: str, comprehensive_data) -> Optional[Dict]:
+    """
+    Get data for a specific municipality or district code.
+    Handles both parliamentary (electoral_districts) and municipal (municipalities) structures.
+    """
+    if not comprehensive_data:
+        return None
+
+    # Check which structure we have
+    if "electoral_districts" in comprehensive_data:
+        # Parliamentary elections - try both string and int versions of the code
+        districts = comprehensive_data["electoral_districts"]
+        # Try as-is first
+        result = districts.get(code)
+        if result:
+            return result
+        # Try converting to string
+        result = districts.get(str(code))
+        if result:
+            return result
+        # Try converting to int
+        if code.isdigit():
+            result = districts.get(int(code))
+            if result:
+                return result
+        return None
+    elif "municipalities" in comprehensive_data:
+        # Municipal elections
+        return comprehensive_data["municipalities"].get(code)
+
+    return None
+
+
 def display_municipality_sidebar_info(municipality_code, comprehensive_data):
-    """Display detailed information about selected municipality in sidebar"""
+    """Display detailed information about selected municipality/district in sidebar"""
     if not comprehensive_data:
         return
 
-    municipality_data = comprehensive_data["municipalities"].get(municipality_code)
+    municipality_data = get_data_by_code(municipality_code, comprehensive_data)
     if not municipality_data:
-        st.sidebar.error("Municipality data not found")
+        st.sidebar.error("Data not found for this code")
         return
 
     metadata = municipality_data["metadata"]
     stats = municipality_data["summary_statistics"]
 
-    st.sidebar.subheader("Municipality Info")
-    st.sidebar.write(f"**Name:** {metadata['municipality_name']}")
-    st.sidebar.write(f"**Code:** {metadata['municipality_code']}")
-    st.sidebar.write(f"**Council Seats:** {metadata['total_mandates']}")
-    st.sidebar.write(f"**Seats Won:** {metadata.get('mandates_won', 0)}")
+    # Check if this is parliamentary or municipal data
+    is_parliamentary = "district_number" in metadata
 
-    st.sidebar.subheader("Election Statistics")
-    st.sidebar.write(f"**Electoral Districts:** {stats['electoral_districts']}")
-    st.sidebar.write(f"**Registered Voters:** {stats['registered_voters']:,}")
-    st.sidebar.write(f"**Turnout:** {stats['turnout_percentage']:.2f}%")
-    st.sidebar.write(f"**Valid Votes:** {stats['valid_votes']:,}")
-    st.sidebar.write(f"**Parties:** {stats['parties_participating']}")
-    st.sidebar.write(f"**Parties with Seats:** {stats['parties_with_mandates']}")
+    if is_parliamentary:
+        st.sidebar.subheader("Electoral District Info")
+        st.sidebar.write(f"**District:** {metadata.get('district_name', 'Unknown')}")
+        st.sidebar.write(f"**Number:** {metadata.get('district_number', 'N/A')}")
+        st.sidebar.write(f"**Total Mandates:** {stats.get('total_mandates', 0)}")
+
+        st.sidebar.subheader("Election Statistics")
+        st.sidebar.write(f"**Candidates:** {stats.get('total_candidates', 0)}")
+        st.sidebar.write(f"**Parties:** {stats.get('parties_participating', 0)}")
+    else:
+        st.sidebar.subheader("Municipality Info")
+        st.sidebar.write(f"**Name:** {metadata.get('municipality_name', 'Unknown')}")
+        st.sidebar.write(f"**Code:** {metadata.get('municipality_code', 'N/A')}")
+        st.sidebar.write(f"**Council Seats:** {metadata.get('total_mandates', 0)}")
+        st.sidebar.write(f"**Seats Won:** {metadata.get('mandates_won', 0)}")
+
+        st.sidebar.subheader("Election Statistics")
+        if "electoral_districts" in stats:
+            st.sidebar.write(f"**Electoral Districts:** {stats['electoral_districts']}")
+        if "registered_voters" in stats:
+            st.sidebar.write(f"**Registered Voters:** {stats['registered_voters']:,}")
+        if "turnout_percentage" in stats:
+            st.sidebar.write(f"**Turnout:** {stats['turnout_percentage']:.2f}%")
+        if "valid_votes" in stats:
+            st.sidebar.write(f"**Valid Votes:** {stats['valid_votes']:,}")
+        st.sidebar.write(f"**Parties:** {stats.get('parties_participating', 0)}")
+        if "parties_with_mandates" in stats:
+            st.sidebar.write(
+                f"**Parties with Seats:** {stats['parties_with_mandates']}"
+            )
 
 
 def get_municipality_data(municipality_code: str, comprehensive_data) -> Optional[Dict]:
-    """Get complete data for a specific municipality"""
-    if not comprehensive_data:
-        return None
-    return comprehensive_data["municipalities"].get(municipality_code)
+    """Get complete data for a specific municipality or district"""
+    return get_data_by_code(municipality_code, comprehensive_data)
 
 
 def get_url_params():
@@ -299,10 +424,23 @@ def get_seat_count(electoral_data):
 
 
 @st.cache_data
-def load_geojson_data():
+def load_geojson_data(election_id: str = "kv2022"):
     """Download and cache GeoJSON data for electoral districts to local disk"""
-    # Local cache file path
-    cache_file = Path("input/raw/electoral_districts_boundaries.geojson")
+    # Get election configuration to determine which geojson to load
+    election_config = get_election_config(election_id)
+
+    # Determine which geojson file to use based on election type
+    if election_config.election_type == "parliamentary":
+        # Use 2025 polling station geojson for parliamentary elections
+        cache_file = Path("input/raw/electoral_districts_boundaries_2025.geojson")
+        # Note: This file should be pre-downloaded (252.6 MB, 14,711 stations)
+        # It can be downloaded from: https://geodata.csu.gov.cz/as/data/distribuce/Hosted/Volebni_okrsky_2025_gdb/FeatureServer/0/geojson.zip
+        url = None  # Too large to download via HTTP, should be pre-existing
+    else:
+        # Use 2022 geojson for municipal elections
+        cache_file = Path("input/raw/electoral_districts_boundaries.geojson")
+        url = "https://www.volby.cz/opendata/kv2022/geo/vol_okrsky_2022g100.geojson"
+
     cache_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Check if file already exists
@@ -325,9 +463,16 @@ def load_geojson_data():
         except Exception as e:
             st.warning(f"⚠️ Error reading cached file: {e}. Re-downloading...")
 
-    # Download the file
-    url = "https://www.volby.cz/opendata/kv2022/geo/vol_okrsky_2022g100.geojson"
+    # For parliamentary elections, the file should already exist (too large to download via HTTP)
+    if election_config.election_type == "parliamentary":
+        st.error(
+            f"❌ GeoJSON file not found: {cache_file}\n\n"
+            f"The 2025 polling station GeoJSON (252.6 MB) must be downloaded separately.\n"
+            f"Please download it from the ČSÚ GIS portal and place it in the input/raw/ directory."
+        )
+        return None
 
+    # Download the file (municipal elections only)
     try:
         st.info(
             "🌐 Downloading electoral district boundaries (8MB) - this may take a moment..."
@@ -380,39 +525,109 @@ def load_geojson_data():
 
 
 @st.cache_data
-def load_municipality_data(zastupitelstvo_code: str):
-    """Load processed election data for a specific zastupitelstvo (council election)"""
+def load_obec_mapping(election_id: str):
+    """Load OBEC code mapping for parliamentary elections
+
+    Maps PS2025 OBEC codes to GeoJSON kod_obec/naz_mco for district matching.
+    Returns empty dict for non-parliamentary elections.
+    """
+    election_config = get_election_config(election_id)
+
+    # Only load mapping for parliamentary elections
+    if election_config.election_type != "parliamentary":
+        return {}
+
+    # Load the mapping file
+    mapping_file = Path(f"input/{election_id}/processed/obec_to_geojson_mapping.json")
+
+    if not mapping_file.exists():
+        st.warning(
+            f"⚠️ OBEC mapping file not found: {mapping_file}\n\n"
+            f"This file is required to match PS2025 district codes to GeoJSON features."
+        )
+        return {}
+
+    try:
+        with open(mapping_file, "r", encoding="utf-8") as f:
+            mapping = json.load(f)
+        return mapping
+    except Exception as e:
+        st.error(f"❌ Error loading OBEC mapping: {e}")
+        return {}
+
+
+@st.cache_data
+def load_municipality_data(zastupitelstvo_code: str, election_id: str = "kv2022"):
+    """Load processed election data for a specific zastupitelstvo/district"""
     if not zastupitelstvo_code:
         return {}
 
-    # Load from our all municipalities data using zastupitelstvo_code
-    _, comprehensive_data = load_all_municipality_data()
+    # Load from our all municipalities data using zastupitelstvo_code and election_id
+    _, comprehensive_data = load_all_municipality_data(election_id)
     municipality_data = get_municipality_data(zastupitelstvo_code, comprehensive_data)
 
     if not municipality_data:
-        st.error(f"No data found for zastupitelstvo {zastupitelstvo_code}")
+        # Check if this is parliamentary or municipal
+        election_config = get_election_config(election_id)
+        entity_type = (
+            "electoral district"
+            if election_config.election_type == "parliamentary"
+            else "zastupitelstvo"
+        )
+        st.error(f"No data found for {entity_type} {zastupitelstvo_code}")
         return {}
 
     # Convert to format expected by visualization functions
     converted_data = {}
 
+    # Check if this is parliamentary or municipal data
+    election_config = get_election_config(election_id)
+    is_parliamentary = election_config.election_type == "parliamentary"
+
     # Convert party results
     party_results = municipality_data.get("party_results", [])
     if party_results:
-        party_df = pd.DataFrame(party_results)
-        party_df = party_df.rename(
-            columns={
-                "votes_absolute": "votes_absolute",  # Already correct
-                "votes_percentage": "votes_percentage",  # Already correct
-                "party_name": "party_name",  # Already correct
-                "list_number": "list_number",  # Already correct
-            }
-        )
-        converted_data["party_results"] = party_df
+        if is_parliamentary:
+            # Parliamentary data conversion
+            party_df = pd.DataFrame(party_results)
+            # Map parliamentary fields to expected fields
+            party_df = party_df.rename(columns={"party_code": "list_number"})
+            if (
+                "votes_absolute" not in party_df.columns
+                and "preferential_votes" in party_df.columns
+            ):
+                party_df = party_df.rename(
+                    columns={"preferential_votes": "votes_absolute"}
+                )
+            if "votes_percentage" not in party_df.columns:
+                total_votes = (
+                    party_df["votes_absolute"].sum()
+                    if "votes_absolute" in party_df.columns
+                    else 0
+                )
+                if total_votes > 0:
+                    party_df["votes_percentage"] = (
+                        party_df["votes_absolute"] / total_votes * 100
+                    ).round(2)
+                else:
+                    party_df["votes_percentage"] = 0
+            converted_data["party_results"] = party_df
+        else:
+            # Municipal data conversion (original logic)
+            party_df = pd.DataFrame(party_results)
+            party_df = party_df.rename(
+                columns={
+                    "votes_absolute": "votes_absolute",  # Already correct
+                    "votes_percentage": "votes_percentage",  # Already correct
+                    "party_name": "party_name",  # Already correct
+                    "list_number": "list_number",  # Already correct
+                }
+            )
+            converted_data["party_results"] = party_df
 
-    # Convert district data
+    # Convert district data (only for municipal elections)
     district_data = municipality_data.get("district_data", [])
-    if district_data:
+    if not is_parliamentary and district_data:
         districts = []
         for district in district_data:
             district_info = {
@@ -435,42 +650,185 @@ def load_municipality_data(zastupitelstvo_code: str):
 
     # Convert summary statistics
     stats = municipality_data.get("summary_statistics", {})
-    converted_data["summary_statistics"] = stats
+    if is_parliamentary:
+        # For parliamentary, map available stats
+        summary_stats = {
+            "electoral_districts": 0,  # Not applicable for individual district view
+            "registered_voters": 0,  # Would need to aggregate from polling stations
+            "turnout_percentage": 0,  # Would need to calculate
+            "valid_votes": 0,  # Would need to aggregate
+            "parties_participating": stats.get("parties_participating", 0),
+            "parties_with_mandates": len(
+                [p for p in party_results if p.get("mandates", 0) > 0]
+            )
+            if party_results
+            else 0,
+        }
+        converted_data["summary_statistics"] = summary_stats
+    else:
+        converted_data["summary_statistics"] = stats
 
     # Create district party results
     district_party_results = []
-    for district in district_data:
-        district_code = district.get("district_code", "")
-        party_votes = district.get("party_votes", [])
-        total_votes = sum(pv.get("votes", 0) for pv in party_votes)
+    if not is_parliamentary:
+        for district in district_data:
+            district_code = district.get("district_code", "")
+            party_votes = district.get("party_votes", [])
+            total_votes = sum(pv.get("votes", 0) for pv in party_votes)
 
-        for party_vote in party_votes:
-            party_list_num = party_vote.get("party_list_number")
-            votes = party_vote.get("votes", 0)
+            for party_vote in party_votes:
+                party_list_num = party_vote.get("party_list_number")
+                votes = party_vote.get("votes", 0)
 
-            # Find party name from party results
-            party_name = f"Party List {party_list_num}"
-            for party in party_results:
-                if str(party.get("list_number")) == str(party_list_num):
-                    party_name = party.get("party_name", party_name)
-                    break
+                # Find party name from party results
+                party_name = f"Party List {party_list_num}"
+                for party in party_results:
+                    if str(party.get("list_number")) == str(party_list_num):
+                        party_name = party.get("party_name", party_name)
+                        break
 
-            district_party_results.append(
-                {
-                    "district_id": f"{district_code}-1",
-                    "district_code": district_code,
-                    "party_name": party_name,
-                    "list_number": party_list_num,
-                    "votes": votes,
-                    "total_district_votes": total_votes,
-                    "percentage": (votes / total_votes * 100) if total_votes > 0 else 0,
-                }
-            )
+                district_party_results.append(
+                    {
+                        "district_id": f"{district_code}-1",
+                        "district_code": district_code,
+                        "party_name": party_name,
+                        "list_number": party_list_num,
+                        "votes": votes,
+                        "total_district_votes": total_votes,
+                        "percentage": (votes / total_votes * 100)
+                        if total_votes > 0
+                        else 0,
+                    }
+                )
+
+    # Add candidates data for parliamentary elections
+    if is_parliamentary and "candidates" in municipality_data:
+        candidates = municipality_data["candidates"]
+
+        # Enrich candidates with party names from party_results
+        if party_results:
+            # Create a mapping of party_code to party_name
+            party_name_map = {
+                p.get("party_code"): p.get("party_name", "Unknown")
+                for p in party_results
+            }
+
+            # Add party names to candidates
+            for candidate in candidates:
+                party_code = candidate.get("party_code")
+                candidate["party_name"] = party_name_map.get(
+                    party_code, f"Party {party_code}"
+                )
+
+        converted_data["candidates"] = candidates
+
+    # Add polling stations for parliamentary elections
+    if is_parliamentary and comprehensive_data:
+        # Get all polling stations from raw_data
+        raw_data = comprehensive_data.get("raw_data", {})
+        all_polling_stations = raw_data.get("polling_stations", [])
+
+        # Filter polling stations for this electoral district
+        # district_code in polling stations starts with the district number
+        # e.g., "1100" for district 1, "2101" for district 2, etc.
+        district_polling_stations = [
+            station
+            for station in all_polling_stations
+            if station.get("district_code", "").startswith(str(zastupitelstvo_code))
+        ]
+
+        if district_polling_stations:
+            converted_data["polling_stations"] = district_polling_stations
+
+            # Convert polling stations to district_data format for map visualization
+            # Use station_number as district_code (e.g., "1001", "1002", etc.)
+            district_data_list = []
+            for station in district_polling_stations:
+                district_data_list.append(
+                    {
+                        "district_code": station.get("station_number", ""),
+                        "registered_voters": station.get("registered_voters", 0),
+                        "returned_ballots": station.get("returned_ballots", 0),
+                        "valid_votes": station.get("valid_votes", 0),
+                        "turnout_percentage": station.get("turnout_percentage", 0),
+                    }
+                )
+
+            converted_data["district_data"] = pd.DataFrame(district_data_list)
+
+            if "summary_statistics" in converted_data:
+                registered = sum(
+                    station.get("registered_voters", 0)
+                    for station in district_polling_stations
+                )
+                returned = sum(
+                    station.get("returned_ballots", 0)
+                    for station in district_polling_stations
+                )
+                valid_votes = sum(
+                    station.get("valid_votes", 0)
+                    for station in district_polling_stations
+                )
+                turnout_percentage = (
+                    (returned / registered) * 100 if registered > 0 else 0
+                )
+                converted_data["summary_statistics"].update(
+                    {
+                        "registered_voters": registered,
+                        "turnout_percentage": round(turnout_percentage, 2),
+                        "valid_votes": valid_votes,
+                    }
+                )
+
+            party_name_map = {
+                p.get("party_code"): p.get("party_name", "Unknown")
+                for p in party_results
+            }
+
+            for station in district_polling_stations:
+                district_code = station.get("station_number", "")
+                party_votes = station.get("party_votes", [])
+                total_votes = sum(pv.get("votes", 0) for pv in party_votes)
+
+                for party_vote in party_votes:
+                    party_code = party_vote.get("party_list_number") or party_vote.get(
+                        "party_code"
+                    )
+                    if party_code is None:
+                        continue
+                    votes = party_vote.get("votes", 0)
+                    party_name = party_name_map.get(
+                        party_code, f"Party {party_code}"
+                    )
+                    district_party_results.append(
+                        {
+                            "district_id": f"{district_code}-1",
+                            "district_code": district_code,
+                            "party_name": party_name,
+                            "list_number": party_code,
+                            "votes": votes,
+                            "total_district_votes": total_votes,
+                            "percentage": (votes / total_votes * 100)
+                            if total_votes > 0
+                            else 0,
+                        }
+                    )
 
     if district_party_results:
         converted_data["district_party_results"] = pd.DataFrame(district_party_results)
 
     return converted_data
+
+
+def get_district_code_from_geojson(properties):
+    """Extract district code from GeoJSON properties (handles both 2022 and 2025 formats)
+
+    2022 GeoJSON uses uppercase 'CISLO'
+    2025 GeoJSON uses lowercase 'cislo'
+    """
+    # Try both formats
+    code = properties.get("cislo") or properties.get("CISLO")
+    return str(code) if code is not None else ""
 
 
 def create_map_with_tiles(location, zoom_start, base_map_style):
@@ -696,7 +1054,7 @@ def create_folium_map(
         def style_function(feature):
             """Style function for GeoJSON features"""
             properties = feature.get("properties", {})
-            district_code = properties.get("CISLO", "")
+            district_code = get_district_code_from_geojson(properties)
 
             # Default style
             style = {
@@ -717,7 +1075,7 @@ def create_folium_map(
         def create_popup_content(feature):
             """Create popup content for a feature"""
             properties = feature.get("properties", {})
-            district_code = properties.get("CISLO", "Unknown")
+            district_code = get_district_code_from_geojson(properties) or "Unknown"
 
             popup_html = f"""
             <div style="font-family: Arial; width: 250px;">
@@ -810,7 +1168,7 @@ def create_folium_map(
 
             # Create informative tooltip based on visualization type
             properties = feature.get("properties", {})
-            district_code = properties.get("CISLO", "Unknown")
+            district_code = get_district_code_from_geojson(properties) or "Unknown"
 
             tooltip_text = f"Okrsek {district_code}"
 
@@ -1571,7 +1929,16 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
             gdf = gpd.GeoDataFrame.from_features(
                 filtered_geojson["features"], crs="EPSG:4326"
             )
-            gdf["district_code"] = gdf["CISLO"].astype(str)
+            # Handle both 2022 (CISLO) and 2025 (cislo) GeoJSON formats
+            if "cislo" in gdf.columns:
+                gdf["district_code"] = gdf["cislo"].astype(str)
+            elif "CISLO" in gdf.columns:
+                gdf["district_code"] = gdf["CISLO"].astype(str)
+            else:
+                st.error(
+                    "Could not find district code field (CISLO or cislo) in GeoJSON"
+                )
+                return
 
             # Create vote series based on visualization type
             if viz_type == "Valid Votes (dots)" or viz_type == "Valid Votes":
@@ -1786,7 +2153,7 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
 
         # Extract useful information
         properties = clicked_data.get("properties", {})
-        district_code = properties.get("CISLO", "Unknown")
+        district_code = get_district_code_from_geojson(properties) or "Unknown"
 
         col1, col2 = st.columns(2)
         with col1:
@@ -1839,7 +2206,8 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 else set()
             )
             geojson_codes = set(
-                f.get("properties", {}).get("CISLO", "") for f in municipality_features
+                get_district_code_from_geojson(f.get("properties", {}))
+                for f in municipality_features
             )
             matches = len(available_codes.intersection(geojson_codes))
             st.metric("Map-Data Matches", matches)
@@ -1906,6 +2274,68 @@ def display_data_explorer(data):
 
 def display_district_analysis(data):
     """Display okrsek-level (polling district) analysis and comparisons"""
+
+    # Check if this is parliamentary election data (has candidates instead of district_data)
+    is_parliamentary = "candidates" in data and "district_data" not in data
+
+    if is_parliamentary:
+        st.subheader("👥 Candidate Analysis")
+        st.info(
+            "📊 **Parliamentary Election View**\n\n"
+            "This electoral district has detailed candidate data rather than polling station breakdowns. "
+            "Polling station-level analysis is not available for parliamentary elections in this view."
+        )
+
+        # Show candidate statistics if available
+        if "candidates" in data and data["candidates"]:
+            candidates = data["candidates"]
+            st.subheader(f"📋 Candidate Statistics")
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Candidates", len(candidates))
+            with col2:
+                candidates_with_mandate = len(
+                    [c for c in candidates if c.get("mandate_won", False)]
+                )
+                st.metric("Candidates Elected", candidates_with_mandate)
+            with col3:
+                total_pref_votes = sum(
+                    c.get("preferential_votes", 0) for c in candidates
+                )
+                st.metric("Total Preferential Votes", f"{total_pref_votes:,}")
+
+            # Show top candidates by preferential votes
+            st.subheader("🏆 Top Candidates by Preferential Votes")
+            candidates_sorted = sorted(
+                candidates, key=lambda x: x.get("preferential_votes", 0), reverse=True
+            )[:20]
+
+            import pandas as pd
+
+            candidates_df = pd.DataFrame(
+                [
+                    {
+                        "Rank": i + 1,
+                        "Name": f"{c.get('first_name', '')} {c.get('surname', '')}",
+                        "Party": c.get("party_name", "Unknown"),
+                        "Preferential Votes": c.get("preferential_votes", 0),
+                        "Percentage": f"{c.get('preferential_percentage', 0):.2f}%",
+                        "Elected": "✅" if c.get("mandate_won", False) else "❌",
+                    }
+                    for i, c in enumerate(candidates_sorted)
+                ]
+            )
+
+            st.dataframe(
+                candidates_df,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        return
+
+    # Municipal election logic (original)
     st.subheader("🏘️ Okrsek (Polling District) Analysis")
 
     if "district_data" not in data or "district_party_results" not in data:
@@ -2189,7 +2619,11 @@ def create_cartogram(
 
     # Convert to GeoDataFrame
     gdf = gpd.GeoDataFrame.from_features(municipality_features)
-    gdf["district_code"] = gdf["CISLO"].astype(str)
+    # Handle both 2022 (CISLO) and 2025 (cislo) GeoJSON formats
+    if "cislo" in gdf.columns:
+        gdf["district_code"] = gdf["cislo"].astype(str)
+    elif "CISLO" in gdf.columns:
+        gdf["district_code"] = gdf["CISLO"].astype(str)
 
     # Get vote counts and display values
     district_data = electoral_data.get("district_data") if electoral_data else None
@@ -2520,7 +2954,7 @@ def create_cartogram_map(
 
     # Add each district to the map
     for idx, row in cartogram_gdf.iterrows():
-        district_code = row.get("CISLO", "Unknown")
+        district_code = get_district_code_from_geojson(row) or "Unknown"
         vote_count = row.get("vote_count", 0)
         display_value = row.get("display_value", 0)
         radius = row.get("radius", 0)
@@ -2818,12 +3252,40 @@ def main():
         unsafe_allow_html=True,
     )
 
-    # Municipality Selection
-    st.sidebar.title("🏛️ Election Selection")
+    # Sidebar - Election Selection
+    st.sidebar.title("⚙️ Settings")
+
+    # Election selector
+    st.sidebar.subheader("🗳️ Select Election")
+
+    # Get available elections
+    available_elections = get_election_info()
+    election_labels = {
+        election_id: f"{info['name']} ({info['date'][:4]})"
+        for election_id, info in available_elections.items()
+    }
+
+    # Create selectbox for elections
+    selected_election_id = st.sidebar.selectbox(
+        "Election:",
+        options=list(election_labels.keys()),
+        format_func=lambda x: election_labels[x],
+        index=0,  # Default to first election (kv2022)
+        key="election_selector",
+    )
+
+    # Show election info
+    election_info = available_elections[selected_election_id]
+    st.sidebar.caption(f"📅 {election_info['name']}")
+    st.sidebar.caption(f"📆 Date: {election_info['date']}")
+
     st.sidebar.markdown("---")
 
+    # Municipality Selection
+    st.sidebar.subheader("🏛️ Municipality Selection")
+
     # Load municipality data and create selector
-    municipality_index, comprehensive_data = ensure_data_exists()
+    municipality_index, comprehensive_data = ensure_data_exists(selected_election_id)
 
     if not municipality_index or not comprehensive_data:
         return
@@ -2862,34 +3324,54 @@ def main():
         """)
         return
 
-    # Get municipality info for title
+    # Get municipality/district info for title
     municipality_data = get_municipality_data(
         selected_zastupitelstvo_code, comprehensive_data
     )
-    municipality_name = "Unknown Municipality"
-    election_type = "Council Election"
+    municipality_name = "Unknown"
+    election_type = "Election"
+
+    # Get election config to determine type
+    election_config = get_election_config(selected_election_id)
 
     if municipality_data:
         metadata = municipality_data.get("metadata", {})
-        municipality_name = metadata.get("municipality_name", "Unknown Municipality")
 
-        # Determine election type
-        districts = municipality_data.get("district_data", [])
-        if districts:
-            first_district = districts[0]
-            oznac_typu = first_district.get("type", "")
+        # Check if parliamentary or municipal
+        if election_config.election_type == "parliamentary":
+            municipality_name = metadata.get(
+                "district_name", f"District {selected_zastupitelstvo_code}"
+            )
+            election_type = "Parliamentary Election"
+        else:
+            municipality_name = metadata.get(
+                "municipality_name", "Unknown Municipality"
+            )
 
-            if oznac_typu == "OBEC":
-                election_type = "Municipal Council Election"
-            elif oznac_typu == "MCMO":
-                election_type = "City District Council Election"
+            # Determine specific election type for municipal
+            districts = municipality_data.get("district_data", [])
+            if districts:
+                first_district = districts[0]
+                oznac_typu = first_district.get("type", "")
+
+                if oznac_typu == "OBEC":
+                    election_type = "Municipal Council Election"
+                elif oznac_typu == "MCMO":
+                    election_type = "City District Council Election"
+            else:
+                election_type = "Council Election"
 
     st.subheader(f"📍 Analysis for: **{municipality_name}** - {election_type}")
 
     # Load data for selected municipality/zastupitelstvo
     with st.spinner(f"Loading data for {municipality_name} {election_type}..."):
-        geojson_data = load_geojson_data()
-        electoral_data = load_municipality_data(selected_zastupitelstvo_code)
+        geojson_data = load_geojson_data(selected_election_id)
+        obec_mapping = load_obec_mapping(
+            selected_election_id
+        )  # For parliamentary elections
+        electoral_data = load_municipality_data(
+            selected_zastupitelstvo_code, selected_election_id
+        )
 
     # Analysis Views as prominent tabs with URL parameter support
     tab_options = [
@@ -3014,57 +3496,102 @@ def main():
 
     elif selected_tab == "Geographic Analysis":
         st.header("🗺️ Geographic Analysis")
-        # Filter geojson for this municipality
+        # Filter geojson for this municipality/electoral district
         municipality_geojson = None
         if geojson_data and "features" in geojson_data:
             municipality_districts = []
 
-            # First, try municipality-level matching (more precise)
-            for feature in geojson_data["features"]:
-                props = feature.get("properties", {})
+            # Get election configuration to determine matching strategy
+            election_config = get_election_config(selected_election_id)
+            is_parliamentary = election_config.election_type == "parliamentary"
 
-                # Strategy 1: Match using MOMC field
-                if props.get("MOMC") in geographic_municipality_codes:
-                    municipality_districts.append(feature)
+            # For parliamentary elections, use OBEC mapping
+            if is_parliamentary and obec_mapping:
+                # For parliamentary elections, selected_zastupitelstvo_code is actually an electoral district number (1-14)
+                # But we need to match polling stations by OBEC code
+                # We need to get all polling stations from the electoral data
+                if electoral_data and "polling_stations" in electoral_data:
+                    polling_stations = electoral_data["polling_stations"]
 
-                # Strategy 2: Match using OBEC field
-                elif props.get("OBEC") in geographic_municipality_codes:
-                    municipality_districts.append(feature)
+                    # Extract unique OBEC codes from polling stations
+                    obec_codes = set()
+                    for station in polling_stations:
+                        obec_code = station.get("municipality_code", "")
+                        if obec_code:
+                            obec_codes.add(obec_code)
 
-                # Strategy 3: Match using CIS_OBEC field
-                elif props.get("CIS_OBEC") in geographic_municipality_codes:
-                    municipality_districts.append(feature)
+                    # Map OBEC codes to GeoJSON kod_obec using the mapping
+                    geojson_obec_codes = set()
+                    for obec_code in obec_codes:
+                        if obec_code in obec_mapping:
+                            geojson_obec_codes.add(
+                                obec_mapping[obec_code]["kod_obec_geojson"]
+                            )
 
-            # If no municipality-level matches found, try district-level matching as fallback
-            if (
-                not municipality_districts
-                and electoral_data
-                and "district_data" in electoral_data
-            ):
-                electoral_districts = electoral_data["district_data"]
-                if hasattr(electoral_districts, "index"):  # It's a DataFrame
-                    district_codes = set(
-                        electoral_districts["district_code"].astype(str).tolist()
+                    # Match GeoJSON features using kod_obec
+                    for feature in geojson_data["features"]:
+                        props = feature.get("properties", {})
+                        kod_obec = props.get("kod_obec", "")
+
+                        if kod_obec in geojson_obec_codes:
+                            municipality_districts.append(feature)
+
+                    st.info(
+                        f"📍 Parliamentary Elections: Matched {len(municipality_districts)} polling stations from {len(obec_codes)} municipalities"
                     )
-                else:  # It's a list of dicts
-                    district_codes = set(
-                        str(d.get("district_code", "")) for d in electoral_districts
+                else:
+                    st.warning(
+                        "⚠️ No polling station data found for parliamentary elections"
                     )
 
-                # Only match districts if we're confident about the municipality
+            # For municipal elections, use traditional matching strategies
+            else:
+                # First, try municipality-level matching (more precise)
                 for feature in geojson_data["features"]:
                     props = feature.get("properties", {})
-                    feature_district_code = str(props.get("CISLO", ""))
 
-                    # More conservative district matching - only if we have a reasonable number of matches
-                    if feature_district_code in district_codes:
+                    # Strategy 1: Match using MOMC field
+                    if props.get("MOMC") in geographic_municipality_codes:
                         municipality_districts.append(feature)
 
-                # Safety check - if we get too many districts, something is wrong
+                    # Strategy 2: Match using OBEC field
+                    elif props.get("OBEC") in geographic_municipality_codes:
+                        municipality_districts.append(feature)
+
+                    # Strategy 3: Match using CIS_OBEC field
+                    elif props.get("CIS_OBEC") in geographic_municipality_codes:
+                        municipality_districts.append(feature)
+
+                # If no municipality-level matches found, try district-level matching as fallback
                 if (
-                    len(municipality_districts) > 200
-                ):  # Reasonable upper limit for any municipality
-                    municipality_districts = []  # Clear the overly broad match
+                    not municipality_districts
+                    and electoral_data
+                    and "district_data" in electoral_data
+                ):
+                    electoral_districts = electoral_data["district_data"]
+                    if hasattr(electoral_districts, "index"):  # It's a DataFrame
+                        district_codes = set(
+                            electoral_districts["district_code"].astype(str).tolist()
+                        )
+                    else:  # It's a list of dicts
+                        district_codes = set(
+                            str(d.get("district_code", "")) for d in electoral_districts
+                        )
+
+                    # Only match districts if we're confident about the municipality
+                    for feature in geojson_data["features"]:
+                        props = feature.get("properties", {})
+                        feature_district_code = get_district_code_from_geojson(props)
+
+                        # More conservative district matching - only if we have a reasonable number of matches
+                        if feature_district_code in district_codes:
+                            municipality_districts.append(feature)
+
+                    # Safety check - if we get too many districts, something is wrong
+                    if (
+                        len(municipality_districts) > 200
+                    ):  # Reasonable upper limit for any municipality
+                        municipality_districts = []  # Clear the overly broad match
 
             if municipality_districts:
                 municipality_geojson = {
