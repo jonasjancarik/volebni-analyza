@@ -1,6 +1,6 @@
 # Czech Municipalities Electoral Analysis
 
-> **Comprehensive analysis tool for 2022 Czech municipal elections** covering **6,377+ municipalities**
+> **Comprehensive analysis tool for Czech municipal elections** covering **6,377+ municipalities** across **multiple election years**
 
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.45+-red.svg)](https://streamlit.io/)
@@ -8,17 +8,20 @@
 
 ## 🏛️ What This Tool Does
 
-This tool provides **comprehensive electoral analysis** for any Czech municipality from the 2022 municipal elections. Originally developed for Prague 5, it now supports **all 6,377+ Czech municipalities** with detailed party results, turnout analysis, and interactive visualizations.
+This tool provides **comprehensive electoral analysis** for any Czech municipality across multiple municipal elections (2022, 2018, 2014, and more). Originally developed for Prague 5, it now supports **all 6,377+ Czech municipalities** with detailed party results, turnout analysis, interactive visualizations, and **multi-election comparison capabilities**.
 
 ### ✨ Key Features
 
 - **📊 All Municipalities**: Support for 6,377+ Czech municipalities
-- **🗳️ Complete Election Data**: Party results, mandates, turnout statistics  
+- **🗳️ Multiple Elections**: Analyze data from 2022, 2018, 2014, and more
+- **🔄 Easy Election Switching**: Select different elections with a simple dropdown
+- **📈 Complete Election Data**: Party results, mandates, turnout statistics  
 - **📍 Geographic Analysis**: Interactive maps and district-level breakdowns
 - **🔍 Advanced Filtering**: Search by name, size, turnout, and more
-- **📈 Data Visualization**: Charts, maps, and comprehensive dashboards
+- **📊 Data Visualization**: Charts, maps, and comprehensive dashboards
 - **💾 Multiple Formats**: JSON, CSV, and interactive displays
 - **🚀 Auto-Setup**: Streamlit app automatically runs data collection when needed
+- **🔧 Migration Tool**: Easy migration from old single-election structure
 
 ## 🚀 Quick Start
 
@@ -53,8 +56,17 @@ streamlit run streamlit_app.py
 If you prefer to collect data manually first:
 
 ```bash
-# Collect data for ALL municipalities (one-time setup)
-uv run python run_all_municipalities.py
+# List available elections
+uv run python run_all_municipalities.py --list-elections
+
+# Collect data for a specific election (default: kv2022)
+uv run python run_all_municipalities.py --election kv2022
+
+# Collect data for 2018 elections
+uv run python run_all_municipalities.py --election kv2018
+
+# Short form
+uv run python run_all_municipalities.py -e kv2014
 
 # This will:
 # - Download municipality registry (6,377+ municipalities)
@@ -87,19 +99,27 @@ streamlit run streamlit_app.py
 
 ```
 volebni-analyza/
-├── 📥 input/
-│   └── raw/                    # Source data from ČSÚ
-│       ├── kvcoco_municipality_registry.xml
-│       ├── kvros_electoral_parties_register.xml
-│       └── electoral_districts_batch_*.xml
-├── 📤 output/
-│   ├── results/                # Analysis results
-│   │   ├── all_municipalities_comprehensive.json
-│   │   └── municipality_index.json
-│   ├── processed/              # Intermediate data
-│   ├── csv/                    # CSV exports
-│   └── reports/                # Generated reports
+├── 📥 input/                   # All input data organized by election
+│   ├── kv2022/                 # 2022 Municipal Elections
+│   │   └── raw/                # Source data from ČSÚ
+│   ├── kv2018/                 # 2018 Municipal Elections
+│   │   └── raw/
+│   └── kv2014/                 # 2014 Municipal Elections
+│       └── raw/
+├── 📤 output/                  # All output data organized by election
+│   ├── kv2022/                 # 2022 Election Results
+│   │   ├── results/            # Analysis results
+│   │   │   ├── all_municipalities_comprehensive.json
+│   │   │   └── municipality_index.json
+│   │   ├── processed/          # Intermediate data
+│   │   ├── csv/                # CSV exports
+│   │   └── reports/            # Generated reports
+│   ├── kv2018/                 # 2018 Election Results
+│   │   └── ...
+│   └── kv2014/                 # 2014 Election Results
+│       └── ...
 ├── 🔧 src/                     # Source code modules
+│   ├── election_config.py      # Election configuration (NEW)
 │   ├── all_municipalities_scraper.py
 │   ├── municipality_registry.py
 │   ├── data_processor.py
@@ -108,21 +128,37 @@ volebni-analyza/
 │   └── data_exporters.py
 ├── 📊 streamlit_app.py                    # Main analysis dashboard
 ├── 🎛️ run_streamlit.py                   # App launcher
-└── 📋 run_all_municipalities.py           # Data collection script
+├── 📋 run_all_municipalities.py           # Data collection script
+└── 🔄 migrate_to_multi_election.py        # Migration tool (NEW)
 ```
 
 ## 🛠️ Command Line Tools
 
 ### 📊 Data Collection
 ```bash
-# Full analysis pipeline
-uv run python run_all_municipalities.py
+# List available elections
+uv run python run_all_municipalities.py --list-elections
+
+# Full analysis pipeline for specific election
+uv run python run_all_municipalities.py --election kv2022
+
+# Collect multiple elections
+uv run python run_all_municipalities.py -e kv2022
+uv run python run_all_municipalities.py -e kv2018
+uv run python run_all_municipalities.py -e kv2014
 
 # Registry only (faster for testing)
-uv run python run_all_municipalities.py --registry-only
+uv run python run_all_municipalities.py --election kv2022 --registry-only
 
 # Use existing data (no downloads)
-uv run python run_all_municipalities.py --no-download
+uv run python run_all_municipalities.py --election kv2022 --no-download
+```
+
+### 🔄 Migration Tool
+```bash
+# Migrate existing data from old structure to new multi-election structure
+python migrate_to_multi_election.py --dry-run          # Preview changes
+python migrate_to_multi_election.py --election-id kv2022  # Perform migration
 ```
 
 ### 🚀 App Launcher
@@ -145,11 +181,26 @@ uv run python run_streamlit.py --dev
 - **Electoral Districts**: `vysledky_okrsky` API - District-level vote data (200+ batches)
 - **Geographic Data**: GeoJSON boundaries for mapping
 
-### 📊 Data Coverage
+### 📊 Data Coverage (per election)
 - **6,377+ municipalities** (complete coverage)
 - **16,901 electoral districts** 
 - **23,361 party entries** (across all municipalities)
 - **10M+ registered voters** total
+
+### 🗳️ Supported Elections
+
+**Municipal Elections** (Komunální volby):
+- **2022** - September 23-24, 2022 ✅ Full data available
+- **2018** - October 5-6, 2018 ✅ Full data available
+- **2014** - October 10-11, 2014 ✅ Full data available
+
+**Parliamentary Elections** (Volby do Poslanecké sněmovny):
+- **2025** - October 5, 2025 ✅ **Data available! Ready for implementation**
+  - Note: Full XML opendata structure with complete election results
+  - Source: [ČSÚ OpenData PS2025](https://www.volby.cz/opendata/ps2025/ps2025_opendata.htm)
+  - Status: Configuration updated, data analyzed, scraper implementation needed
+
+Additional elections can be easily added by extending the `election_config.py` file.
 
 ## 🔧 Development
 

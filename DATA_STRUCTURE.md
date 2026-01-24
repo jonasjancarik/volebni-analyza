@@ -1,40 +1,47 @@
 # Data Directory Structure
 
-This document explains the organized data directory structure that separates input and output data for better organization and clarity, along with detailed descriptions of all data files and their contents.
+This document explains the organized data directory structure that supports multiple elections, separating input and output data for better organization and clarity, along with detailed descriptions of all data files and their contents.
 
-## Directory Structure
+## Multi-Election Directory Structure
+
+The application now supports multiple elections with a clear separation by election ID:
 
 ```
 volebni-analyza/
 ├── input/                     # All input data (source files)
-│   └── raw/                   # Raw source data files
-│       ├── *.xml              # Electoral district XML files
-│       ├── *.csv              # Election results CSV files  
-│       └── ...                # Other raw data sources
+│   ├── kv2022/                # 2022 Municipal Elections
+│   │   └── raw/               # Raw source data files
+│   │       ├── electoral_districts_batch_*.xml
+│   │       ├── kvcoco_municipality_registry.xml
+│   │       └── kvros_electoral_parties_register.xml
+│   ├── kv2018/                # 2018 Municipal Elections
+│   │   └── raw/
+│   └── kv2014/                # 2014 Municipal Elections
+│       └── raw/
 │
 ├── output/                    # All generated/processed data
-│   ├── csv/                   # CSV exports for dashboard
-│   │   ├── party_results.csv
-│   │   ├── district_data.csv
-│   │   ├── summary_statistics.csv
-│   │   └── district_party_results.csv
-│   ├── processed/             # Processed and cleaned data
-│   │   ├── municipality_registry.json
-│   │   └── intermediate processing files
-│   ├── detailed/              # Detailed analysis data
-│   │   └── detailed analysis results
-│   ├── results/               # Final analysis results
-│   │   ├── all_municipalities_comprehensive.json
-│   │   └── municipality_index.json
-│   ├── visualizations/        # Generated charts and maps
-│   │   ├── index.html
-│   │   ├── turnout_analysis.html
-│   │   └── districts_map.html
-│   └── reports/               # Analysis reports
-│       ├── comprehensive_analysis_report.json
-│       └── analysis_summary.md
+│   ├── kv2022/                # 2022 Election Results
+│   │   ├── csv/               # CSV exports for dashboard
+│   │   │   ├── party_results.csv
+│   │   │   ├── district_data.csv
+│   │   │   ├── summary_statistics.csv
+│   │   │   └── district_party_results.csv
+│   │   ├── processed/         # Processed and cleaned data
+│   │   │   └── municipality_registry.json
+│   │   ├── detailed/          # Detailed analysis data
+│   │   ├── results/           # Final analysis results
+│   │   │   ├── all_municipalities_comprehensive.json
+│   │   │   └── municipality_index.json
+│   │   ├── visualizations/    # Generated charts and maps
+│   │   └── reports/           # Analysis reports
+│   │       └── analysis_summary.md
+│   ├── kv2018/                # 2018 Election Results
+│   │   └── ...
+│   └── kv2014/                # 2014 Election Results
+│       └── ...
 │
 ├── src/                       # Source code modules
+│   ├── election_config.py     # Election configuration management (NEW)
 │   ├── all_municipalities_scraper.py
 │   ├── municipality_registry.py
 │   ├── data_processor.py
@@ -44,24 +51,91 @@ volebni-analyza/
 │
 ├── streamlit_app.py                    # Main analysis dashboard
 ├── run_streamlit.py                    # App launcher
-└── run_all_municipalities.py           # Data collection script
+├── run_all_municipalities.py           # Data collection script
+└── migrate_to_multi_election.py        # Migration tool (NEW)
 ```
 
-## Auto-Setup Feature
+## Election Configuration
 
-The Streamlit applications now include **auto-setup functionality**:
+Each election is identified by an election ID and has its own configuration:
 
-- **Automatic Detection**: Apps detect when required data files are missing
+### Available Elections
+
+- **kv2022**: Komunální volby 2022 (Municipal Elections 2022)
+  - Date: 2022-09-23
+  - Base URL: https://www.volby.cz/pls/kv2022
+  - OpenData: https://www.volby.cz/opendata/kv2022/xml
+
+- **kv2018**: Komunální volby 2018 (Municipal Elections 2018)
+  - Date: 2018-10-05
+  - Base URL: https://www.volby.cz/pls/kv2018
+  - OpenData: https://www.volby.cz/opendata/kv2018/xml
+
+- **kv2014**: Komunální volby 2014 (Municipal Elections 2014)
+  - Date: 2014-10-10
+  - Base URL: https://www.volby.cz/pls/kv2014
+  - OpenData: https://www.volby.cz/opendata/kv2014/xml
+
+## Using Multiple Elections
+
+### Command Line
+
+```bash
+# List available elections
+python run_all_municipalities.py --list-elections
+
+# Collect data for specific election
+python run_all_municipalities.py --election kv2022
+python run_all_municipalities.py --election kv2018
+
+# Use short form
+python run_all_municipalities.py -e kv2014
+```
+
+### Streamlit Dashboard
+
+The Streamlit app includes an **election selector** in the sidebar:
+
+1. Select the election year from the dropdown (e.g., "Komunální volby 2022")
+2. The app automatically loads data for that election
+3. All visualizations and analyses update accordingly
+
+### Auto-Setup Feature
+
+The Streamlit applications include **auto-setup functionality** for each election:
+
+- **Automatic Detection**: Apps detect when required data files are missing for the selected election
 - **One-Click Setup**: Users can run data collection directly from the web interface
 - **Progress Monitoring**: Real-time progress updates during data collection
 - **Seamless Experience**: No need to run command-line tools manually
 
 ### How Auto-Setup Works
 
-1. **Data Check**: App checks for `output/results/municipality_index.json` and `output/results/all_municipalities_comprehensive.json`
+1. **Data Check**: App checks for `output/{election_id}/results/municipality_index.json` and `output/{election_id}/results/all_municipalities_comprehensive.json`
 2. **Missing Data Alert**: If files are missing, shows a user-friendly warning with setup button
-3. **Background Collection**: Runs `run_all_municipalities.py` in the background with progress updates
+3. **Background Collection**: Runs `run_all_municipalities.py --election {election_id}` in the background with progress updates
 4. **Auto-Refresh**: Automatically refreshes the app once data collection completes
+
+## Migration from Old Structure
+
+If you have existing data in the old structure (`input/raw/`, `output/`), use the migration script:
+
+```bash
+# Dry run (shows what would happen)
+python migrate_to_multi_election.py --dry-run
+
+# Perform migration (creates backups automatically)
+python migrate_to_multi_election.py --election-id kv2022
+
+# Skip backups (not recommended)
+python migrate_to_multi_election.py --no-backup
+```
+
+The migration script:
+- Creates backups of your existing data
+- Moves data to the new structure (`input/kv2022/`, `output/kv2022/`)
+- Preserves all your existing files
+- Creates a migration info file for reference
 
 ## Input Data Files (`input/raw/`)
 
