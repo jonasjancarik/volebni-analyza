@@ -117,6 +117,67 @@ def ensure_parliamentary_geojson_wgs84(election_config):
                 )
             except Exception as exc:
                 logger.warning(f"⚠️ Failed to write simplified GeoPackage: {exc}")
+        else:
+            simplified = gpd.read_file(gpkg_file, layer=simplified_layer)
+
+        results_file = election_config.results_dir / "parliamentary_election_results.json"
+        municipality_code_set = set()
+        if results_file.exists():
+            try:
+                with open(results_file, "r", encoding="utf-8") as f:
+                    results_data = json.load(f)
+                stations = results_data.get("raw_data", {}).get("polling_stations", [])
+                municipality_code_set = {
+                    str(station.get("municipality_code"))
+                    for station in stations
+                    if station.get("municipality_code") is not None
+                }
+                logger.info(
+                    f"✅ Loaded {len(municipality_code_set)} municipality codes from results"
+                )
+            except Exception as exc:
+                logger.warning(f"⚠️ Failed to load municipality codes: {exc}")
+
+        split_dir = Path("input/ps2025/processed/geojson_by_municipality")
+        split_index = split_dir / "index.json"
+        split_needs_update = needs_convert or not split_index.exists()
+        if not split_needs_update:
+            split_needs_update = (
+                split_index.stat().st_mtime < converted_file.stat().st_mtime
+            )
+        if not split_needs_update and results_file.exists():
+            split_needs_update = split_index.stat().st_mtime < results_file.stat().st_mtime
+
+        if split_needs_update:
+            split_dir.mkdir(parents=True, exist_ok=True)
+            split = simplified.copy()
+            split["municipality_code"] = split["kod_obec"]
+            if municipality_code_set:
+                split["municipality_code"] = split.apply(
+                    lambda row: row["kod_mco"]
+                    if str(row.get("kod_mco")) in municipality_code_set
+                    else row.get("kod_obec"),
+                    axis=1,
+                )
+            split["municipality_code"] = split["municipality_code"].astype(
+                int, errors="ignore"
+            ).astype(str, errors="ignore")
+
+            codes = []
+            for code, group in split.groupby("municipality_code"):
+                if not code or code == "nan":
+                    continue
+                codes.append(code)
+                out_file = split_dir / f"{code}.geojson"
+                out_file.write_text(group.to_json(), encoding="utf-8")
+
+            split_index.write_text(
+                json.dumps(sorted(set(codes)), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            logger.info(
+                f"✅ Saved {len(codes)} per-municipality GeoJSON files to {split_dir}"
+            )
         kod_mco = gdf.get("kod_mco")
         if kod_mco is not None:
             kod_mco_values = (

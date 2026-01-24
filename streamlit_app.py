@@ -25,6 +25,7 @@ from shapely.affinity import scale
 from itertools import product
 import subprocess
 import logging
+import pydeck as pdk
 from typing import Dict, List, Optional
 
 # Add src directory to path
@@ -572,11 +573,36 @@ def load_geojson_kod_mco_set(election_id: str):
 
 
 @st.cache_data
+def load_pre_split_geojson(election_id: str, municipality_code: str):
+    """Load pre-split GeoJSON for a municipality code when available."""
+    election_config = get_election_config(election_id)
+    if election_config.election_type != "parliamentary":
+        return None
+
+    split_file = Path(
+        f"input/{election_id}/processed/geojson_by_municipality/{municipality_code}.geojson"
+    )
+    if not split_file.exists():
+        return None
+
+    try:
+        with open(split_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if data.get("type") != "FeatureCollection":
+            return None
+        return data
+    except Exception as e:
+        st.warning(f"⚠️ Error loading pre-split GeoJSON: {e}")
+        return None
+
+
+@st.cache_data
 def load_geojson_subset(
     election_id: str,
     target_mco_codes: List[str],
     target_obec_codes: List[str],
     use_simplified: bool = True,
+    use_ram_cache: bool = False,
 ):
     """Load a filtered parliamentary GeoJSON subset using GeoPackage when available."""
     election_config = get_election_config(election_id)
@@ -587,6 +613,19 @@ def load_geojson_subset(
     if gpkg_file.exists():
         try:
             layer = "okrsky_simplified" if use_simplified else "okrsky"
+            if use_ram_cache:
+                gdf = load_parliamentary_gdf(election_id, use_simplified)
+                if gdf is not None and not gdf.empty:
+                    if target_mco_codes:
+                        subset = gdf[gdf["kod_mco"].astype(str).isin(target_mco_codes)]
+                    else:
+                        subset = gdf[
+                            gdf["kod_obec"].astype(str).isin(target_obec_codes)
+                        ]
+                    if subset.empty:
+                        return None
+                    return json.loads(subset.to_json())
+
             if target_mco_codes:
                 code_list = ",".join(f"'{code}'" for code in target_mco_codes)
                 where = f"kod_mco IN ({code_list})"
@@ -618,6 +657,25 @@ def load_geojson_subset(
     if not filtered:
         return None
     return {"type": "FeatureCollection", "features": filtered}
+
+
+@st.cache_resource
+def load_parliamentary_gdf(election_id: str, use_simplified: bool = True):
+    """Load full parliamentary GeoDataFrame into RAM (large)."""
+    election_config = get_election_config(election_id)
+    if election_config.election_type != "parliamentary":
+        return None
+
+    gpkg_file = Path("input/raw/electoral_districts_boundaries_2025_wgs84.gpkg")
+    if not gpkg_file.exists():
+        return None
+
+    layer = "okrsky_simplified" if use_simplified else "okrsky"
+    try:
+        return gpd.read_file(gpkg_file, layer=layer)
+    except Exception as e:
+        st.warning(f"⚠️ Failed to load GeoPackage layer into RAM: {e}")
+        return None
 
 
 @st.cache_data
@@ -1436,6 +1494,183 @@ def create_folium_map(
     return m
 
 
+def create_pydeck_map(
+    geojson_data,
+    electoral_data=None,
+    viz_type="Turnout",
+    selected_party=None,
+):
+    """Create a Pydeck map for faster polygon rendering."""
+    if not geojson_data or "features" not in geojson_data:
+        return None
+
+    district_data = electoral_data.get("district_data") if electoral_data else None
+    party_data = (
+        electoral_data.get("district_party_results") if electoral_data else None
+    )
+
+    viz_data = {}
+    if (
+        isinstance(district_data, pd.DataFrame)
+        and "district_code" in district_data.columns
+    ):
+        for _, row in district_data.iterrows():
+            district_code = str(row.get("district_code", ""))
+            if viz_type == "Turnout" and "turnout_percentage" in row:
+                viz_data[district_code] = float(row.get("turnout_percentage", 0))
+            elif viz_type == "Estimated Voters" and "registered_voters" in row:
+                viz_data[district_code] = float(row.get("registered_voters", 0))
+            elif viz_type in ["Valid Votes", "Valid Votes (dots)"] and "valid_votes" in row:
+                viz_data[district_code] = float(row.get("valid_votes", 0))
+
+    if (
+        viz_type == "Party Results"
+        and selected_party
+        and isinstance(party_data, pd.DataFrame)
+    ):
+        party_subset = party_data[party_data["party_name"] == selected_party].copy()
+        if not party_subset.empty:
+            party_subset["district_code"] = (
+                party_subset["district_id"].str.split("-").str[0]
+            )
+            for district_code, group in party_subset.groupby("district_code"):
+                total_votes = group["total_district_votes"].sum()
+                party_votes = group["votes"].sum()
+                if total_votes > 0:
+                    viz_data[str(district_code)] = (party_votes / total_votes) * 100
+
+    def get_color_for_value(value):
+        if value is None:
+            return [200, 200, 200, 120]
+        if viz_type == "Turnout":
+            if value >= 60:
+                return [46, 125, 50, 170]
+            if value >= 50:
+                return [102, 187, 106, 170]
+            if value >= 40:
+                return [255, 235, 59, 170]
+            if value >= 30:
+                return [255, 152, 0, 170]
+            return [244, 67, 54, 170]
+        if viz_type == "Estimated Voters":
+            if value >= 2000:
+                return [63, 81, 181, 170]
+            if value >= 1000:
+                return [92, 107, 192, 170]
+            if value >= 500:
+                return [255, 235, 59, 170]
+            if value >= 200:
+                return [255, 152, 0, 170]
+            return [244, 67, 54, 170]
+        if viz_type in ["Valid Votes", "Valid Votes (dots)"]:
+            if value >= 1500:
+                return [63, 81, 181, 170]
+            if value >= 800:
+                return [92, 107, 192, 170]
+            if value >= 400:
+                return [255, 235, 59, 170]
+            if value >= 200:
+                return [255, 152, 0, 170]
+            return [244, 67, 54, 170]
+        if viz_type == "Party Results":
+            if value >= 50:
+                return [46, 125, 50, 170]
+            if value >= 30:
+                return [102, 187, 106, 170]
+            if value >= 20:
+                return [255, 235, 59, 170]
+            if value >= 10:
+                return [255, 152, 0, 170]
+            return [244, 67, 54, 170]
+        return [100, 100, 100, 170]
+
+    polygons = []
+    lats = []
+    lons = []
+    for feature in geojson_data.get("features", []):
+        props = feature.get("properties", {})
+        district_code = get_district_code_from_geojson(props)
+        value = viz_data.get(district_code)
+        color = get_color_for_value(value)
+        name = props.get("naz_mco") or props.get("naz_obec") or props.get("nazev") or ""
+
+        geometry = feature.get("geometry") or {}
+        geom_type = geometry.get("type")
+        coords = geometry.get("coordinates") or []
+        if geom_type == "Polygon":
+            rings = [coords[0]] if coords else []
+        elif geom_type == "MultiPolygon":
+            rings = [poly[0] for poly in coords if poly]
+        else:
+            rings = []
+
+        for ring in rings:
+            if not ring:
+                continue
+            for lon, lat in ring:
+                lats.append(lat)
+                lons.append(lon)
+            polygons.append(
+                {
+                    "polygon": ring,
+                    "district_code": district_code,
+                    "value": value,
+                    "color": color,
+                    "name": name,
+                }
+            )
+
+    if not polygons or not lats or not lons:
+        return None
+
+    center_lat = (min(lats) + max(lats)) / 2
+    center_lon = (min(lons) + max(lons)) / 2
+    lat_range = max(lats) - min(lats)
+    lon_range = max(lons) - min(lons)
+    max_range = max(lat_range, lon_range)
+
+    if max_range < 0.01:
+        zoom = 14
+    elif max_range < 0.05:
+        zoom = 12
+    elif max_range < 0.1:
+        zoom = 11
+    elif max_range < 0.2:
+        zoom = 10
+    else:
+        zoom = 9
+
+    layer = pdk.Layer(
+        "PolygonLayer",
+        polygons,
+        get_polygon="polygon",
+        get_fill_color="color",
+        get_line_color=[30, 30, 30, 120],
+        line_width_min_pixels=1,
+        pickable=True,
+        auto_highlight=True,
+    )
+
+    tooltip = {
+        "text": "{district_code}\\n{value}",
+    }
+
+    view_state = pdk.ViewState(
+        latitude=center_lat,
+        longitude=center_lon,
+        zoom=zoom,
+        bearing=0,
+        pitch=0,
+    )
+
+    return pdk.Deck(
+        layers=[layer],
+        initial_view_state=view_state,
+        tooltip=tooltip,
+        map_style=None,
+    )
+
+
 def display_electoral_overview(data):
     """Display overview statistics using CSV data"""
     st.subheader("📊 Electoral Overview")
@@ -1831,7 +2066,7 @@ def display_geographic_analysis(
         )
 
     with col2:
-        map_options = ["Geographic Map", "Cartogram", "Dot Density"]
+        map_options = ["Geographic Map", "Pydeck (fast)", "Cartogram", "Dot Density"]
         default_map_type = get_param_value(url_params, "map_type", map_options[0])
         if default_map_type not in map_options:
             default_map_type = map_options[0]
@@ -1899,7 +2134,21 @@ def display_geographic_analysis(
     )
 
     # Create and display the map based on type
-    if map_type == "Cartogram":
+    if map_type == "Pydeck (fast)":
+        st.subheader("🚀 Pydeck View")
+        st.info(
+            "⚡ Pydeck renders polygons faster than Folium. Base map is disabled to avoid Mapbox token requirements."
+        )
+
+        pydeck_map = create_pydeck_map(
+            filtered_geojson, electoral_data, viz_type, selected_party
+        )
+        if pydeck_map:
+            st.pydeck_chart(pydeck_map, use_container_width=True)
+        else:
+            st.error("Failed to create Pydeck map")
+
+    elif map_type == "Cartogram":
         st.subheader("🗺️ Cartogram View")
         st.info(
             "📐 **Cartogram**: Areas are scaled by **vote count** (larger areas = more total votes). Colors show the selected visualization data. By default, circles stay at true geographic positions - enable collision avoidance if overlap reduction is more important than geographic accuracy."
@@ -3726,6 +3975,7 @@ def main():
         selected_geo_obec = get_param_value(url_params, "geo_obec", None)
 
         use_simplified_geo = False
+        use_ram_cache = False
         if (
             is_parliamentary
             and electoral_data
@@ -3735,6 +3985,10 @@ def main():
             use_simplified_geo = st.checkbox(
                 "Use simplified boundaries (faster)",
                 value=True,
+            )
+            use_ram_cache = st.checkbox(
+                "Cache GeoJSON in RAM (fast, high memory)",
+                value=False,
             )
             polling_stations = electoral_data["polling_stations"]
             municipality_map = {}
@@ -3855,12 +4109,17 @@ def main():
                     target_obec_codes.add(str(mapped))
 
                 if selected_geo_obec != "ALL":
-                    municipality_geojson = load_geojson_subset(
-                        selected_election_id,
-                        sorted(target_mco_codes),
-                        sorted(target_obec_codes),
-                        use_simplified_geo,
+                    municipality_geojson = load_pre_split_geojson(
+                        selected_election_id, selected_geo_obec
                     )
+                    if municipality_geojson is None:
+                        municipality_geojson = load_geojson_subset(
+                            selected_election_id,
+                            sorted(target_mco_codes),
+                            sorted(target_obec_codes),
+                            use_simplified_geo,
+                            use_ram_cache,
+                        )
 
                 if municipality_geojson is None:
                     geojson_data = load_geojson_data(selected_election_id)
