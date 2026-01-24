@@ -3777,22 +3777,37 @@ def main():
                     for station in polling_stations:
                         obec_code = station.get("municipality_code", "")
                         if obec_code:
-                            obec_codes.add(obec_code)
+                            obec_codes.add(str(obec_code))
 
-                    # Map OBEC codes to GeoJSON kod_obec using the mapping
-                    geojson_obec_codes = set()
-                    for obec_code in obec_codes:
-                        if obec_code in obec_mapping:
-                            geojson_obec_codes.add(
-                                obec_mapping[obec_code]["kod_obec_geojson"]
-                            )
-
-                    # Match GeoJSON features using kod_obec
+                    geojson_kod_mco_codes = set()
                     for feature in geojson_data["features"]:
                         props = feature.get("properties", {})
+                        kod_mco = props.get("kod_mco")
+                        if kod_mco:
+                            geojson_kod_mco_codes.add(str(kod_mco))
+
+                    target_mco_codes = {
+                        code for code in obec_codes if code in geojson_kod_mco_codes
+                    }
+                    target_obec_codes = set()
+                    for obec_code in obec_codes:
+                        if obec_code in target_mco_codes:
+                            continue
+                        mapped = (
+                            obec_mapping.get(obec_code, {}).get("kod_obec_geojson")
+                            or obec_code
+                        )
+                        target_obec_codes.add(str(mapped))
+
+                    # Match GeoJSON features using kod_mco when possible, fallback to kod_obec
+                    for feature in geojson_data["features"]:
+                        props = feature.get("properties", {})
+                        kod_mco = props.get("kod_mco", "")
                         kod_obec = props.get("kod_obec", "")
 
-                        if kod_obec in geojson_obec_codes:
+                        if kod_mco and str(kod_mco) in target_mco_codes:
+                            municipality_districts.append(feature)
+                        elif kod_obec and str(kod_obec) in target_obec_codes:
                             municipality_districts.append(feature)
 
                     st.info(
