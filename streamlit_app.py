@@ -452,9 +452,7 @@ def load_geojson_data(election_id: str = "kv2022"):
     if election_config.election_type == "parliamentary":
         # Use 2025 polling station geojson for parliamentary elections
         raw_cache_file = Path("input/raw/electoral_districts_boundaries_2025.geojson")
-        converted_cache_file = Path(
-            "input/raw/electoral_districts_boundaries_2025_wgs84.geojson"
-        )
+        cache_file = Path("input/raw/electoral_districts_boundaries_2025_wgs84.geojson")
         # Note: This file should be pre-downloaded (252.6 MB, 14,711 stations)
         # It can be downloaded from: https://geodata.csu.gov.cz/as/data/distribuce/Hosted/Volebni_okrsky_2025_gdb/FeatureServer/0/geojson.zip
         url = None  # Too large to download via HTTP, should be pre-existing
@@ -462,56 +460,6 @@ def load_geojson_data(election_id: str = "kv2022"):
         # Use 2022 geojson for municipal elections
         cache_file = Path("input/raw/electoral_districts_boundaries.geojson")
         url = "https://www.volby.cz/opendata/kv2022/geo/vol_okrsky_2022g100.geojson"
-
-    if election_config.election_type == "parliamentary":
-        raw_cache_file.parent.mkdir(parents=True, exist_ok=True)
-
-        if converted_cache_file.exists():
-            try:
-                with open(converted_cache_file, "r", encoding="utf-8") as f:
-                    geojson_data = json.load(f)
-
-                if (
-                    isinstance(geojson_data, dict)
-                    and geojson_data.get("type") == "FeatureCollection"
-                ):
-                    features = geojson_data.get("features", [])
-                    if features:
-                        return geojson_data
-            except Exception as e:
-                st.warning(
-                    f"⚠️ Error reading cached converted GeoJSON: {e}. Rebuilding..."
-                )
-
-        if not raw_cache_file.exists():
-            st.error(
-                f"❌ GeoJSON file not found: {raw_cache_file}\n\n"
-                f"The 2025 polling station GeoJSON (252.6 MB) must be downloaded separately.\n"
-                f"Please download it from the ČSÚ GIS portal and place it in the input/raw/ directory."
-            )
-            return None
-
-        try:
-            st.info("📐 Converting 2025 polling station GeoJSON to WGS84...")
-            gdf = gpd.read_file(raw_cache_file)
-            minx, miny, maxx, maxy = gdf.total_bounds
-            projected = max(abs(minx), abs(maxx)) > 180 or max(abs(miny), abs(maxy)) > 90
-
-            if projected:
-                if gdf.crs is None:
-                    gdf = gdf.set_crs(5514)
-                gdf = gdf.to_crs(4326)
-            elif gdf.crs is None:
-                gdf = gdf.set_crs(4326)
-
-            geojson_str = gdf.to_json()
-            with open(converted_cache_file, "w", encoding="utf-8") as f:
-                f.write(geojson_str)
-
-            return json.loads(geojson_str)
-        except Exception as e:
-            st.error(f"❌ Failed to convert 2025 GeoJSON to WGS84: {e}")
-            return None
 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -534,6 +482,22 @@ def load_geojson_data(election_id: str = "kv2022"):
 
         except Exception as e:
             st.warning(f"⚠️ Error reading cached file: {e}. Re-downloading...")
+
+    # For parliamentary elections, expect the preprocessed WGS84 file.
+    if election_config.election_type == "parliamentary":
+        if raw_cache_file.exists():
+            st.error(
+                f"❌ Preprocessed GeoJSON not found: {cache_file}\n\n"
+                "Run the preprocessing step to convert the raw 2025 polling station GeoJSON to WGS84:\n"
+                "  uv run python run_all_municipalities.py --election ps2025 --no-download"
+            )
+        else:
+            st.error(
+                f"❌ GeoJSON file not found: {raw_cache_file}\n\n"
+                f"The 2025 polling station GeoJSON (252.6 MB) must be downloaded separately.\n"
+                f"Please download it from the ČSÚ GIS portal and place it in the input/raw/ directory."
+            )
+        return None
 
     # Download the file (municipal elections only)
     try:
@@ -1700,7 +1664,9 @@ def display_turnout_analysis(data):
         st.code("uv run python run_analysis.py")
 
 
-def display_geographic_analysis(geojson_data, electoral_data=None):
+def display_geographic_analysis(
+    geojson_data, electoral_data=None, election_id: str = "kv2022"
+):
     """Display geographic analysis with filtered electoral districts map for the selected municipality"""
     # Removed redundant subheader since it's now handled in main()
 
@@ -1728,7 +1694,15 @@ def display_geographic_analysis(geojson_data, electoral_data=None):
                 load_geojson_data.clear()
 
                 # Clear the local file cache
-                cache_file = Path("input/raw/electoral_districts_boundaries.geojson")
+                election_config = get_election_config(election_id)
+                if election_config.election_type == "parliamentary":
+                    cache_file = Path(
+                        "input/raw/electoral_districts_boundaries_2025_wgs84.geojson"
+                    )
+                else:
+                    cache_file = Path(
+                        "input/raw/electoral_districts_boundaries.geojson"
+                    )
                 if cache_file.exists():
                     cache_file.unlink()
                     st.success("🗑️ Local cache file deleted!")
@@ -3941,7 +3915,9 @@ def main():
                         "• District Analysis - Polling district breakdown"
                     )
 
-        display_geographic_analysis(municipality_geojson, geographic_electoral_data)
+        display_geographic_analysis(
+            municipality_geojson, geographic_electoral_data, selected_election_id
+        )
 
     elif selected_tab == "Data Explorer":
         st.header("🔍 Data Explorer")

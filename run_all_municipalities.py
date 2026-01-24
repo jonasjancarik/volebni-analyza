@@ -14,6 +14,12 @@ sys.path.append(str(Path(__file__).parent / "src"))
 
 from municipality_registry import MunicipalityRegistry
 from all_municipalities_scraper import AllMunicipalitiesScraper
+from parliamentary_scraper import ParliamentaryScraper
+from election_config import (
+    get_election_config,
+    list_available_elections,
+    get_election_info,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -27,13 +33,76 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def ensure_parliamentary_geojson_wgs84(election_config):
+    """Convert 2025 polling station GeoJSON to WGS84 for map rendering."""
+    if election_config.election_type != "parliamentary":
+        return
+
+    raw_file = Path("input/raw/electoral_districts_boundaries_2025.geojson")
+    converted_file = Path(
+        "input/raw/electoral_districts_boundaries_2025_wgs84.geojson"
+    )
+
+    if not raw_file.exists():
+        logger.warning(
+            "⚠️  Raw 2025 polling station GeoJSON not found. "
+            "Download it and rerun to generate WGS84 output."
+        )
+        return
+
+    if converted_file.exists():
+        if converted_file.stat().st_mtime >= raw_file.stat().st_mtime:
+            logger.info("✅ WGS84 GeoJSON already up to date.")
+            return
+
+    try:
+        import geopandas as gpd
+    except Exception as exc:
+        logger.error(
+            "❌ geopandas not available; cannot convert 2025 GeoJSON to WGS84."
+        )
+        logger.error(f"   Import error: {exc}")
+        return
+
+    try:
+        logger.info("📐 Converting 2025 polling station GeoJSON to WGS84...")
+        gdf = gpd.read_file(raw_file)
+        minx, miny, maxx, maxy = gdf.total_bounds
+        projected = max(abs(minx), abs(maxx)) > 180 or max(abs(miny), abs(maxy)) > 90
+
+        if projected:
+            if gdf.crs is None:
+                gdf = gdf.set_crs(5514)
+            gdf = gdf.to_crs(4326)
+        elif gdf.crs is None:
+            gdf = gdf.set_crs(4326)
+
+        converted_file.parent.mkdir(parents=True, exist_ok=True)
+        converted_file.write_text(gdf.to_json(), encoding="utf-8")
+        logger.info(f"✅ Saved converted GeoJSON to {converted_file}")
+    except Exception as exc:
+        logger.error(f"❌ Failed to convert 2025 GeoJSON to WGS84: {exc}")
+
+
 def main():
     """Main function to run all municipalities analysis"""
     parser = argparse.ArgumentParser(
         description="Collect and analyze electoral data for all Czech municipalities"
     )
     parser.add_argument(
-        "--data-dir", default="output", help="Data directory path (default: output)"
+        "--election",
+        "-e",
+        default="kv2022",
+        help="Election ID (e.g., kv2022, kv2018, kv2014). Default: kv2022",
+    )
+    parser.add_argument(
+        "--list-elections",
+        action="store_true",
+        help="List all available elections and exit",
+    )
+    parser.add_argument(
+        "--data-dir",
+        help="(Deprecated) Data directory path. Use --election instead.",
     )
     parser.add_argument(
         "--max-batches",
@@ -54,53 +123,106 @@ def main():
 
     args = parser.parse_args()
 
+    # Handle list elections flag
+    if args.list_elections:
+        print("\nAvailable elections:")
+        print("=" * 60)
+        elections_info = get_election_info()
+        for election_id, info in elections_info.items():
+            print(f"\n{election_id}:")
+            print(f"  Name: {info['name']}")
+            print(f"  Type: {info['type']}")
+            print(f"  Date: {info['date']}")
+        print("\n" + "=" * 60)
+        return 0
+
+    # Get election configuration
+    try:
+        election_config = get_election_config(args.election)
+    except ValueError as e:
+        logger.error(str(e))
+        logger.info("Run with --list-elections to see available elections")
+        return 1
+
+    if args.data_dir:
+        logger.warning(
+            "--data-dir parameter is deprecated. Data will be stored in "
+            f"output/{args.election}/ instead."
+        )
+
     logger.info("=" * 80)
-    logger.info("CZECH MUNICIPALITIES ELECTORAL ANALYSIS")
+    logger.info("CZECH ELECTORAL ANALYSIS")
     logger.info("=" * 80)
-    logger.info(f"Data directory: {args.data_dir}")
+    logger.info(f"Election: {election_config.election_name}")
+    logger.info(f"Election ID: {election_config.election_id}")
+    logger.info(f"Election Type: {election_config.election_type}")
+    logger.info(f"Election Date: {election_config.election_date}")
+    logger.info(f"Input directory: {election_config.input_dir}")
+    logger.info(f"Output directory: {election_config.output_dir}")
     logger.info(f"Max batches: {args.max_batches}")
     logger.info(f"Registry only: {args.registry_only}")
     logger.info(f"No download: {args.no_download}")
     logger.info("-" * 80)
 
     try:
-        # Step 1: Initialize municipality registry
-        logger.info("🏛️  STEP 1: Processing Municipality Registry")
-        registry = MunicipalityRegistry(args.data_dir)
-
-        if not args.no_download:
-            registry.download_municipality_registry()
-
-        municipalities = registry.parse_municipality_registry()
-        if not municipalities:
-            logger.error("Failed to load municipality registry")
-            return 1
-
-        valid_municipalities = registry.get_municipalities_with_mandates()
-        logger.info(f"✅ Found {len(municipalities)} total entries")
-        logger.info(
-            f"✅ Found {len(valid_municipalities)} municipalities with valid elections"
-        )
-
-        # Save registry to JSON
-        registry_file = registry.save_registry_to_json()
-        logger.info(f"✅ Saved registry to {registry_file}")
-
-        # Show some examples
-        logger.info("\n📊 Sample municipalities:")
-        for i, municipality in enumerate(valid_municipalities[:10]):
+        # Step 1: Initialize registry (skip for parliamentary elections)
+        if election_config.election_type == "parliamentary":
             logger.info(
-                f"  {i + 1:2d}. {municipality.municipality_name} "
-                f"({municipality.municipality_code}) - {municipality.mandates} seats"
+                "🏛️  STEP 1: Skipping registry (handled by ParliamentaryScraper)"
             )
 
-        if args.registry_only:
-            logger.info("✅ Registry processing complete!")
-            return 0
+            if args.registry_only:
+                logger.warning(
+                    "--registry-only not applicable for parliamentary elections"
+                )
+                logger.info(
+                    "Parliamentary data is downloaded as part of complete analysis"
+                )
+                return 0
+        else:
+            logger.info("🏛️  STEP 1: Processing Municipality Registry")
+            registry = MunicipalityRegistry(election_config=election_config)
 
-        # Step 2: Collect electoral data for all municipalities
+            if not args.no_download:
+                registry.download_municipality_registry()
+
+            municipalities = registry.parse_municipality_registry()
+            if not municipalities:
+                logger.error("Failed to load municipality registry")
+                return 1
+
+            valid_municipalities = registry.get_municipalities_with_mandates()
+            logger.info(f"✅ Found {len(municipalities)} total entries")
+            logger.info(
+                f"✅ Found {len(valid_municipalities)} municipalities with valid elections"
+            )
+
+            # Save registry to JSON
+            registry_file = registry.save_registry_to_json()
+            logger.info(f"✅ Saved registry to {registry_file}")
+
+            # Show some examples
+            logger.info("\n📊 Sample municipalities:")
+            for i, municipality in enumerate(valid_municipalities[:10]):
+                logger.info(
+                    f"  {i + 1:2d}. {municipality.municipality_name} "
+                    f"({municipality.municipality_code}) - {municipality.mandates} seats"
+                )
+
+            if args.registry_only:
+                logger.info("✅ Registry processing complete!")
+                return 0
+
+        # Step 2: Collect electoral data - choose appropriate scraper
         logger.info("\n🗳️  STEP 2: Collecting Electoral Data")
-        scraper = AllMunicipalitiesScraper(args.data_dir)
+
+        # Select scraper based on election type
+        if election_config.election_type == "parliamentary":
+            logger.info("📊 Using ParliamentaryScraper for parliamentary elections")
+            scraper = ParliamentaryScraper(election_config=election_config)
+        else:
+            logger.info("🏛️  Using AllMunicipalitiesScraper for municipal elections")
+            scraper = AllMunicipalitiesScraper(election_config=election_config)
 
         if args.no_download:
             logger.info("⏭️  Skipping download, processing existing files...")
@@ -110,24 +232,36 @@ def main():
         if result_file:
             logger.info(f"✅ Complete analysis saved to: {result_file}")
 
-            # Step 3: Generate summary report
-            logger.info("\n📋 STEP 3: Generating Summary Report")
-            generate_summary_report(result_file, args.data_dir)
+            summary_step_label = "STEP 3"
+            if election_config.election_type == "parliamentary":
+                logger.info("\n🗺️  STEP 3: Preparing GeoJSON for maps")
+                ensure_parliamentary_geojson_wgs84(election_config)
+                summary_step_label = "STEP 4"
 
-            logger.info("\n🎉 ALL MUNICIPALITIES ANALYSIS COMPLETE!")
+            # Generate summary report
+            logger.info(f"\n📋 {summary_step_label}: Generating Summary Report")
+            generate_summary_report(result_file, election_config)
+
+            logger.info("\n🎉 ELECTORAL ANALYSIS COMPLETE!")
             logger.info("=" * 80)
             logger.info("📁 Output files:")
-            logger.info(f"   • Municipality registry: {registry_file}")
+            if election_config.election_type != "parliamentary":
+                logger.info(f"   • Municipality registry: {registry_file}")
+                logger.info(
+                    f"   • Municipality index: {election_config.results_dir / 'municipality_index.json'}"
+                )
+            else:
+                logger.info(
+                    f"   • District index: {election_config.results_dir / 'district_index.json'}"
+                )
             logger.info(f"   • Complete analysis: {result_file}")
             logger.info(
-                f"   • Municipality index: {Path(args.data_dir) / 'results' / 'municipality_index.json'}"
-            )
-            logger.info(
-                f"   • Summary report: {Path(args.data_dir) / 'reports' / 'analysis_summary.md'}"
+                f"   • Summary report: {election_config.reports_dir / 'analysis_summary.md'}"
             )
             logger.info("=" * 80)
             logger.info("\n🚀 Ready to use with Streamlit:")
-            logger.info("   streamlit run streamlit_municipality_selector.py")
+            logger.info(f"   streamlit run streamlit_app.py")
+            logger.info(f"   (Select '{election_config.election_name}' in the app)")
 
             return 0
         else:
@@ -143,7 +277,7 @@ def main():
         return 1
 
 
-def generate_summary_report(result_file: str, data_dir: str):
+def generate_summary_report(result_file: str, election_config):
     """Generate a summary report of the analysis"""
     import json
     from pathlib import Path
@@ -153,11 +287,19 @@ def generate_summary_report(result_file: str, data_dir: str):
         with open(result_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        # Handle parliamentary elections differently
+        if election_config.election_type == "parliamentary":
+            logger.info(
+                "⏭️  Skipping detailed summary report for parliamentary elections"
+            )
+            logger.info("   (Parliamentary reports are in the results JSON)")
+            return
+
         municipalities = data.get("municipalities", {})
         metadata = data.get("metadata", {})
 
         # Create reports directory
-        reports_dir = Path(data_dir) / "reports"
+        reports_dir = election_config.reports_dir
         reports_dir.mkdir(exist_ok=True)
 
         # Generate markdown summary
@@ -167,6 +309,10 @@ def generate_summary_report(result_file: str, data_dir: str):
             f.write("# Czech Municipalities Electoral Analysis Summary\n\n")
             f.write(
                 f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            )
+            f.write(f"**Election:** {metadata.get('election_name', 'Unknown')}\n")
+            f.write(
+                f"**Election Date:** {metadata.get('election_date', 'Unknown')}\n\n"
             )
 
             # Overall statistics
