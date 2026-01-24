@@ -9,8 +9,10 @@ import json
 import logging
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import pandas as pd
+
+from election_config import ElectionConfig, get_election_config
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +38,40 @@ class MunicipalityRegistry:
     Registry for Czech municipalities and their electoral information
     """
 
-    def __init__(self, data_dir="output"):
-        self.data_dir = Path(data_dir)
-        self.input_dir = Path("input")
+    def __init__(
+        self,
+        election_config: Optional[Union[ElectionConfig, str]] = None,
+        data_dir: Optional[str] = None,
+    ):
+        """
+        Initialize municipality registry
+
+        Args:
+            election_config: ElectionConfig object or election_id string (e.g., "kv2022").
+                           If None, defaults to "kv2022" for backwards compatibility.
+            data_dir: (Deprecated) Output directory. Only used if election_config is None.
+        """
+        # Handle election config
+        if election_config is None:
+            # Backwards compatibility: use kv2022 as default
+            if data_dir:
+                logger.warning(
+                    "data_dir parameter is deprecated. Please use election_config instead."
+                )
+            election_config = "kv2022"
+
+        if isinstance(election_config, str):
+            self.election_config = get_election_config(election_config)
+        else:
+            self.election_config = election_config
+
+        # Ensure directories exist
+        self.election_config.ensure_directories()
+
+        # Set up directories (for backwards compatibility)
+        self.data_dir = self.election_config.output_dir
+        self.input_dir = self.election_config.input_dir
+
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -47,17 +80,27 @@ class MunicipalityRegistry:
         )
         self.municipalities: Dict[str, MunicipalityInfo] = {}
 
-    def download_municipality_registry(self, election_date="20220923") -> bool:
+    def download_municipality_registry(
+        self, election_date: Optional[str] = None
+    ) -> bool:
         """Download the municipality registry (kvcoco.xml) from ČSÚ"""
-        url = "https://www.volby.cz/opendata/kv2022/xml/kvcoco.xml"
+        url = self.election_config.get_municipality_registry_url()
+
+        if election_date is None:
+            election_date = self.election_config.election_date
 
         try:
-            logger.info("Downloading municipality registry (kvcoco.xml)...")
+            logger.info(
+                f"Downloading municipality registry for {self.election_config.election_name}..."
+            )
             response = self.session.get(url, timeout=30)
             response.raise_for_status()
 
             # Save the registry to input directory
-            registry_file = self.input_dir / "raw" / "kvcoco_municipality_registry.xml"
+            registry_file = (
+                self.election_config.raw_input_dir
+                / f"{self.election_config.municipality_registry_file.replace('.xml', '_municipality_registry.xml')}"
+            )
             registry_file.parent.mkdir(parents=True, exist_ok=True)
 
             with open(registry_file, "wb") as f:
@@ -72,7 +115,10 @@ class MunicipalityRegistry:
 
     def parse_municipality_registry(self) -> Dict[str, MunicipalityInfo]:
         """Parse the kvcoco.xml file to extract municipality information"""
-        registry_file = self.input_dir / "raw" / "kvcoco_municipality_registry.xml"
+        registry_file = (
+            self.election_config.raw_input_dir
+            / f"{self.election_config.municipality_registry_file.replace('.xml', '_municipality_registry.xml')}"
+        )
 
         if not registry_file.exists():
             logger.warning("Municipality registry file not found, downloading...")
@@ -196,7 +242,9 @@ class MunicipalityRegistry:
     def save_registry_to_json(self, output_path: str = None) -> str:
         """Save municipality registry to JSON file"""
         if not output_path:
-            output_path = self.data_dir / "processed" / "municipality_registry.json"
+            output_path = (
+                self.election_config.processed_dir / "municipality_registry.json"
+            )
 
         if not self.municipalities:
             self.parse_municipality_registry()
@@ -206,7 +254,10 @@ class MunicipalityRegistry:
             "metadata": {
                 "total_municipalities": len(self.municipalities),
                 "valid_municipalities": len(self.get_municipalities_with_mandates()),
-                "source": "kvcoco.xml",
+                "source": self.election_config.municipality_registry_file,
+                "election_id": self.election_config.election_id,
+                "election_name": self.election_config.election_name,
+                "election_date": self.election_config.election_date,
                 "description": "Czech municipality registry with electoral information",
             },
             "municipalities": {},
@@ -238,7 +289,13 @@ if __name__ == "__main__":
     # Test the registry
     logging.basicConfig(level=logging.INFO)
 
-    registry = MunicipalityRegistry()
+    import sys
+
+    # Allow specifying election_id as command line argument
+    election_id = sys.argv[1] if len(sys.argv) > 1 else "kv2022"
+
+    print(f"\nTesting with election: {election_id}")
+    registry = MunicipalityRegistry(election_config=election_id)
     municipalities = registry.parse_municipality_registry()
 
     print(f"Found {len(municipalities)} municipality entries")

@@ -12,10 +12,11 @@ from pathlib import Path
 from datetime import datetime
 from bs4 import BeautifulSoup
 from collections import defaultdict
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Optional, Union
 import pandas as pd
 
 from municipality_registry import MunicipalityRegistry, MunicipalityInfo
+from election_config import ElectionConfig, get_election_config
 
 logger = logging.getLogger(__name__)
 
@@ -25,40 +26,64 @@ class AllMunicipalitiesScraper:
     Scraper for electoral data from ALL Czech municipalities
     """
 
-    def __init__(self, data_dir="output"):
-        self.data_dir = Path(data_dir)
-        self.input_dir = Path("input")
-        self.ensure_data_dir()
+    def __init__(
+        self,
+        election_config: Optional[Union[ElectionConfig, str]] = None,
+        data_dir: Optional[str] = None,
+    ):
+        """
+        Initialize scraper for all municipalities
+
+        Args:
+            election_config: ElectionConfig object or election_id string (e.g., "kv2022").
+                           If None, defaults to "kv2022" for backwards compatibility.
+            data_dir: (Deprecated) Output directory. Only used if election_config is None.
+        """
+        # Handle election config
+        if election_config is None:
+            # Backwards compatibility: use kv2022 as default
+            if data_dir:
+                logger.warning(
+                    "data_dir parameter is deprecated. Please use election_config instead."
+                )
+            election_config = "kv2022"
+
+        if isinstance(election_config, str):
+            self.election_config = get_election_config(election_config)
+        else:
+            self.election_config = election_config
+
+        # Ensure directories exist
+        self.election_config.ensure_directories()
+
+        # Set up directories (for backwards compatibility)
+        self.data_dir = self.election_config.output_dir
+        self.input_dir = self.election_config.input_dir
+
         self.session = requests.Session()
         self.session.headers.update(
             {
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
             }
         )
-        self.municipality_registry = MunicipalityRegistry(data_dir)
+        self.municipality_registry = MunicipalityRegistry(
+            election_config=self.election_config
+        )
         self.party_registry = {}  # Cache for party information
 
     def ensure_data_dir(self):
-        """Create data directory structure"""
-        # Create input directories
-        (self.input_dir / "raw").mkdir(parents=True, exist_ok=True)
+        """Deprecated: Use election_config.ensure_directories() instead"""
+        logger.warning(
+            "ensure_data_dir() is deprecated. Directories are now managed by ElectionConfig."
+        )
+        self.election_config.ensure_directories()
 
-        # Create output directories
-        subdirs = [
-            "raw",
-            "processed",
-            "detailed",
-            "results",
-            "csv",
-            "reports",
-            "visualizations",
-        ]
-        for subdir in subdirs:
-            (self.data_dir / subdir).mkdir(parents=True, exist_ok=True)
-
-    def download_batch_xml(self, batch_number, election_date="20220923"):
+    def download_batch_xml(self, batch_number, election_date: Optional[str] = None):
         """Download a specific batch of electoral district data"""
-        url = "https://www.volby.cz/pls/kv2022/vysledky_okrsky"
+        if election_date is None:
+            election_date = self.election_config.election_date
+
+        url = self.election_config.get_districts_api_url()
         params = {"datumvoleb": election_date, "davka": batch_number}
 
         try:
@@ -67,7 +92,8 @@ class AllMunicipalitiesScraper:
 
             # Save raw XML to input directory
             raw_file = (
-                self.input_dir / "raw" / f"electoral_districts_batch_{batch_number}.xml"
+                self.election_config.raw_input_dir
+                / f"electoral_districts_batch_{batch_number}.xml"
             )
             with open(raw_file, "wb") as f:
                 f.write(response.content)
@@ -158,16 +184,19 @@ class AllMunicipalitiesScraper:
 
     def download_and_parse_party_registry(self) -> Dict[str, Dict[int, Dict]]:
         """Download and parse the kvros.xml file to get ALL party information"""
-        url = "https://www.volby.cz/opendata/kv2022/xml/kvros.xml"
+        url = self.election_config.get_party_registry_url()
 
         try:
             # Check if we already have the file
             register_file = (
-                self.input_dir / "raw" / "kvros_electoral_parties_register.xml"
+                self.election_config.raw_input_dir
+                / f"{self.election_config.party_registry_file.replace('.xml', '_electoral_parties_register.xml')}"
             )
 
             if not register_file.exists():
-                logger.info("Downloading Electoral Parties Register (kvros.xml)...")
+                logger.info(
+                    f"Downloading Electoral Parties Register for {self.election_config.election_name}..."
+                )
                 response = self.session.get(
                     url, timeout=60
                 )  # Longer timeout for large file
@@ -265,7 +294,7 @@ class AllMunicipalitiesScraper:
         processed_batches = []
 
         # Process all existing batch files first
-        raw_dir = self.input_dir / "raw"
+        raw_dir = self.election_config.raw_input_dir
         existing_files = list(raw_dir.glob("electoral_districts_batch_*.xml"))
 
         if existing_files:
@@ -455,7 +484,12 @@ class AllMunicipalitiesScraper:
                     "municipality_name": municipality_name,
                     "total_mandates": total_mandates,
                     "mandates_won": total_mandates_won,
-                    "election_year": "2022",
+                    "election_id": self.election_config.election_id,
+                    "election_name": self.election_config.election_name,
+                    "election_year": self.election_config.election_date[
+                        :4
+                    ],  # Extract year from YYYYMMDD
+                    "election_date": self.election_config.election_date,
                     "data_source": "All_municipalities_scraper_with_kvros_by_zastupitelstvo",
                 },
                 "summary_statistics": {
@@ -480,7 +514,7 @@ class AllMunicipalitiesScraper:
         municipality_reports: Dict[str, Dict],
     ) -> str:
         """Save all collected data to files"""
-        output_dir = self.data_dir / "results"
+        output_dir = self.election_config.results_dir
         output_dir.mkdir(exist_ok=True)
 
         # Save comprehensive data
@@ -489,6 +523,9 @@ class AllMunicipalitiesScraper:
             "metadata": {
                 "total_zastupitelstvo": len(municipalities_data),
                 "collection_date": datetime.now().isoformat(),
+                "election_id": self.election_config.election_id,
+                "election_name": self.election_config.election_name,
+                "election_date": self.election_config.election_date,
                 "source": "All_municipalities_scraper_with_kvros_by_zastupitelstvo",
                 "description": "Complete electoral data for all Czech council elections (zastupitelstvo) with party names and mandates. Each entry represents a specific council election, distinguished by KODZASTUP.",
                 "note": "Data is grouped by zastupitelstvo_code (KODZASTUP) to properly distinguish between municipal (OBEC) and district (MCMO) elections in the same geographic area.",
@@ -563,7 +600,13 @@ class AllMunicipalitiesScraper:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    scraper = AllMunicipalitiesScraper()
+    import sys
+
+    # Allow specifying election_id as command line argument
+    election_id = sys.argv[1] if len(sys.argv) > 1 else "kv2022"
+
+    print(f"\nAnalyzing election: {election_id}")
+    scraper = AllMunicipalitiesScraper(election_config=election_id)
     result_file = scraper.run_complete_analysis()
 
     print(f"Analysis complete! Results saved to: {result_file}")
