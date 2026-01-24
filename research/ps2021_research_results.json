@@ -1,0 +1,38 @@
+{
+  "election_id": "ps2021",
+  "base_url": "https://www.volby.cz/pls/ps2021",
+  "opendata_url": "https://www.volby.cz/opendata/ps2021/xml",
+  "url_tests": {
+    "base": {
+      "url": "https://www.volby.cz/pls/ps2021",
+      "accessible": true
+    },
+    "opendata": {
+      "url": "https://www.volby.cz/opendata/ps2021/xml",
+      "accessible": false
+    }
+  },
+  "downloaded_files": {
+    "psrkoko.xml": {
+      "url": "https://www.volby.cz/opendata/ps2021/xml/psrkoko.xml",
+      "success": false,
+      "path": null
+    },
+    "psros.xml": {
+      "url": "https://www.volby.cz/opendata/ps2021/xml/psros.xml",
+      "success": false,
+      "path": null
+    },
+    "pskandl.xml": {
+      "url": "https://www.volby.cz/opendata/ps2021/xml/pskandl.xml",
+      "success": false,
+      "path": null
+    },
+    "ps.xml": {
+      "url": "https://www.volby.cz/opendata/ps2021/xml/ps.xml",
+      "success": false,
+      "path": null
+    }
+  },
+  "structure_analysis": {}
+}
