@@ -98,6 +98,25 @@ def ensure_parliamentary_geojson_wgs84(election_config):
                 logger.info(f"✅ Saved GeoPackage to {gpkg_file}")
             except Exception as exc:
                 logger.warning(f"⚠️ Failed to write GeoPackage: {exc}")
+        simplified_layer = "okrsky_simplified"
+        simplified_needs_update = needs_convert or not gpkg_file.exists()
+        if not simplified_needs_update and gpkg_file.exists():
+            try:
+                gpd.read_file(gpkg_file, layer=simplified_layer, rows=1)
+            except Exception:
+                simplified_needs_update = True
+        if simplified_needs_update:
+            try:
+                simplified = gdf.copy()
+                simplified["geometry"] = simplified.geometry.simplify(
+                    0.0002, preserve_topology=True
+                )
+                simplified.to_file(gpkg_file, layer=simplified_layer, driver="GPKG")
+                logger.info(
+                    f"✅ Saved simplified GeoPackage layer to {gpkg_file}:{simplified_layer}"
+                )
+            except Exception as exc:
+                logger.warning(f"⚠️ Failed to write simplified GeoPackage: {exc}")
         kod_mco = gdf.get("kod_mco")
         if kod_mco is not None:
             kod_mco_values = (

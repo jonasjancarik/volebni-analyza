@@ -576,6 +576,7 @@ def load_geojson_subset(
     election_id: str,
     target_mco_codes: List[str],
     target_obec_codes: List[str],
+    use_simplified: bool = True,
 ):
     """Load a filtered parliamentary GeoJSON subset using GeoPackage when available."""
     election_config = get_election_config(election_id)
@@ -585,6 +586,7 @@ def load_geojson_subset(
     gpkg_file = Path("input/raw/electoral_districts_boundaries_2025_wgs84.gpkg")
     if gpkg_file.exists():
         try:
+            layer = "okrsky_simplified" if use_simplified else "okrsky"
             if target_mco_codes:
                 code_list = ",".join(f"'{code}'" for code in target_mco_codes)
                 where = f"kod_mco IN ({code_list})"
@@ -592,7 +594,7 @@ def load_geojson_subset(
                 code_list = ",".join(f"'{code}'" for code in target_obec_codes)
                 where = f"kod_obec IN ({code_list})"
 
-            gdf = gpd.read_file(gpkg_file, layer="okrsky", where=where)
+            gdf = gpd.read_file(gpkg_file, layer=layer, where=where)
             if gdf.empty:
                 return None
             return json.loads(gdf.to_json())
@@ -3723,12 +3725,17 @@ def main():
         selected_polling_stations = None
         selected_geo_obec = get_param_value(url_params, "geo_obec", None)
 
+        use_simplified_geo = False
         if (
             is_parliamentary
             and electoral_data
             and "polling_stations" in electoral_data
             and electoral_data["polling_stations"]
         ):
+            use_simplified_geo = st.checkbox(
+                "Use simplified boundaries (faster)",
+                value=True,
+            )
             polling_stations = electoral_data["polling_stations"]
             municipality_map = {}
             for station in polling_stations:
@@ -3852,6 +3859,7 @@ def main():
                         selected_election_id,
                         sorted(target_mco_codes),
                         sorted(target_obec_codes),
+                        use_simplified_geo,
                     )
 
                 if municipality_geojson is None:
