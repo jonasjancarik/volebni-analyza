@@ -548,7 +548,74 @@ def load_geojson_data(election_id: str = "kv2022"):
         st.error(
             "💡 Try refreshing the page or contact support if the problem persists."
         )
+    return None
+
+
+@st.cache_data
+def load_geojson_kod_mco_set(election_id: str):
+    """Load cached kod_mco set for parliamentary geojson to speed filtering."""
+    election_config = get_election_config(election_id)
+    if election_config.election_type != "parliamentary":
+        return set()
+
+    kod_mco_file = Path("input/ps2025/processed/geojson_kod_mco_set.json")
+    if not kod_mco_file.exists():
+        return set()
+
+    try:
+        with open(kod_mco_file, "r", encoding="utf-8") as f:
+            values = json.load(f)
+        return {str(v) for v in values}
+    except Exception as e:
+        st.warning(f"⚠️ Error loading kod_mco index: {e}")
+        return set()
+
+
+@st.cache_data
+def load_geojson_subset(
+    election_id: str,
+    target_mco_codes: List[str],
+    target_obec_codes: List[str],
+):
+    """Load a filtered parliamentary GeoJSON subset using GeoPackage when available."""
+    election_config = get_election_config(election_id)
+    if election_config.election_type != "parliamentary":
         return None
+
+    gpkg_file = Path("input/raw/electoral_districts_boundaries_2025_wgs84.gpkg")
+    if gpkg_file.exists():
+        try:
+            if target_mco_codes:
+                code_list = ",".join(f"'{code}'" for code in target_mco_codes)
+                where = f"kod_mco IN ({code_list})"
+            else:
+                code_list = ",".join(f"'{code}'" for code in target_obec_codes)
+                where = f"kod_obec IN ({code_list})"
+
+            gdf = gpd.read_file(gpkg_file, layer="okrsky", where=where)
+            if gdf.empty:
+                return None
+            return json.loads(gdf.to_json())
+        except Exception as e:
+            st.warning(f"⚠️ GeoPackage subset load failed, falling back: {e}")
+
+    geojson_data = load_geojson_data(election_id)
+    if not geojson_data or "features" not in geojson_data:
+        return None
+
+    filtered = []
+    for feature in geojson_data["features"]:
+        props = feature.get("properties", {})
+        kod_mco = props.get("kod_mco")
+        kod_obec = props.get("kod_obec")
+        if kod_mco and str(kod_mco) in target_mco_codes:
+            filtered.append(feature)
+        elif kod_obec and str(kod_obec) in target_obec_codes:
+            filtered.append(feature)
+
+    if not filtered:
+        return None
+    return {"type": "FeatureCollection", "features": filtered}
 
 
 @st.cache_data
@@ -3514,10 +3581,9 @@ def main():
 
     # Load data for selected municipality/zastupitelstvo
     with st.spinner(f"Loading data for {municipality_name} {election_type}..."):
-        geojson_data = load_geojson_data(selected_election_id)
-        obec_mapping = load_obec_mapping(
-            selected_election_id
-        )  # For parliamentary elections
+        geojson_data = None
+        geojson_kod_mco_set = set()
+        obec_mapping = {}
         data_version = get_results_data_version(selected_election_id)
         electoral_data = load_municipality_data(
             selected_zastupitelstvo_code, selected_election_id, data_version
@@ -3646,12 +3712,16 @@ def main():
 
     elif selected_tab == "Geographic Analysis":
         st.header("🗺️ Geographic Analysis")
+        geojson_data = None
+        geojson_kod_mco_set = load_geojson_kod_mco_set(selected_election_id)
+        obec_mapping = load_obec_mapping(selected_election_id)
+
         # Optional municipal-part filter for parliamentary elections
         election_config = get_election_config(selected_election_id)
         is_parliamentary = election_config.election_type == "parliamentary"
         geographic_electoral_data = electoral_data
         selected_polling_stations = None
-        selected_geo_obec = get_param_value(url_params, "geo_obec", "ALL")
+        selected_geo_obec = get_param_value(url_params, "geo_obec", None)
 
         if (
             is_parliamentary
@@ -3676,8 +3746,15 @@ def main():
                 ),
             )
 
+            if selected_geo_obec is None:
+                selected_geo_obec = (
+                    municipality_codes[0] if municipality_codes else "ALL"
+                )
+
             if selected_geo_obec not in municipality_codes and selected_geo_obec != "ALL":
-                selected_geo_obec = "ALL"
+                selected_geo_obec = (
+                    municipality_codes[0] if municipality_codes else "ALL"
+                )
 
             selected_geo_obec = st.selectbox(
                 "Filter municipality (optional):",
@@ -3702,6 +3779,15 @@ def main():
                     f"({selected_geo_obec}) - {len(selected_polling_stations)} polling stations"
                 )
             else:
+                render_all = st.checkbox(
+                    "Render all municipalities in district (slow)",
+                    value=False,
+                )
+                if not render_all:
+                    st.info(
+                        "Select a municipality to render the map faster, or enable rendering for all."
+                    )
+                    return
                 selected_polling_stations = polling_stations
 
             station_codes = {
@@ -3735,65 +3821,70 @@ def main():
 
         # Filter geojson for this municipality/electoral district
         municipality_geojson = None
-        if geojson_data and "features" in geojson_data:
-            municipality_districts = []
+        municipality_districts = []
 
-            # For parliamentary elections, use OBEC mapping
-            if is_parliamentary and obec_mapping:
-                # For parliamentary elections, selected_zastupitelstvo_code is actually an electoral district number (1-14)
-                # But we need to match polling stations by OBEC code
-                # We need to get all polling stations from the electoral data
-                if selected_polling_stations:
-                    polling_stations = selected_polling_stations
+        if is_parliamentary and obec_mapping:
+            if selected_polling_stations:
+                polling_stations = selected_polling_stations
 
-                    # Extract unique OBEC codes from polling stations
-                    obec_codes = set()
-                    for station in polling_stations:
-                        obec_code = station.get("municipality_code", "")
-                        if obec_code:
-                            obec_codes.add(str(obec_code))
+                # Extract unique OBEC codes from polling stations
+                obec_codes = set()
+                for station in polling_stations:
+                    obec_code = station.get("municipality_code", "")
+                    if obec_code:
+                        obec_codes.add(str(obec_code))
 
-                    geojson_kod_mco_codes = set()
-                    for feature in geojson_data["features"]:
-                        props = feature.get("properties", {})
-                        kod_mco = props.get("kod_mco")
-                        if kod_mco:
-                            geojson_kod_mco_codes.add(str(kod_mco))
+                target_mco_codes = {
+                    code for code in obec_codes if code in geojson_kod_mco_set
+                }
+                target_obec_codes = set()
+                for obec_code in obec_codes:
+                    if obec_code in target_mco_codes:
+                        continue
+                    mapped = (
+                        obec_mapping.get(obec_code, {}).get("kod_obec_geojson")
+                        or obec_code
+                    )
+                    target_obec_codes.add(str(mapped))
 
-                    target_mco_codes = {
-                        code for code in obec_codes if code in geojson_kod_mco_codes
+                if selected_geo_obec != "ALL":
+                    municipality_geojson = load_geojson_subset(
+                        selected_election_id,
+                        sorted(target_mco_codes),
+                        sorted(target_obec_codes),
+                    )
+
+                if municipality_geojson is None:
+                    geojson_data = load_geojson_data(selected_election_id)
+                    if geojson_data and "features" in geojson_data:
+                        for feature in geojson_data["features"]:
+                            props = feature.get("properties", {})
+                            kod_mco = props.get("kod_mco", "")
+                            kod_obec = props.get("kod_obec", "")
+
+                            if kod_mco and str(kod_mco) in target_mco_codes:
+                                municipality_districts.append(feature)
+                            elif kod_obec and str(kod_obec) in target_obec_codes:
+                                municipality_districts.append(feature)
+
+                if municipality_districts:
+                    municipality_geojson = {
+                        "type": "FeatureCollection",
+                        "features": municipality_districts,
                     }
-                    target_obec_codes = set()
-                    for obec_code in obec_codes:
-                        if obec_code in target_mco_codes:
-                            continue
-                        mapped = (
-                            obec_mapping.get(obec_code, {}).get("kod_obec_geojson")
-                            or obec_code
-                        )
-                        target_obec_codes.add(str(mapped))
 
-                    # Match GeoJSON features using kod_mco when possible, fallback to kod_obec
-                    for feature in geojson_data["features"]:
-                        props = feature.get("properties", {})
-                        kod_mco = props.get("kod_mco", "")
-                        kod_obec = props.get("kod_obec", "")
-
-                        if kod_mco and str(kod_mco) in target_mco_codes:
-                            municipality_districts.append(feature)
-                        elif kod_obec and str(kod_obec) in target_obec_codes:
-                            municipality_districts.append(feature)
-
-                    st.info(
-                        f"📍 Parliamentary Elections: Matched {len(municipality_districts)} polling stations from {len(obec_codes)} municipalities"
-                    )
-                else:
-                    st.warning(
-                        "⚠️ No polling station data found for parliamentary elections"
-                    )
-
-            # For municipal elections, use traditional matching strategies
+                st.info(
+                    f"📍 Parliamentary Elections: Matched {len(municipality_geojson.get('features', []) if municipality_geojson else 0)} "
+                    f"polling stations from {len(obec_codes)} municipalities"
+                )
             else:
+                st.warning(
+                    "⚠️ No polling station data found for parliamentary elections"
+                )
+
+        else:
+            geojson_data = load_geojson_data(selected_election_id)
+            if geojson_data and "features" in geojson_data:
                 # First, try municipality-level matching (more precise)
                 for feature in geojson_data["features"]:
                     props = feature.get("properties", {})
@@ -3841,11 +3932,11 @@ def main():
                     ):  # Reasonable upper limit for any municipality
                         municipality_districts = []  # Clear the overly broad match
 
-            if municipality_districts:
-                municipality_geojson = {
-                    "type": "FeatureCollection",
-                    "features": municipality_districts,
-                }
+                if municipality_districts:
+                    municipality_geojson = {
+                        "type": "FeatureCollection",
+                        "features": municipality_districts,
+                    }
             else:
                 # Enhanced debugging for municipality matching
                 st.subheader("🗺️ Geographic Analysis - Debugging Municipality Match")

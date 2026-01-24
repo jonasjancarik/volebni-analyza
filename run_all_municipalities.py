@@ -50,10 +50,9 @@ def ensure_parliamentary_geojson_wgs84(election_config):
         )
         return
 
-    if converted_file.exists():
-        if converted_file.stat().st_mtime >= raw_file.stat().st_mtime:
-            logger.info("✅ WGS84 GeoJSON already up to date.")
-            return
+    needs_convert = not converted_file.exists() or (
+        converted_file.stat().st_mtime < raw_file.stat().st_mtime
+    )
 
     try:
         import geopandas as gpd
@@ -65,21 +64,56 @@ def ensure_parliamentary_geojson_wgs84(election_config):
         return
 
     try:
-        logger.info("📐 Converting 2025 polling station GeoJSON to WGS84...")
-        gdf = gpd.read_file(raw_file)
-        minx, miny, maxx, maxy = gdf.total_bounds
-        projected = max(abs(minx), abs(maxx)) > 180 or max(abs(miny), abs(maxy)) > 90
+        import json
 
-        if projected:
-            if gdf.crs is None:
-                gdf = gdf.set_crs(5514)
-            gdf = gdf.to_crs(4326)
-        elif gdf.crs is None:
-            gdf = gdf.set_crs(4326)
+        if needs_convert:
+            logger.info("📐 Converting 2025 polling station GeoJSON to WGS84...")
+            gdf = gpd.read_file(raw_file)
+            minx, miny, maxx, maxy = gdf.total_bounds
+            projected = (
+                max(abs(minx), abs(maxx)) > 180 or max(abs(miny), abs(maxy)) > 90
+            )
 
-        converted_file.parent.mkdir(parents=True, exist_ok=True)
-        converted_file.write_text(gdf.to_json(), encoding="utf-8")
-        logger.info(f"✅ Saved converted GeoJSON to {converted_file}")
+            if projected:
+                if gdf.crs is None:
+                    gdf = gdf.set_crs(5514)
+                gdf = gdf.to_crs(4326)
+            elif gdf.crs is None:
+                gdf = gdf.set_crs(4326)
+
+            converted_file.parent.mkdir(parents=True, exist_ok=True)
+            converted_file.write_text(gdf.to_json(), encoding="utf-8")
+            logger.info(f"✅ Saved converted GeoJSON to {converted_file}")
+        else:
+            logger.info("✅ WGS84 GeoJSON already up to date.")
+            gdf = gpd.read_file(converted_file)
+
+        gpkg_file = Path("input/raw/electoral_districts_boundaries_2025_wgs84.gpkg")
+        if not gpkg_file.exists() or (
+            gpkg_file.exists()
+            and gpkg_file.stat().st_mtime < converted_file.stat().st_mtime
+        ):
+            try:
+                gdf.to_file(gpkg_file, layer="okrsky", driver="GPKG")
+                logger.info(f"✅ Saved GeoPackage to {gpkg_file}")
+            except Exception as exc:
+                logger.warning(f"⚠️ Failed to write GeoPackage: {exc}")
+        kod_mco = gdf.get("kod_mco")
+        if kod_mco is not None:
+            kod_mco_values = (
+                kod_mco.dropna()
+                .astype(int, errors="ignore")
+                .astype(str, errors="ignore")
+                .unique()
+                .tolist()
+            )
+            kod_mco_file = Path("input/ps2025/processed/geojson_kod_mco_set.json")
+            kod_mco_file.parent.mkdir(parents=True, exist_ok=True)
+            kod_mco_file.write_text(
+                json.dumps(sorted(set(kod_mco_values)), ensure_ascii=False),
+                encoding="utf-8",
+            )
+            logger.info(f"✅ Saved kod_mco index to {kod_mco_file}")
     except Exception as exc:
         logger.error(f"❌ Failed to convert 2025 GeoJSON to WGS84: {exc}")
 
