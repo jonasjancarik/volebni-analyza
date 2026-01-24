@@ -41,25 +41,49 @@ logger = logging.getLogger(__name__)
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Czech Municipalities Electoral Analysis",
+    page_title="Volební analýza obcí",
     page_icon="🏛️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+# UI labels (internal keys remain English for logic)
+VIZ_LABELS = {
+    "Turnout": "Účast",
+    "Estimated Voters": "Odhad počtu voličů",
+    "Valid Votes": "Platné hlasy",
+    "Party Results": "Výsledek strany",
+    "Valid Votes (dots)": "Platné hlasy (tečky)",
+}
+
+MAP_TYPE_LABELS = {
+    "Geographic Map": "Geografická mapa",
+    "Pydeck (fast)": "Rychlá mapa (Pydeck)",
+    "Cartogram": "Kartogram",
+    "Dot Density": "Bodová hustota",
+}
+
+
+def viz_label(viz_type: str) -> str:
+    return VIZ_LABELS.get(viz_type, viz_type)
+
+
+def map_type_label(map_type: str) -> str:
+    return MAP_TYPE_LABELS.get(map_type, map_type)
+
 
 def run_data_collection(election_id="kv2022"):
     """Run the data collection script if data is missing"""
-    st.info(f"🔄 Starting data collection for {election_id}...")
+    st.info(f"🔄 Spouštím sběr dat pro {election_id}...")
 
     # Create a progress bar and output display
     progress_bar = st.progress(0)
     status_text = st.empty()
-    output_container = st.expander("📋 View Live Output", expanded=True)
+    output_container = st.expander("📋 Živý výstup", expanded=True)
     output_text = output_container.empty()
 
     try:
-        status_text.text("🚀 Starting data collection...")
+        status_text.text("🚀 Startuji sběr dat...")
         progress_bar.progress(5)
 
         # Run the data collection script with election parameter
@@ -124,24 +148,22 @@ def run_data_collection(election_id="kv2022"):
         # Check if successful
         if return_code == 0:
             progress_bar.progress(100)
-            status_text.text("✅ Data collection completed successfully!")
-            st.success(
-                "✅ Data collection completed! The page will refresh automatically."
-            )
+            status_text.text("✅ Sběr dat úspěšně dokončen!")
+            st.success("✅ Sběr dat dokončen! Stránka se automaticky obnoví.")
             st.balloons()
             import time
 
             time.sleep(2)
             return True
         else:
-            st.error(f"❌ Data collection failed (exit code: {return_code})")
+            st.error(f"❌ Sběr dat selhal (exit code: {return_code})")
             st.warning(
-                "Check the output above for error details, or view: all_municipalities_analysis.log"
+                "Podrobnosti hledejte ve výpisu výše, nebo v souboru: all_municipalities_analysis.log"
             )
             return False
 
     except Exception as e:
-        st.error(f"❌ Error running data collection: {e}")
+        st.error(f"❌ Chyba při spuštění sběru dat: {e}")
         st.exception(e)
         return False
 
@@ -196,13 +218,13 @@ def ensure_data_exists(election_id="kv2022"):
 
     # Check if user wants to run data collection
     election_config = get_election_config(election_id)
-    st.warning(f"⚠️ Election data not found for {election_config.election_name}!")
+    st.warning(f"⚠️ Chybí data pro {election_config.election_name}!")
 
     col1, col2 = st.columns(2)
 
     with col1:
         if st.button(
-            "🚀 Run Data Collection", type="primary", key=f"collect_{election_id}"
+            "🚀 Spustit sběr dat", type="primary", key=f"collect_{election_id}"
         ):
             if run_data_collection(election_id):
                 st.rerun()  # Refresh the app after data collection
@@ -210,11 +232,11 @@ def ensure_data_exists(election_id="kv2022"):
     with col2:
         if election_config.election_type == "parliamentary":
             st.info(
-                "This will download and process parliamentary election data for 14 electoral districts. It may take a minute."
+                "Stáhne a zpracuje data parlamentních voleb pro 14 volebních obvodů. Může to chvíli trvat."
             )
         else:
             st.info(
-                "This will download and process data for all 6,377+ Czech municipalities. It may take a few minutes."
+                "Stáhne a zpracuje data pro 6 377+ českých obcí. Může to pár minut trvat."
             )
 
     return None, None
@@ -239,7 +261,9 @@ def get_results_data_version(election_id="kv2022"):
         return 0
 
 
-def create_municipality_selector(municipality_index, comprehensive_data):
+def create_municipality_selector(
+    municipality_index, comprehensive_data, default_code: Optional[str] = None
+):
     """Create municipality/district selection interface"""
     # Determine if this is parliamentary or municipal data
     is_parliamentary = (
@@ -247,13 +271,15 @@ def create_municipality_selector(municipality_index, comprehensive_data):
     )
 
     if is_parliamentary:
-        st.sidebar.header("🗳️ Electoral District Selection")
-        label = "Choose electoral district:"
-        help_text = f"Select from {len(municipality_index)} electoral districts"
+        st.sidebar.header("🗳️ Výběr volebního obvodu")
+        label = "Vyberte volební obvod:"
+        help_text = f"Vyberte z {len(municipality_index)} obvodů"
+        search_label = "Hledat obvod"
     else:
-        st.sidebar.header("🏛️ Municipality Selection")
-        label = "Choose municipality:"
-        help_text = f"Select from {len(municipality_index)} municipalities"
+        st.sidebar.header("🏛️ Výběr obce")
+        label = "Vyberte obec:"
+        help_text = f"Vyberte z {len(municipality_index)} obcí"
+        search_label = "Hledat obec nebo kód"
 
     # Convert to DataFrame and sort alphabetically by name
     df = pd.DataFrame.from_dict(municipality_index, orient="index")
@@ -261,17 +287,43 @@ def create_municipality_selector(municipality_index, comprehensive_data):
     df = df.reset_index(drop=True)
     df = df.sort_values("name", ascending=True)
 
+    search_query = (
+        st.sidebar.text_input(
+            search_label,
+            value="",
+            help="Filtrovat podle názvu nebo kódu.",
+            key="municipality_search",
+        )
+        .strip()
+        .lower()
+    )
+
+    df_filtered = df
+    if search_query:
+        df_filtered = df[
+            df["name"].str.lower().str.contains(search_query, na=False)
+            | df["code"].astype(str).str.contains(search_query)
+        ]
+
     # Create simple dropdown with all items
     options = []
-    for _, row in df.iterrows():
+    for _, row in df_filtered.iterrows():
         option_text = f"{row['name']} ({row['code']})"
         options.append((option_text, row["code"]))
 
     if options:
+        default_index = 0
+        if default_code:
+            for i, option in enumerate(options):
+                if str(option[1]) == str(default_code):
+                    default_index = i
+                    break
+
         selected_option = st.sidebar.selectbox(
             label,
             options,
             format_func=lambda x: x[0],
+            index=default_index,
             help=help_text,
         )
 
@@ -279,6 +331,8 @@ def create_municipality_selector(municipality_index, comprehensive_data):
             selected_code = selected_option[1]
             display_municipality_sidebar_info(selected_code, comprehensive_data)
             return selected_code
+    else:
+        st.sidebar.warning("Žádné výsledky pro daný filtr.")
 
     return None
 
@@ -323,7 +377,7 @@ def display_municipality_sidebar_info(municipality_code, comprehensive_data):
 
     municipality_data = get_data_by_code(municipality_code, comprehensive_data)
     if not municipality_data:
-        st.sidebar.error("Data not found for this code")
+        st.sidebar.error("Data pro tento kód nebyla nalezena.")
         return
 
     metadata = municipality_data["metadata"]
@@ -333,34 +387,34 @@ def display_municipality_sidebar_info(municipality_code, comprehensive_data):
     is_parliamentary = "district_number" in metadata
 
     if is_parliamentary:
-        st.sidebar.subheader("Electoral District Info")
-        st.sidebar.write(f"**District:** {metadata.get('district_name', 'Unknown')}")
-        st.sidebar.write(f"**Number:** {metadata.get('district_number', 'N/A')}")
-        st.sidebar.write(f"**Total Mandates:** {stats.get('total_mandates', 0)}")
+        st.sidebar.subheader("Volební obvod")
+        st.sidebar.write(f"**Obvod:** {metadata.get('district_name', 'Neznámé')}")
+        st.sidebar.write(f"**Číslo:** {metadata.get('district_number', 'N/A')}")
+        st.sidebar.write(f"**Mandáty celkem:** {stats.get('total_mandates', 0)}")
 
-        st.sidebar.subheader("Election Statistics")
-        st.sidebar.write(f"**Candidates:** {stats.get('total_candidates', 0)}")
-        st.sidebar.write(f"**Parties:** {stats.get('parties_participating', 0)}")
+        st.sidebar.subheader("Statistiky")
+        st.sidebar.write(f"**Kandidáti:** {stats.get('total_candidates', 0)}")
+        st.sidebar.write(f"**Strany:** {stats.get('parties_participating', 0)}")
     else:
-        st.sidebar.subheader("Municipality Info")
-        st.sidebar.write(f"**Name:** {metadata.get('municipality_name', 'Unknown')}")
-        st.sidebar.write(f"**Code:** {metadata.get('municipality_code', 'N/A')}")
-        st.sidebar.write(f"**Council Seats:** {metadata.get('total_mandates', 0)}")
-        st.sidebar.write(f"**Seats Won:** {metadata.get('mandates_won', 0)}")
+        st.sidebar.subheader("Obec")
+        st.sidebar.write(f"**Název:** {metadata.get('municipality_name', 'Neznámé')}")
+        st.sidebar.write(f"**Kód:** {metadata.get('municipality_code', 'N/A')}")
+        st.sidebar.write(f"**Počet mandátů:** {metadata.get('total_mandates', 0)}")
+        st.sidebar.write(f"**Mandáty obsazeny:** {metadata.get('mandates_won', 0)}")
 
-        st.sidebar.subheader("Election Statistics")
+        st.sidebar.subheader("Statistiky")
         if "electoral_districts" in stats:
-            st.sidebar.write(f"**Electoral Districts:** {stats['electoral_districts']}")
+            st.sidebar.write(f"**Okrsky:** {stats['electoral_districts']}")
         if "registered_voters" in stats:
-            st.sidebar.write(f"**Registered Voters:** {stats['registered_voters']:,}")
+            st.sidebar.write(f"**Registrovaní voliči:** {stats['registered_voters']:,}")
         if "turnout_percentage" in stats:
-            st.sidebar.write(f"**Turnout:** {stats['turnout_percentage']:.2f}%")
+            st.sidebar.write(f"**Účast:** {stats['turnout_percentage']:.2f}%")
         if "valid_votes" in stats:
-            st.sidebar.write(f"**Valid Votes:** {stats['valid_votes']:,}")
-        st.sidebar.write(f"**Parties:** {stats.get('parties_participating', 0)}")
+            st.sidebar.write(f"**Platné hlasy:** {stats['valid_votes']:,}")
+        st.sidebar.write(f"**Strany:** {stats.get('parties_participating', 0)}")
         if "parties_with_mandates" in stats:
             st.sidebar.write(
-                f"**Parties with Seats:** {stats['parties_with_mandates']}"
+                f"**Strany s mandáty:** {stats['parties_with_mandates']}"
             )
 
 
@@ -479,76 +533,70 @@ def load_geojson_data(election_id: str = "kv2022"):
                 if features:
                     return geojson_data
 
-            st.warning("⚠️ Cached file appears corrupted, re-downloading...")
+            st.warning("⚠️ Cache soubor je poškozený, stahuji znovu...")
 
         except Exception as e:
-            st.warning(f"⚠️ Error reading cached file: {e}. Re-downloading...")
+            st.warning(f"⚠️ Chyba při čtení cache: {e}. Stahuji znovu...")
 
     # For parliamentary elections, expect the preprocessed WGS84 file.
     if election_config.election_type == "parliamentary":
         if raw_cache_file.exists():
             st.error(
-                f"❌ Preprocessed GeoJSON not found: {cache_file}\n\n"
-                "Run the preprocessing step to convert the raw 2025 polling station GeoJSON to WGS84:\n"
+                f"❌ Předzpracovaný GeoJSON nenalezen: {cache_file}\n\n"
+                "Spusťte předzpracování pro převod 2025 GeoJSON do WGS84:\n"
                 "  uv run python run_all_municipalities.py --election ps2025 --no-download"
             )
         else:
             st.error(
-                f"❌ GeoJSON file not found: {raw_cache_file}\n\n"
-                f"The 2025 polling station GeoJSON (252.6 MB) must be downloaded separately.\n"
-                f"Please download it from the ČSÚ GIS portal and place it in the input/raw/ directory."
+                f"❌ GeoJSON soubor nenalezen: {raw_cache_file}\n\n"
+                "GeoJSON okrsků pro 2025 (252.6 MB) je nutné stáhnout ručně.\n"
+                "Stáhněte jej z GIS portálu ČSÚ a uložte do input/raw/."
             )
         return None
 
     # Download the file (municipal elections only)
     try:
-        st.info(
-            "🌐 Downloading electoral district boundaries (8MB) - this may take a moment..."
-        )
+        st.info("🌐 Stahuji hranice okrsků (8MB) — může to chvíli trvat...")
         response = requests.get(url, timeout=120)  # Increased timeout for large file
         response.raise_for_status()
 
-        st.info("📊 Parsing GeoJSON data...")
+        st.info("📊 Zpracovávám GeoJSON...")
         geojson_data = response.json()
 
         # Validate the data structure
         if not isinstance(geojson_data, dict):
-            raise ValueError("Invalid GeoJSON format: not a dictionary")
+            raise ValueError("Neplatný formát GeoJSON: není slovník")
 
         if geojson_data.get("type") != "FeatureCollection":
-            raise ValueError(f"Invalid GeoJSON type: {geojson_data.get('type')}")
+            raise ValueError(f"Neplatný typ GeoJSON: {geojson_data.get('type')}")
 
         features = geojson_data.get("features", [])
         if not features:
-            raise ValueError("No features found in GeoJSON")
+            raise ValueError("V GeoJSON nejsou žádné prvky")
 
         # Save to cache
-        st.info("💾 Saving to local cache for future use...")
+        st.info("💾 Ukládám do lokální cache...")
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(geojson_data, f, ensure_ascii=False)
 
-        st.success(f"✅ Downloaded and cached {len(features):,} electoral districts")
+        st.success(f"✅ Staženo a uloženo {len(features):,} okrsků")
         return geojson_data
 
     except requests.exceptions.Timeout:
-        st.error(
-            "⏱️ Download timed out. Please try again or check your internet connection."
-        )
+        st.error("⏱️ Timeout při stahování. Zkuste to znovu nebo ověřte připojení.")
         return None
     except requests.exceptions.ConnectionError:
-        st.error("🔌 Connection error. Please check your internet connection.")
+        st.error("🔌 Chyba připojení. Ověřte internetové připojení.")
         return None
     except requests.exceptions.HTTPError as e:
-        st.error(f"🌐 HTTP error downloading GeoJSON data: {e}")
+        st.error(f"🌐 HTTP chyba při stahování GeoJSON: {e}")
         return None
     except ValueError as e:
-        st.error(f"📊 Data format error: {e}")
+        st.error(f"📊 Chyba formátu dat: {e}")
         return None
     except Exception as e:
-        st.error(f"❌ Unexpected error loading GeoJSON data: {e}")
-        st.error(
-            "💡 Try refreshing the page or contact support if the problem persists."
-        )
+        st.error(f"❌ Neočekávaná chyba při načítání GeoJSON: {e}")
+        st.error("💡 Zkuste obnovit stránku, nebo kontaktujte podporu.")
     return None
 
 
@@ -568,7 +616,7 @@ def load_geojson_kod_mco_set(election_id: str):
             values = json.load(f)
         return {str(v) for v in values}
     except Exception as e:
-        st.warning(f"⚠️ Error loading kod_mco index: {e}")
+        st.warning(f"⚠️ Chyba při načítání kod_mco indexu: {e}")
         return set()
 
 
@@ -592,7 +640,7 @@ def load_pre_split_geojson(election_id: str, municipality_code: str):
             return None
         return data
     except Exception as e:
-        st.warning(f"⚠️ Error loading pre-split GeoJSON: {e}")
+        st.warning(f"⚠️ Chyba při načítání předděleného GeoJSON: {e}")
         return None
 
 
@@ -638,7 +686,7 @@ def load_geojson_subset(
                 return None
             return json.loads(gdf.to_json())
         except Exception as e:
-            st.warning(f"⚠️ GeoPackage subset load failed, falling back: {e}")
+            st.warning(f"⚠️ Načtení GeoPackage výřezu selhalo, pokračuji jinak: {e}")
 
     geojson_data = load_geojson_data(election_id)
     if not geojson_data or "features" not in geojson_data:
@@ -674,7 +722,7 @@ def load_parliamentary_gdf(election_id: str, use_simplified: bool = True):
     try:
         return gpd.read_file(gpkg_file, layer=layer)
     except Exception as e:
-        st.warning(f"⚠️ Failed to load GeoPackage layer into RAM: {e}")
+        st.warning(f"⚠️ Nepodařilo se načíst GeoPackage do RAM: {e}")
         return None
 
 
@@ -696,8 +744,8 @@ def load_obec_mapping(election_id: str):
 
     if not mapping_file.exists():
         st.warning(
-            f"⚠️ OBEC mapping file not found: {mapping_file}\n\n"
-            f"This file is required to match PS2025 district codes to GeoJSON features."
+            f"⚠️ Soubor mapování OBEC nebyl nalezen: {mapping_file}\n\n"
+            "Soubor je potřeba pro párování kódů PS2025 na GeoJSON prvky."
         )
         return {}
 
@@ -706,7 +754,7 @@ def load_obec_mapping(election_id: str):
             mapping = json.load(f)
         return mapping
     except Exception as e:
-        st.error(f"❌ Error loading OBEC mapping: {e}")
+        st.error(f"❌ Chyba při načítání mapování OBEC: {e}")
         return {}
 
 
@@ -728,11 +776,11 @@ def load_municipality_data(
         # Check if this is parliamentary or municipal
         election_config = get_election_config(election_id)
         entity_type = (
-            "electoral district"
+            "volební obvod"
             if election_config.election_type == "parliamentary"
             else "zastupitelstvo"
         )
-        st.error(f"No data found for {entity_type} {zastupitelstvo_code}")
+        st.error(f"Nebyla nalezena data pro {entity_type} {zastupitelstvo_code}")
         return {}
 
     # Convert to format expected by visualization functions
@@ -867,7 +915,7 @@ def load_municipality_data(
         if party_results:
             # Create a mapping of party_code to party_name
             party_name_map = {
-                p.get("party_code"): p.get("party_name", "Unknown")
+                p.get("party_code"): p.get("party_name", "Neznámá")
                 for p in party_results
             }
 
@@ -939,7 +987,7 @@ def load_municipality_data(
                 )
 
             party_name_map = {
-                p.get("party_code"): p.get("party_name", "Unknown")
+                p.get("party_code"): p.get("party_name", "Neznámá")
                 for p in party_results
             }
 
@@ -955,9 +1003,7 @@ def load_municipality_data(
                     if party_code is None:
                         continue
                     votes = party_vote.get("votes", 0)
-                    party_name = party_name_map.get(
-                        party_code, f"Party {party_code}"
-                    )
+                    party_name = party_name_map.get(party_code, f"Strana {party_code}")
                     district_party_results.append(
                         {
                             "district_id": f"{district_code}-1",
@@ -1233,7 +1279,7 @@ def create_folium_map(
         def create_popup_content(feature):
             """Create popup content for a feature"""
             properties = feature.get("properties", {})
-            district_code = get_district_code_from_geojson(properties) or "Unknown"
+            district_code = get_district_code_from_geojson(properties) or "Neznámý"
 
             popup_html = f"""
             <div style="font-family: Arial; width: 250px;">
@@ -1255,13 +1301,13 @@ def create_folium_map(
                 value = viz_data[district_code]
 
                 if viz_type == "Turnout":
-                    popup_html += f"<p><strong>Turnout:</strong> {value:.1f}%</p>"
+                    popup_html += f"<p><strong>Účast:</strong> {value:.1f}%</p>"
                 elif viz_type == "Estimated Voters":
                     popup_html += (
-                        f"<p><strong>Registered Voters:</strong> {int(value):,}</p>"
+                        f"<p><strong>Registrovaní voliči:</strong> {int(value):,}</p>"
                     )
                 elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
-                    popup_html += f"<p><strong>Valid Votes:</strong> {int(value):,}</p>"
+                    popup_html += f"<p><strong>Platné hlasy:</strong> {int(value):,}</p>"
                 elif viz_type == "Party Results" and selected_party:
                     popup_html += (
                         f"<p><strong>{selected_party}:</strong> {value:.1f}%</p>"
@@ -1279,10 +1325,10 @@ def create_folium_map(
 
                     if num_seats > 0:
                         voter_estimate = round(valid_votes / num_seats)
-                        popup_html += f"<p><strong>Estimated Voters:</strong> {voter_estimate:,}</p>"
+                        popup_html += f"<p><strong>Odhad voličů:</strong> {voter_estimate:,}</p>"
 
                     popup_html += (
-                        f"<p><strong>Valid Votes:</strong> {valid_votes:,}</p>"
+                        f"<p><strong>Platné hlasy:</strong> {valid_votes:,}</p>"
                     )
 
                 if "registered_voters" in district_row and pd.notna(
@@ -1291,7 +1337,9 @@ def create_folium_map(
                     registered_voters = int(district_row["registered_voters"])
                     if registered_voters > 0 and "valid_votes" in locals():
                         vote_share = (valid_votes / registered_voters) * 100
-                        popup_html += f"<p><strong>Vote Share:</strong> {vote_share:.1f}% of registered voters</p>"
+                        popup_html += (
+                            f"<p><strong>Podíl hlasů:</strong> {vote_share:.1f}% registrovaných voličů</p>"
+                        )
 
                 # Add other context data if not already shown
                 if (
@@ -1299,22 +1347,26 @@ def create_folium_map(
                     and "turnout_percentage" in district_row
                     and pd.notna(district_row["turnout_percentage"])
                 ):
-                    popup_html += f"<p><strong>Turnout:</strong> {district_row['turnout_percentage']:.1f}%</p>"
+                    popup_html += (
+                        f"<p><strong>Účast:</strong> {district_row['turnout_percentage']:.1f}%</p>"
+                    )
 
                 if (
                     viz_type != "Estimated Voters"
                     and "registered_voters" in district_row
                     and pd.notna(district_row["registered_voters"])
                 ):
-                    popup_html += f"<p><strong>Registered Voters:</strong> {int(district_row['registered_voters']):,}</p>"
+                    popup_html += (
+                        f"<p><strong>Registrovaní voliči:</strong> {int(district_row['registered_voters']):,}</p>"
+                    )
             else:
                 popup_html += (
-                    f"<p><em>No detailed data available for this okrsek</em></p>"
+                    "<p><em>Detailní data pro tento okrsek nejsou k dispozici</em></p>"
                 )
 
             popup_html += f"""
                 <hr style="margin: 5px 0;">
-                <p style="font-size: 10px; color: #666;">Click for more details</p>
+                <p style="font-size: 10px; color: #666;">Klikněte pro detail</p>
             </div>
             """
 
@@ -1326,7 +1378,7 @@ def create_folium_map(
 
             # Create informative tooltip based on visualization type
             properties = feature.get("properties", {})
-            district_code = get_district_code_from_geojson(properties) or "Unknown"
+            district_code = get_district_code_from_geojson(properties) or "Neznámý"
 
             tooltip_text = f"Okrsek {district_code}"
 
@@ -1335,11 +1387,15 @@ def create_folium_map(
                 value = viz_data[district_code]
 
                 if viz_type == "Turnout":
-                    tooltip_text = f"Okrsek {district_code}: {value:.1f}% turnout"
+                    tooltip_text = f"Okrsek {district_code}: {value:.1f}% účast"
                 elif viz_type == "Estimated Voters":
-                    tooltip_text = f"Okrsek {district_code}: {int(value):,} voters"
+                    tooltip_text = (
+                        f"Okrsek {district_code}: {int(value):,} registrovaných voličů"
+                    )
                 elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
-                    tooltip_text = f"Okrsek {district_code}: {int(value):,} valid votes"
+                    tooltip_text = (
+                        f"Okrsek {district_code}: {int(value):,} platných hlasů"
+                    )
                 elif viz_type == "Party Results" and selected_party:
                     tooltip_text = (
                         f"Okrsek {district_code}: {value:.1f}% {selected_party}"
@@ -1361,11 +1417,11 @@ def create_folium_map(
                             voter_estimate = round(valid_votes / num_seats)
                             # Add voter estimate to tooltip based on visualization type
                             if viz_type == "Party Results":
-                                tooltip_text += f" | ~{voter_estimate:,} voters"
+                                tooltip_text += f" | ~{voter_estimate:,} voličů"
                             elif viz_type not in [
                                 "Estimated Voters"
                             ]:  # Don't duplicate for estimated voters viz
-                                tooltip_text += f" | ~{voter_estimate:,} voters"
+                                tooltip_text += f" | ~{voter_estimate:,} voličů"
 
             folium.GeoJson(
                 feature,
@@ -1455,36 +1511,36 @@ def create_folium_map(
                         bottom: 50px; left: 50px; width: 170px; height: auto; min-height: 140px;
                         background-color: white; border:2px solid grey; z-index:9999; 
                         font-size:11px; font-family: Arial; padding: 8px; box-sizing: border-box;">
-                <h5 style="margin: 0 0 8px 0; font-size: 13px;">{viz_type} Legend</h5>
+                <h5 style="margin: 0 0 8px 0; font-size: 13px;">{viz_label(viz_type)}</h5>
             """
 
             if viz_type == "Turnout":
                 legend_html += """
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#2E8B57"></i> ≥60% (High)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#90EE90"></i> 50-59% (Med-High)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 40-49% (Medium)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFA500"></i> 30-39% (Low-Med)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <30% (Low)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#2E8B57"></i> ≥60% (vysoká)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#90EE90"></i> 50–59% (středně vysoká)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 40–49% (střední)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFA500"></i> 30–39% (nižší)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <30% (nízká)</p>
                 """
             elif viz_type == "Estimated Voters":
                 legend_html += """
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#2E8B57"></i> ≥800 (High)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#90EE90"></i> 600-799 (Med-High)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 400-599 (Medium)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFA500"></i> 200-399 (Low-Med)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <200 (Low)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#2E8B57"></i> ≥800 (vysoké)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#90EE90"></i> 600–799 (středně vysoké)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 400–599 (střední)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFA500"></i> 200–399 (nižší)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <200 (nízké)</p>
                 """
             elif viz_type == "Party Results":
                 legend_html += f"""
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#006400"></i> ≥25% (Very Strong)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#228B22"></i> 20-24% (Strong)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#32CD32"></i> 15-19% (Good)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 10-14% (Moderate)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#87CEEB"></i> 5-9% (Weak)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#4169E1"></i> <5% (Very Weak)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#006400"></i> ≥25% (velmi silné)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#228B22"></i> 20–24% (silné)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#32CD32"></i> 15–19% (dobré)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 10–14% (střední)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#87CEEB"></i> 5–9% (slabé)</p>
+                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#4169E1"></i> <5% (velmi slabé)</p>
                 """
 
-            legend_html += '<p style="margin: 3px 0;"><i class="fa fa-square" style="color:#CCCCCC"></i> No Data</p></div>'
+            legend_html += '<p style="margin: 3px 0;"><i class="fa fa-square" style="color:#CCCCCC"></i> Bez dat</p></div>'
 
             m.get_root().html.add_child(folium.Element(legend_html))
 
@@ -1673,7 +1729,7 @@ def create_pydeck_map(
 
 def display_electoral_overview(data):
     """Display overview statistics using CSV data"""
-    st.subheader("📊 Electoral Overview")
+    st.subheader("📊 Souhrn")
 
     # Create columns for metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -1716,23 +1772,23 @@ def display_electoral_overview(data):
     # Display metrics
     with col1:
         st.metric(
-            "Electoral Districts",
+            "Okrsky",
             f"{total_districts:,}" if total_districts > 0 else "N/A",
         )
 
     with col2:
         st.metric(
-            "Average Turnout", f"{avg_turnout:.1f}%" if avg_turnout > 0 else "N/A"
+            "Průměrná účast", f"{avg_turnout:.1f}%" if avg_turnout > 0 else "N/A"
         )
 
     with col3:
         st.metric(
-            "Registered Voters", f"{total_voters:,}" if total_voters > 0 else "N/A"
+            "Registrovaní voliči", f"{total_voters:,}" if total_voters > 0 else "N/A"
         )
 
     with col4:
         st.metric(
-            "Political Parties", f"{total_parties:,}" if total_parties > 0 else "N/A"
+            "Strany", f"{total_parties:,}" if total_parties > 0 else "N/A"
         )
 
     # Display party results if available
@@ -1740,28 +1796,65 @@ def display_electoral_overview(data):
         party_df = data["party_results"].copy()
 
         if not party_df.empty:
-            st.subheader("🏛️ Party Results Overview")
+            st.subheader("🏛️ Přehled výsledků stran")
 
             # Create visualization - single percentage chart
-            top_parties = party_df.head(10)
+            percentage_col = None
+            if "votes_percentage" in party_df.columns:
+                percentage_col = "votes_percentage"
+            elif "percentage" in party_df.columns:
+                percentage_col = "percentage"
+
+            votes_col = None
+            if "votes_absolute" in party_df.columns:
+                votes_col = "votes_absolute"
+            elif "votes" in party_df.columns:
+                votes_col = "votes"
+
+            sort_col = percentage_col or votes_col
+            party_sorted = (
+                party_df.sort_values(sort_col, ascending=False)
+                if sort_col
+                else party_df.copy()
+            )
+
+            top_parties = party_sorted.head(10)
+
+            st.subheader("⚡ Rychlé zjištění")
+            insight_cols = st.columns(3)
+            top_party = party_sorted.iloc[0]
+            winner_name = top_party.get("party_name", "Neznámá strana")
+            insight_cols[0].metric("Vítězná strana", winner_name)
+
+            if percentage_col:
+                top_pct = float(top_party.get(percentage_col, 0) or 0)
+                insight_cols[1].metric("Podíl vítěze", f"{top_pct:.1f}%")
+                if len(party_sorted) > 1:
+                    second_pct = float(
+                        party_sorted.iloc[1].get(percentage_col, 0) or 0
+                    )
+                    margin_pct = max(top_pct - second_pct, 0)
+                    insight_cols[2].metric("Náskok", f"{margin_pct:.1f} p. b.")
+            elif votes_col:
+                top_votes = int(top_party.get(votes_col, 0) or 0)
+                insight_cols[1].metric("Hlasy vítěze", f"{top_votes:,}")
+                if len(party_sorted) > 1:
+                    second_votes = int(
+                        party_sorted.iloc[1].get(votes_col, 0) or 0
+                    )
+                    margin_votes = max(top_votes - second_votes, 0)
+                    insight_cols[2].metric("Náskok", f"{margin_votes:,} hlasů")
 
             if len(top_parties) > 0:
-                # Check which percentage column exists
-                percentage_col = None
-                if "votes_percentage" in party_df.columns:
-                    percentage_col = "votes_percentage"
-                elif "percentage" in party_df.columns:
-                    percentage_col = "percentage"
-
                 if percentage_col:
                     fig_pct = px.bar(
                         top_parties,
                         x="party_name",
                         y=percentage_col,
-                        title="Vote Share by Party (%)",
+                        title="Podíl hlasů podle strany (%)",
                         labels={
-                            percentage_col: "Vote Share (%)",
-                            "party_name": "Political Party",
+                            percentage_col: "Podíl hlasů (%)",
+                            "party_name": "Strana",
                         },
                         text=percentage_col,
                         color_discrete_sequence=["#1f77b4"],
@@ -1773,23 +1866,41 @@ def display_electoral_overview(data):
                     st.plotly_chart(fig_pct, use_container_width=True)
 
                 # Display results table
-                st.subheader("📊 Detailed Results")
+                st.subheader("📊 Podrobná tabulka")
 
                 # Prepare display dataframe
-                display_df = party_df.copy()
+                display_df = party_sorted.copy()
+
+                with st.expander("Filtry tabulky", expanded=False):
+                    filter_text = st.text_input(
+                        "Hledat stranu",
+                        value="",
+                        help="Filtruje podle názvu strany.",
+                        key="party_filter",
+                    ).strip()
+                    max_rows_limit = max(5, min(50, len(display_df)))
+                    max_rows = st.slider(
+                        "Počet řádků",
+                        min_value=5,
+                        max_value=max_rows_limit,
+                        value=min(20, max_rows_limit),
+                        step=1,
+                        key="party_rows",
+                    )
+
+                if filter_text:
+                    display_df = display_df[
+                        display_df["party_name"]
+                        .astype(str)
+                        .str.contains(filter_text, case=False, na=False)
+                    ]
+                display_df = display_df.head(max_rows)
 
                 # Format percentage column
                 if percentage_col and percentage_col in display_df.columns:
                     display_df[percentage_col] = display_df[percentage_col].apply(
                         lambda x: f"{x:.2f}%"
                     )
-
-                # Format votes column
-                votes_col = None
-                if "votes_absolute" in display_df.columns:
-                    votes_col = "votes_absolute"
-                elif "votes" in display_df.columns:
-                    votes_col = "votes"
 
                 if votes_col:
                     display_df[votes_col] = display_df[votes_col].apply(
@@ -1804,31 +1915,31 @@ def display_electoral_overview(data):
 
                 # Rename columns for display
                 column_renames = {
-                    "party_name": "Party",
-                    "list_number": "List #",
+                    "party_name": "Strana",
+                    "list_number": "Číslo listiny",
                 }
 
                 if votes_col:
-                    column_renames[votes_col] = "Total Votes"
+                    column_renames[votes_col] = "Hlasy"
                 if percentage_col:
-                    column_renames[percentage_col] = "Percentage"
+                    column_renames[percentage_col] = "Podíl"
                 if "estimated_voters" in display_df.columns:
-                    column_renames["estimated_voters"] = "Est. Voters"
+                    column_renames["estimated_voters"] = "Odhad voličů"
 
                 display_df = display_df.rename(columns=column_renames)
 
                 # Select and reorder columns
                 display_cols = []
-                if "List #" in display_df.columns:
-                    display_cols.append("List #")
-                if "Party" in display_df.columns:
-                    display_cols.append("Party")
-                if "Total Votes" in display_df.columns:
-                    display_cols.append("Total Votes")
-                if "Est. Voters" in display_df.columns:
-                    display_cols.append("Est. Voters")
-                if "Percentage" in display_df.columns:
-                    display_cols.append("Percentage")
+                if "Číslo listiny" in display_df.columns:
+                    display_cols.append("Číslo listiny")
+                if "Strana" in display_df.columns:
+                    display_cols.append("Strana")
+                if "Hlasy" in display_df.columns:
+                    display_cols.append("Hlasy")
+                if "Odhad voličů" in display_df.columns:
+                    display_cols.append("Odhad voličů")
+                if "Podíl" in display_df.columns:
+                    display_cols.append("Podíl")
 
                 # Use available columns
                 available_cols = [
@@ -1836,7 +1947,11 @@ def display_electoral_overview(data):
                 ]
 
                 if available_cols:
-                    st.dataframe(display_df[available_cols], use_container_width=True)
+                    st.dataframe(
+                        display_df[available_cols],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
                 # Add explanation
                 if "estimated_voters" in party_df.columns:
@@ -1846,29 +1961,29 @@ def display_electoral_overview(data):
                         else 41
                     )
                     st.info(
-                        f"💡 **Est. Voters** = Total Votes ÷ {seats_used} seats "
-                        f"(voters can vote for up to {seats_used} candidates)"
+                        f"💡 **Odhad voličů** = Hlasy celkem ÷ {seats_used} mandátů "
+                        f"(volič může volit až {seats_used} kandidátů)"
                     )
 
         else:
-            st.warning("No party results data available")
+            st.warning("Nejsou dostupná data o výsledcích stran.")
 
     # Show data source information
-    st.subheader("📁 Data Sources Loaded")
-    for i, (key, dataset) in enumerate(data.items(), 1):
-        if isinstance(dataset, pd.DataFrame):
-            st.write(
-                f"{i}. **{key}** - CSV Data ({dataset.shape[0]} rows, {dataset.shape[1]} columns)"
-            )
-        elif isinstance(dataset, dict):
-            st.write(f"{i}. **{key}** - Dictionary ({len(dataset)} keys)")
-        else:
-            st.write(f"{i}. **{key}** - {type(dataset).__name__}")
+    with st.expander("📁 Pokročilé: Zdroje dat"):
+        for i, (key, dataset) in enumerate(data.items(), 1):
+            if isinstance(dataset, pd.DataFrame):
+                st.write(
+                    f"{i}. **{key}** - CSV ({dataset.shape[0]} řádků, {dataset.shape[1]} sloupců)"
+                )
+            elif isinstance(dataset, dict):
+                st.write(f"{i}. **{key}** - Slovník ({len(dataset)} klíčů)")
+            else:
+                st.write(f"{i}. **{key}** - {type(dataset).__name__}")
 
 
 def display_turnout_analysis(data):
     """Display turnout analysis visualizations using CSV data"""
-    st.subheader("📈 Turnout Analysis")
+    st.subheader("📈 Účast")
 
     # Check for district-level turnout data
     if "district_data" in data and isinstance(data["district_data"], pd.DataFrame):
@@ -1887,10 +2002,10 @@ def display_turnout_analysis(data):
                 district_df_filtered.head(20),  # Show top 20 for readability
                 x="district_code",
                 y="turnout_percentage",
-                title="Voter Turnout by District",
+                title="Účast podle okrsku",
                 labels={
-                    "turnout_percentage": "Turnout (%)",
-                    "district_code": "Electoral District",
+                    "turnout_percentage": "Účast (%)",
+                    "district_code": "Okrsek",
                 },
             )
             fig.update_xaxes(tickangle=45)
@@ -1900,39 +2015,39 @@ def display_turnout_analysis(data):
             col1, col2 = st.columns(2)
             with col1:
                 st.metric(
-                    "Highest Turnout",
+                    "Nejvyšší účast",
                     f"{district_df_filtered['turnout_percentage'].max():.1f}%",
                 )
             with col2:
                 st.metric(
-                    "Lowest Turnout",
+                    "Nejnižší účast",
                     f"{district_df_filtered['turnout_percentage'].min():.1f}%",
                 )
 
             # Show district count
-            st.metric("Districts with Data", len(district_df_filtered))
+            st.metric("Okrsky s daty", len(district_df_filtered))
         else:
             # Show summary turnout data if available
             summary_row = district_df[district_df["district_code"] == "TOTAL"]
             if not summary_row.empty and summary_row.iloc[0]["turnout_percentage"] > 0:
                 turnout_pct = summary_row.iloc[0]["turnout_percentage"]
-                st.info(f"Overall Turnout: {turnout_pct:.1f}%")
+                st.info(f"Celková účast: {turnout_pct:.1f}%")
 
                 # Create a simple single-bar chart
                 fig = px.bar(
-                    x=["Municipality"],
+                    x=["Obec"],
                     y=[turnout_pct],
-                    title="Overall Voter Turnout",
-                    labels={"y": "Turnout (%)", "x": "District"},
+                    title="Celková volební účast",
+                    labels={"y": "Účast (%)", "x": "Jednotka"},
                 )
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("No district-level turnout data found.")
+                st.info("Nejsou dostupná okrsková data o účasti.")
 
     # Show summary statistics from summary_statistics if available
     if "summary_statistics" in data:
         stats = data["summary_statistics"]
-        st.subheader("📊 Summary Statistics")
+        st.subheader("📊 Souhrn")
 
         col1, col2, col3 = st.columns(3)
 
@@ -1940,31 +2055,31 @@ def display_turnout_analysis(data):
             with col1:
                 try:
                     turnout_val = float(stats["turnout_percentage"])
-                    st.metric("Turnout", f"{turnout_val:.1f}%")
+                    st.metric("Účast", f"{turnout_val:.1f}%")
                 except (ValueError, TypeError):
-                    st.metric("Turnout", f"{stats['turnout_percentage']}%")
+                    st.metric("Účast", f"{stats['turnout_percentage']}%")
 
         if "registered_voters" in stats:
             with col2:
                 try:
                     voters_val = int(float(stats["registered_voters"]))
-                    st.metric("Registered Voters", f"{voters_val:,}")
+                    st.metric("Registrovaní voliči", f"{voters_val:,}")
                 except (ValueError, TypeError):
-                    st.metric("Registered Voters", f"{stats['registered_voters']}")
+                    st.metric("Registrovaní voliči", f"{stats['registered_voters']}")
 
         if "valid_votes" in stats:
             with col3:
                 try:
                     votes_val = int(float(stats["valid_votes"]))
-                    st.metric("Valid Votes", f"{votes_val:,}")
+                    st.metric("Platné hlasy", f"{votes_val:,}")
                 except (ValueError, TypeError):
-                    st.metric("Valid Votes", f"{stats['valid_votes']}")
+                    st.metric("Platné hlasy", f"{stats['valid_votes']}")
 
     # If no meaningful data is found, suggest running the analysis pipeline
     if ("district_data" not in data or data["district_data"].empty) and (
         "summary_statistics" not in data or not data["summary_statistics"]
     ):
-        st.warning("Run the analysis pipeline first to generate turnout data.")
+        st.warning("Nejprve spusťte analýzu pro výpočet účasti.")
         st.code("uv run python run_analysis.py")
 
 
@@ -1981,18 +2096,16 @@ def display_geographic_analysis(
     map_data = None
 
     if not geojson_data:
-        st.error("Unable to load GeoJSON data. Please check your internet connection.")
+        st.error("GeoJSON se nepodařilo načíst. Ověřte připojení k internetu.")
 
         # Add cache clearing option
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.info(
-                "💡 If you're having repeated issues, try clearing the geographic data cache."
-            )
+            st.info("💡 Pokud problém přetrvává, zkuste vyčistit cache map.")
         with col2:
             if st.button(
-                "🔄 Clear Cache",
-                help="Clear cached geographic data and try downloading again",
+                "🔄 Vyčistit cache",
+                help="Vymaže cache map a zkusí znovu stáhnout data",
             ):
                 # Clear the streamlit cache
                 load_geojson_data.clear()
@@ -2009,9 +2122,9 @@ def display_geographic_analysis(
                     )
                 if cache_file.exists():
                     cache_file.unlink()
-                    st.success("🗑️ Local cache file deleted!")
+                    st.success("🗑️ Cache soubor byl smazán!")
 
-                st.success("Cache cleared! Please refresh the page.")
+                st.success("Cache vyčištěna! Obnovte stránku.")
                 st.rerun()
         return
 
@@ -2026,56 +2139,65 @@ def display_geographic_analysis(
     # Use the already filtered GeoJSON data (filtered by main function)
     municipality_features = geojson_data.get("features", [])
 
-    st.info(
-        f"Found {len(municipality_features)} electoral districts for this municipality"
-    )
+    st.info(f"Nalezeno {len(municipality_features)} okrsků pro tuto obec")
 
     if not municipality_features:
-        st.warning(
-            "No electoral districts found for this municipality in the geographic data."
-        )
+        st.warning("V geografických datech nebyly nalezeny žádné okrsky.")
         return
 
     # The geojson_data is already filtered for the selected municipality
     filtered_geojson = geojson_data
 
     # Map visualization controls
-    st.subheader("📊 Map Visualization Controls")
+    st.subheader("🗺️ Nastavení mapy")
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         # Get default from URL or use first option
-        viz_options = [
-            "Turnout",
-            "Estimated Voters",
-            "Valid Votes",
-            "Valid Votes (dots)",
-            "Party Results",
-        ]
+        viz_options = ["Turnout", "Estimated Voters", "Valid Votes", "Party Results"]
         default_viz_type = get_param_value(url_params, "viz_type", viz_options[0])
+        if default_viz_type == "Valid Votes (dots)":
+            default_viz_type = "Valid Votes"
         if default_viz_type not in viz_options:
             default_viz_type = viz_options[0]
 
         viz_type = st.selectbox(
-            "Choose what to visualize:",
+            "Co zobrazit:",
             viz_options,
             index=viz_options.index(default_viz_type),
-            help="Select the data to display on the map with color coding",
+            format_func=viz_label,
+            help="Vyberte datovou vrstvu pro obarvení mapy.",
             key="viz_type_select",
         )
 
     with col2:
-        map_options = ["Geographic Map", "Pydeck (fast)", "Cartogram", "Dot Density"]
-        default_map_type = get_param_value(url_params, "map_type", map_options[0])
+        base_map_options = ["Geographic Map", "Pydeck (fast)"]
+        advanced_map_options = ["Cartogram", "Dot Density"]
+        default_map_type = get_param_value(url_params, "map_type", base_map_options[0])
+        if default_map_type not in base_map_options + advanced_map_options:
+            default_map_type = base_map_options[0]
+
+        show_advanced_maps = default_map_type in advanced_map_options
+        show_advanced_maps = st.checkbox(
+            "Pokročilé mapy",
+            value=show_advanced_maps,
+            help="Zobrazí kartogram a bodovou hustotu.",
+            key="advanced_map_toggle",
+        )
+
+        map_options = base_map_options + (
+            advanced_map_options if show_advanced_maps else []
+        )
         if default_map_type not in map_options:
-            default_map_type = map_options[0]
+            default_map_type = base_map_options[0]
 
         map_type = st.selectbox(
-            "Map type:",
+            "Typ mapy:",
             map_options,
             index=map_options.index(default_map_type),
-            help="Choose between geographic accuracy, data-proportional areas, or dot-fill visualization",
+            format_func=map_type_label,
+            help="Volba mezi přesnou mapou, rychlým vykreslením a pokročilými vizualizacemi.",
             key="map_type_select",
         )
 
@@ -2091,10 +2213,10 @@ def display_geographic_analysis(
             default_style = style_options[0]
 
         base_map_style_main = st.selectbox(
-            "Base map style:",
+            "Podkladová mapa:",
             style_options,
             index=style_options.index(default_style),
-            help="Choose a base map style. Muted styles help overlays stand out better.",
+            help="Zvolte styl podkladu. Tlumené styly lépe zvýrazní vrstvy.",
             key="base_map_style_select",
         )
 
@@ -2115,14 +2237,14 @@ def display_geographic_analysis(
                     default_party = available_parties[0]
 
                 selected_party = st.selectbox(
-                    "Select party:",
+                    "Vyberte stranu:",
                     available_parties,
                     index=available_parties.index(default_party),
-                    help="Choose which party's results to visualize",
+                    help="Vyberte stranu pro zobrazení výsledků.",
                     key="selected_party_select",
                 )
             else:
-                st.warning("No party data available")
+                st.warning("Nejsou dostupná data o stranách.")
                 viz_type = "Turnout"  # Fallback
 
     # Update URL parameters when filters change
@@ -2135,9 +2257,9 @@ def display_geographic_analysis(
 
     # Create and display the map based on type
     if map_type == "Pydeck (fast)":
-        st.subheader("🚀 Pydeck View")
+        st.subheader("🚀 Rychlá mapa (Pydeck)")
         st.info(
-            "⚡ Pydeck renders polygons faster than Folium. Base map is disabled to avoid Mapbox token requirements."
+            "⚡ Pydeck renderuje polygony rychleji než Folium. Podklad je vypnutý kvůli tokenům Mapbox."
         )
 
         pydeck_map = create_pydeck_map(
@@ -2146,30 +2268,33 @@ def display_geographic_analysis(
         if pydeck_map:
             st.pydeck_chart(pydeck_map, use_container_width=True)
         else:
-            st.error("Failed to create Pydeck map")
+            st.error("Nepodařilo se vytvořit Pydeck mapu.")
 
     elif map_type == "Cartogram":
-        st.subheader("🗺️ Cartogram View")
+        st.subheader("🗺️ Kartogram")
         st.info(
-            "📐 **Cartogram**: Areas are scaled by **vote count** (larger areas = more total votes). Colors show the selected visualization data. By default, circles stay at true geographic positions - enable collision avoidance if overlap reduction is more important than geographic accuracy."
+            "📐 **Kartogram**: Plochy jsou škálované podle **počtu hlasů** "
+            "(větší plocha = více hlasů). Barvy odpovídají zvolené metrice. "
+            "Výchozí režim drží kruhy na geografické pozici; zapněte odsun při překryvu, "
+            "pokud je čitelnost důležitější než přesnost polohy."
         )
 
         # Add base size control
         col_a, col_b, col_c = st.columns([2, 1, 1])
         with col_a:
-            st.write("**Adjust Circle Size:**")
+            st.write("**Velikost kruhů:**")
         with col_b:
             default_base_size = float(
                 get_param_value(url_params, "base_size", "0.0015")
             )
             base_size = st.slider(
-                "Base size",
+                "Základní velikost",
                 min_value=0.001,
                 max_value=0.005,
                 value=default_base_size,
                 step=0.0001,
                 format="%.10f",
-                help="Controls the overall size of circles. Larger values = bigger circles.",
+                help="Určuje celkovou velikost kruhů. Vyšší hodnota = větší kruhy.",
                 key="base_size_slider",
             )
         with col_c:
@@ -2178,9 +2303,10 @@ def display_geographic_analysis(
                 == "true"
             )
             collision_avoidance = st.checkbox(
-                "Collision Avoidance",
+                "Odsun při překryvu",
                 value=default_collision,
-                help="When enabled, circles are moved to avoid overlaps but may drift from geographic accuracy. When disabled, circles stay at true geographic positions (recommended).",
+                help="Zapnuto: kruhy se odsouvají, aby se nepřekrývaly. "
+                "Vypnuto: kruhy zůstávají na přesné poloze (doporučeno).",
                 key="collision_avoidance_checkbox",
             )
 
@@ -2212,55 +2338,54 @@ def display_geographic_analysis(
                     key=f"cartogram_{viz_type}_{selected_party}_{base_size}_{collision_avoidance}",  # Include collision_avoidance in key
                 )
             else:
-                st.error("Failed to create cartogram map")
+                st.error("Nepodařilo se vytvořit kartogram.")
         else:
-            st.error("Failed to create cartogram data")
+            st.error("Nepodařilo se vytvořit data pro kartogram.")
     elif map_type == "Dot Density":
-        st.subheader("🔵 Dot Density Map")
+        st.subheader("🔵 Bodová hustota")
         st.info(
-            "🔵 **Dot Density**: Each dot represents a fixed number of votes (e.g., 1 dot = 100 votes). "
-            "Dots are evenly distributed within each electoral district. "
-            "When color scaling is enabled, dot colors show vote share: 🔴 red (low) → 🟡 yellow (moderate) → 🟢 green (high). "
-            "Choose a muted base map style to make colored dots stand out better. "
-            "Count the dots to see vote distribution!"
+            "🔵 **Bodová hustota**: Každá tečka představuje pevný počet hlasů "
+            "(např. 1 tečka = 100 hlasů). Tečky jsou rozmístěny uvnitř okrsků. "
+            "Při zapnutém barevném škálování barva značí podíl hlasů "
+            "(🔴 nízký → 🟡 střední → 🟢 vysoký)."
         )
 
         # Dot density controls
         col_a, col_b, col_c, col_d = st.columns([1, 1, 1, 1])
         with col_a:
-            votes_per_dot_options = [50, 100, 150, 200, 250]
-            default_votes_per_dot = int(
-                get_param_value(url_params, "votes_per_dot", "100")
-            )
-            if default_votes_per_dot not in votes_per_dot_options:
+            default_votes_per_dot_raw = get_param_value(url_params, "votes_per_dot", "100")
+            try:
+                default_votes_per_dot = max(1, int(default_votes_per_dot_raw))
+            except (TypeError, ValueError):
                 default_votes_per_dot = 100
 
-            votes_per_dot = st.selectbox(
-                "Votes per dot:",
-                votes_per_dot_options,
-                index=votes_per_dot_options.index(default_votes_per_dot),
-                help="How many votes each dot represents. Smaller values = more dots = finer detail.",
+            votes_per_dot = st.number_input(
+                "Hlasů na tečku:",
+                min_value=1,
+                value=default_votes_per_dot,
+                step=1,
+                help="Kolik hlasů představuje jedna tečka. Menší hodnota = více teček.",
                 key="votes_per_dot_select",
             )
         with col_b:
             default_dot_spacing = int(get_param_value(url_params, "dot_spacing", "70"))
             dot_spacing = st.slider(
-                "Dot spacing (meters)",
+                "Rozestup teček (m)",
                 min_value=30,
                 max_value=120,
                 value=default_dot_spacing,
                 step=10,
-                help="Distance between dots in meters. Affects dot density within districts.",
+                help="Vzdálenost mezi tečkami v metrech.",
                 key="dot_spacing_slider",
             )
         with col_c:
             default_dot_size = int(get_param_value(url_params, "dot_size", "2"))
             dot_size = st.slider(
-                "Dot size",
+                "Velikost tečky",
                 min_value=1,
                 max_value=5,
                 value=default_dot_size,
-                help="Visual size of each dot on the map.",
+                help="Vizuální velikost teček na mapě.",
                 key="dot_size_slider",
             )
         with col_d:
@@ -2268,15 +2393,15 @@ def display_geographic_analysis(
                 get_param_value(url_params, "use_color_scale", "true").lower() == "true"
             )
             use_color_scale = st.checkbox(
-                "Color by vote share",
+                "Barvit podle podílu",
                 value=default_color_scale,
-                help="Color dots based on vote share: red (low) to green (high). When disabled, uses single color.",
+                help="Barví tečky podle podílu hlasů (červená → zelená).",
                 key="use_color_scale_checkbox",
             )
 
         # Update URL parameters for dot density controls
         update_url_params(
-            votes_per_dot=votes_per_dot,
+            votes_per_dot=int(votes_per_dot),
             dot_spacing=dot_spacing,
             dot_size=dot_size,
             use_color_scale=use_color_scale,
@@ -2295,7 +2420,7 @@ def display_geographic_analysis(
                 gdf["district_code"] = gdf["CISLO"].astype(str)
             else:
                 st.error(
-                    "Could not find district code field (CISLO or cislo) in GeoJSON"
+                    "V GeoJSON chybí pole s kódem okrsku (CISLO/cislo)."
                 )
                 return
 
@@ -2425,29 +2550,29 @@ def display_geographic_analysis(
                 # Add color scale legend when enabled
                 if use_color_scale:
                     if viz_type == "Party Results" and selected_party:
-                        legend_title = f"{selected_party} Vote Share"
-                        legend_type = "Party Performance"
+                        legend_title = f"{selected_party} – podíl hlasů"
+                        legend_type = "výkon strany"
                     else:
-                        legend_title = "Turnout Percentage"
-                        legend_type = "District Turnout"
+                        legend_title = "Účast (%)"
+                        legend_type = "účast v okrscích"
 
                     color_legend_html = f"""
                     <div style="position: fixed; 
                                 bottom: 50px; right: 50px; width: 200px; height: auto;
                                 background-color: white; border:2px solid grey; z-index:9999; 
                                 font-size:11px; font-family: Arial; padding: 8px; box-sizing: border-box;">
-                        <h5 style="margin: 0 0 8px 0; font-size: 13px;">Dot Color Scale</h5>
+                        <h5 style="margin: 0 0 8px 0; font-size: 13px;">Barevná škála teček</h5>
                         <p style="margin: 3px 0; font-weight: bold;">{legend_title}</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#00FF00"></i> ≥25% (Excellent)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#32CD32"></i> 20-24% (Very Good)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 15-19% (Good)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 10-14% (Moderate)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF8C00"></i> 5-9% (Low)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF4500"></i> <5% (Very Low)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#00FF00"></i> ≥25% (velmi vysoké)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#32CD32"></i> 20–24% (vysoké)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 15–19% (dobré)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 10–14% (střední)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF8C00"></i> 5–9% (nízké)</p>
+                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF4500"></i> <5% (velmi nízké)</p>
                         <hr style="margin: 5px 0;">
                         <p style="font-size: 10px; color: #666;">
-                            🔵 Dot count = vote quantity<br>
-                            🎨 Dot color = {legend_type.lower()}
+                            🔵 Počet teček = počet hlasů<br>
+                            🎨 Barva teček = {legend_type}
                         </p>
                     </div>
                     """
@@ -2466,8 +2591,8 @@ def display_geographic_analysis(
                 )
 
             except Exception as e:
-                st.error(f"Error creating dot density map: {e}")
-                st.info("Falling back to regular geographic map...")
+                st.error(f"Chyba při vytváření bodové mapy: {e}")
+                st.info("Používám standardní mapu...")
                 map_obj = create_folium_map(
                     filtered_geojson,
                     electoral_data,
@@ -2483,10 +2608,10 @@ def display_geographic_analysis(
                     key=f"fallback_map_{viz_type}_{selected_party}_{base_map_style_main}",
                 )
         else:
-            st.warning("No district data available for dot density visualization.")
+            st.warning("Pro bodovou mapu nejsou dostupná okrsková data.")
             map_data = None
     else:
-        st.subheader("🗺️ Geographic Map View")
+        st.subheader("🗺️ Geografická mapa")
         # Create and display the regular map
         map_obj = create_folium_map(
             filtered_geojson,
@@ -2507,43 +2632,44 @@ def display_geographic_analysis(
 
     # Display information about clicked features
     if map_data and map_data.get("last_object_clicked"):
-        st.subheader("Selected Okrsek Information")
+        st.subheader("Detail okrsku")
         clicked_data = map_data["last_object_clicked"]
 
         # Extract useful information
         properties = clicked_data.get("properties", {})
-        district_code = get_district_code_from_geojson(properties) or "Unknown"
+        district_code = get_district_code_from_geojson(properties) or "Neznámý"
 
         col1, col2 = st.columns(2)
         with col1:
             st.write(f"**Okrsek:** {district_code}")
-            st.write(f"**Municipality Code:** {properties.get('OBEC', 'Unknown')}")
-            st.write(f"**District ID:** {properties.get('KOD', 'Unknown')}")
+            st.write(f"**Kód obce:** {properties.get('OBEC', 'Neznámý')}")
+            st.write(f"**Kód okrsku:** {properties.get('KOD', 'Neznámý')}")
 
         with col2:
             # Try to find electoral data for this okrsek
             okrsek_data = district_data[district_data["district_code"] == district_code]
             if not okrsek_data.empty:
-                st.write("**Electoral Data:**")
+                st.write("**Volební data:**")
                 st.metric(
-                    "Turnout", f"{okrsek_data['turnout_percentage'].iloc[0]:.1f}%"
+                    "Účast", f"{okrsek_data['turnout_percentage'].iloc[0]:.1f}%"
                 )
                 st.metric(
-                    "Registered Voters", f"{okrsek_data['registered_voters'].iloc[0]:,}"
+                    "Registrovaní voliči",
+                    f"{okrsek_data['registered_voters'].iloc[0]:,}",
                 )
-                st.metric("Valid Votes", f"{okrsek_data['valid_votes'].iloc[0]:,}")
+                st.metric("Platné hlasy", f"{okrsek_data['valid_votes'].iloc[0]:,}")
             else:
-                st.write("*No electoral data available for this okrsek*")
+                st.write("*Pro tento okrsek nejsou dostupná data*")
 
         # Show raw data in expander
-        with st.expander("Raw GeoJSON Properties"):
+        with st.expander("Raw GeoJSON vlastnosti"):
             st.json(properties)
 
     # Summary statistics
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Electoral Districts on Map", len(municipality_features))
+        st.metric("Okrsky na mapě", len(municipality_features))
 
     with col2:
         if district_data is not None and isinstance(district_data, pd.DataFrame):
@@ -2552,9 +2678,9 @@ def display_geographic_analysis(
                 if "district_code" in district_data.columns
                 else 0
             )
-            st.metric("Districts with Data", unique_districts)
+            st.metric("Okrsky s daty", unique_districts)
         else:
-            st.metric("Electoral Data", "Not Available")
+            st.metric("Volební data", "Nedostupné")
 
     with col3:
         # Calculate how many GeoJSON features have matching electoral data
@@ -2569,65 +2695,66 @@ def display_geographic_analysis(
                 for f in municipality_features
             )
             matches = len(available_codes.intersection(geojson_codes))
-            st.metric("Map-Data Matches", matches)
+            st.metric("Shody mapy a dat", matches)
         else:
-            st.metric("Map-Data Matches", "N/A")
+            st.metric("Shody mapy a dat", "N/A")
 
     # Instructions
-    current_viz = viz_type.lower()
+    current_viz = viz_label(viz_type)
     if viz_type == "Party Results" and selected_party:
-        current_viz = f"{selected_party} results"
+        current_viz = f"{selected_party}"
 
     st.info(
-        f"💡 Click on any electoral district on the map to see its electoral data. Currently showing: **{current_viz}**"
+        "💡 Klikněte na okrsek v mapě pro detail. "
+        f"Aktuálně zobrazuji: **{current_viz}**"
     )
 
 
 def display_data_explorer(data):
     """Allow users to explore the raw data"""
-    st.subheader("🔍 Data Explorer")
+    st.subheader("🔍 Datový průzkumník")
 
     if not data:
-        st.warning("No data available. Please run the analysis pipeline first.")
+        st.warning("Žádná data nejsou dostupná. Nejprve spusťte analýzu.")
         return
 
     # Data source selector
     selected_source = st.selectbox(
-        "Select data source to explore:",
+        "Vyberte zdroj dat:",
         options=list(data.keys()),
-        help="Choose a dataset to explore its contents",
+        help="Zvolte datovou sadu pro prohlížení.",
     )
 
     if selected_source:
         dataset = data[selected_source]
 
-        st.write(f"**Data Type:** {type(dataset).__name__}")
+        st.write(f"**Typ dat:** {type(dataset).__name__}")
 
         if isinstance(dataset, pd.DataFrame):
-            st.write(f"**Shape:** {dataset.shape}")
+            st.write(f"**Rozměr:** {dataset.shape}")
             st.dataframe(dataset.head(100))
 
             # Basic statistics for numeric columns
             numeric_cols = dataset.select_dtypes(include=["number"]).columns
             if len(numeric_cols) > 0:
-                st.subheader("Numeric Column Statistics")
+                st.subheader("Statistiky číselných sloupců")
                 st.dataframe(dataset[numeric_cols].describe())
 
         elif isinstance(dataset, dict):
-            st.write(f"**Keys:** {list(dataset.keys())}")
+            st.write(f"**Klíče:** {list(dataset.keys())}")
 
             # Show a preview of the JSON structure
-            with st.expander("View Raw Data (First 1000 characters)"):
+            with st.expander("Raw data (prvních 1000 znaků)"):
                 preview = str(dataset)[:1000]
                 if len(str(dataset)) > 1000:
                     preview += "..."
                 st.text(preview)
 
         elif isinstance(dataset, list):
-            st.write(f"**Length:** {len(dataset)}")
+            st.write(f"**Délka:** {len(dataset)}")
             if len(dataset) > 0:
-                st.write(f"**First item type:** {type(dataset[0]).__name__}")
-                with st.expander("View First Item"):
+                st.write(f"**Typ prvního prvku:** {type(dataset[0]).__name__}")
+                with st.expander("Zobrazit první prvek"):
                     st.json(dataset[0] if len(dataset) > 0 else {})
 
 
@@ -2638,34 +2765,34 @@ def display_district_analysis(data):
     has_district_data = "district_data" in data and "district_party_results" in data
 
     if has_candidates:
-        st.subheader("👥 Candidate Analysis")
+        st.subheader("👥 Kandidáti")
         if not has_district_data:
             st.info(
-                "📊 **Parliamentary Election View**\n\n"
-                "This electoral district has candidate data but no polling station breakdowns available."
+                "📊 **Parlamentní volby**\n\n"
+                "Tento obvod má data o kandidátech, ale nemá okrskové členění."
             )
 
         # Show candidate statistics if available
         if "candidates" in data and data["candidates"]:
             candidates = data["candidates"]
-            st.subheader(f"📋 Candidate Statistics")
+            st.subheader("📋 Statistiky kandidátů")
 
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total Candidates", len(candidates))
+                st.metric("Počet kandidátů", len(candidates))
             with col2:
                 candidates_with_mandate = len(
                     [c for c in candidates if c.get("mandate_won", False)]
                 )
-                st.metric("Candidates Elected", candidates_with_mandate)
+                st.metric("Zvolených kandidátů", candidates_with_mandate)
             with col3:
                 total_pref_votes = sum(
                     c.get("preferential_votes", 0) for c in candidates
                 )
-                st.metric("Total Preferential Votes", f"{total_pref_votes:,}")
+                st.metric("Preferenční hlasy", f"{total_pref_votes:,}")
 
             # Show top candidates by preferential votes
-            st.subheader("🏆 Top Candidates by Preferential Votes")
+            st.subheader("🏆 Top kandidáti podle preferenčních hlasů")
             candidates_sorted = sorted(
                 candidates, key=lambda x: x.get("preferential_votes", 0), reverse=True
             )[:20]
@@ -2675,12 +2802,12 @@ def display_district_analysis(data):
             candidates_df = pd.DataFrame(
                 [
                     {
-                        "Rank": i + 1,
-                        "Name": f"{c.get('first_name', '')} {c.get('surname', '')}",
-                        "Party": c.get("party_name", "Unknown"),
-                        "Preferential Votes": c.get("preferential_votes", 0),
-                        "Percentage": f"{c.get('preferential_percentage', 0):.2f}%",
-                        "Elected": "✅" if c.get("mandate_won", False) else "❌",
+                        "Pořadí": i + 1,
+                        "Jméno": f"{c.get('first_name', '')} {c.get('surname', '')}",
+                        "Strana": c.get("party_name", "Neznámá"),
+                        "Preferenční hlasy": c.get("preferential_votes", 0),
+                        "Podíl": f"{c.get('preferential_percentage', 0):.2f}%",
+                        "Zvolen": "✅" if c.get("mandate_won", False) else "❌",
                     }
                     for i, c in enumerate(candidates_sorted)
                 ]
@@ -2695,12 +2822,10 @@ def display_district_analysis(data):
             return
 
     if not has_district_data:
-        st.warning(
-            "District data not available. Please ensure the analysis has been run."
-        )
+        st.warning("Okrsková data nejsou dostupná. Ověřte, že proběhla analýza.")
         return
 
-    st.subheader("🏘️ Okrsek (Polling District) Analysis")
+    st.subheader("🏘️ Okrsky")
 
     district_df = data["district_data"]
     district_party_df = data["district_party_results"]
@@ -2709,7 +2834,7 @@ def display_district_analysis(data):
     district_df_filtered = district_df[district_df["district_code"] != "TOTAL"]
 
     if district_df_filtered.empty or district_party_df.empty:
-        st.warning("No district-level data available for analysis.")
+        st.warning("Okrsková data nejsou k dispozici.")
         return
 
     # The district_code is already available directly in our data structure
@@ -2737,7 +2862,7 @@ def display_district_analysis(data):
     )
 
     # Okrsek detail view
-    st.subheader("🔎 Okrsek Detail")
+    st.subheader("🔎 Detail okrsku")
 
     polling_stations = data.get("polling_stations", [])
     station_lookup = {}
@@ -2766,7 +2891,7 @@ def display_district_analysis(data):
         return f"Okrsek {code}"
 
     selected_okrsek = st.selectbox(
-        "Vyber okrsek:",
+        "Vyberte okrsek:",
         okrsek_codes,
         format_func=_format_okrsek,
         key="okrsek_detail_select",
@@ -2796,23 +2921,23 @@ def display_district_analysis(data):
 
     if not okrsek_row.empty:
         row = okrsek_row.iloc[0]
-        col1.metric("Registered Voters", f"{row.get('registered_voters', 0):,}")
-        col2.metric("Returned Ballots", f"{row.get('returned_ballots', 0):,}")
-        col3.metric("Valid Votes", f"{row.get('valid_votes', 0):,}")
-        col4.metric("Turnout", f"{row.get('turnout_percentage', 0):.1f}%")
+        col1.metric("Registrovaní voliči", f"{row.get('registered_voters', 0):,}")
+        col2.metric("Odevzdané obálky", f"{row.get('returned_ballots', 0):,}")
+        col3.metric("Platné hlasy", f"{row.get('valid_votes', 0):,}")
+        col4.metric("Účast", f"{row.get('turnout_percentage', 0):.1f}%")
     else:
-        col1.metric("Registered Voters", "N/A")
-        col2.metric("Returned Ballots", "N/A")
-        col3.metric("Valid Votes", "N/A")
-        col4.metric("Turnout", "N/A")
+        col1.metric("Registrovaní voliči", "N/A")
+        col2.metric("Odevzdané obálky", "N/A")
+        col3.metric("Platné hlasy", "N/A")
+        col4.metric("Účast", "N/A")
 
     if station_lookup.get(selected_okrsek):
         station = station_lookup[selected_okrsek]
         st.write(
-            f"**Obec:** {station.get('municipality_name', 'Unknown')} "
-            f"({station.get('municipality_code', 'Unknown')})"
+            f"**Obec:** {station.get('municipality_name', 'Neznámá')} "
+            f"({station.get('municipality_code', 'Neznámý')})"
         )
-        st.write(f"**Okres:** {station.get('district_code', 'Unknown')}")
+        st.write(f"**Okres:** {station.get('district_code', 'Neznámý')}")
 
     if not okrsek_party_rows.empty:
         top_parties = okrsek_party_rows.head(15)
@@ -2820,15 +2945,15 @@ def display_district_analysis(data):
             top_parties,
             x="party_name",
             y="votes",
-            title=f"Okrsek {selected_okrsek} - Party Results",
-            labels={"party_name": "Party", "votes": "Votes"},
+            title=f"Okrsek {selected_okrsek} – výsledky stran",
+            labels={"party_name": "Strana", "votes": "Hlasy"},
             color="votes",
             color_continuous_scale="blues",
         )
         fig_okrsek.update_xaxes(tickangle=45)
         st.plotly_chart(fig_okrsek, use_container_width=True)
 
-        with st.expander("📋 Okrsek Party Results"):
+        with st.expander("📋 Výsledky stran v okrsku"):
             display_rows = okrsek_party_rows[
                 ["party_name", "votes", "percentage"]
             ].copy()
@@ -2836,13 +2961,13 @@ def display_district_analysis(data):
             display_rows["percentage"] = display_rows["percentage"].apply(
                 lambda x: f"{x:.2f}%"
             )
-            display_rows.columns = ["Party", "Votes", "Percentage"]
+            display_rows.columns = ["Strana", "Hlasy", "Podíl"]
             st.dataframe(display_rows, use_container_width=True)
     else:
-        st.info("No party results available for this okrsek.")
+        st.info("Pro tento okrsek nejsou výsledky stran dostupné.")
 
     # District turnout comparison
-    st.subheader("📊 Turnout by Okrsek (Polling District)")
+    st.subheader("📊 Účast podle okrsku")
 
     if "turnout_percentage" in unique_okrseks.columns:
         # Sort by turnout
@@ -2854,13 +2979,13 @@ def display_district_analysis(data):
 
         with col1:
             st.metric(
-                "Highest Turnout Okrsek",
+                "Nejvyšší účast",
                 f"Okrsek {unique_okrseks.iloc[0]['district_code']}: {unique_okrseks.iloc[0]['turnout_percentage']:.1f}%",
             )
 
         with col2:
             st.metric(
-                "Lowest Turnout Okrsek",
+                "Nejnižší účast",
                 f"Okrsek {unique_okrseks.iloc[-1]['district_code']}: {unique_okrseks.iloc[-1]['turnout_percentage']:.1f}%",
             )
 
@@ -2870,8 +2995,8 @@ def display_district_analysis(data):
             top_20_okrseks,
             x="okrsek_name",
             y="turnout_percentage",
-            title="Top 20 Okrseks by Turnout (%)",
-            labels={"turnout_percentage": "Turnout (%)", "okrsek_name": "Okrsek"},
+            title="Top 20 okrsků podle účasti (%)",
+            labels={"turnout_percentage": "Účast (%)", "okrsek_name": "Okrsek"},
             color="turnout_percentage",
             color_continuous_scale="viridis",
         )
@@ -2879,7 +3004,7 @@ def display_district_analysis(data):
         st.plotly_chart(fig_turnout, use_container_width=True)
 
     # Party performance by okrsek
-    st.subheader("🎯 Party Performance by Okrsek")
+    st.subheader("🎯 Výkon strany podle okrsku")
 
     # Get available parties
     available_parties = district_party_df["party_name"].unique()
@@ -2888,7 +3013,9 @@ def display_district_analysis(data):
     if len(available_parties) > 0:
         # Party selector
         selected_party = st.selectbox(
-            "Select a party to analyze by okrsek:", available_parties, index=0
+            "Vyberte stranu pro analýzu okrsků:",
+            available_parties,
+            index=0,
         )
 
         if selected_party:
@@ -2925,13 +3052,13 @@ def display_district_analysis(data):
 
                 with col1:
                     st.metric(
-                        f"Best Okrsek for {selected_party}",
+                        f"Nejlepší okrsek pro {selected_party}",
                         f"Okrsek {okrsek_party_data.iloc[0]['district_code']}: {okrsek_party_data.iloc[0]['percentage']:.1f}%",
                     )
 
                 with col2:
                     st.metric(
-                        f"Worst Okrsek for {selected_party}",
+                        f"Nejslabší okrsek pro {selected_party}",
                         f"Okrsek {okrsek_party_data.iloc[-1]['district_code']}: {okrsek_party_data.iloc[-1]['percentage']:.1f}%",
                     )
 
@@ -2941,8 +3068,8 @@ def display_district_analysis(data):
                     top_15_party,
                     x="okrsek_name",
                     y="percentage",
-                    title=f"{selected_party} - Performance by Okrsek (%)",
-                    labels={"percentage": "Vote Share (%)", "okrsek_name": "Okrsek"},
+                    title=f"{selected_party} – výkon podle okrsku (%)",
+                    labels={"percentage": "Podíl hlasů (%)", "okrsek_name": "Okrsek"},
                     color="percentage",
                     color_continuous_scale="blues",
                 )
@@ -2950,7 +3077,7 @@ def display_district_analysis(data):
                 st.plotly_chart(fig_party, use_container_width=True)
 
                 # Show detailed table
-                with st.expander("📋 Detailed Results Table"):
+                with st.expander("📋 Podrobná tabulka"):
                     display_party_data = okrsek_party_data[
                         ["okrsek_name", "votes", "percentage", "total_district_votes"]
                     ].copy()
@@ -2965,19 +3092,19 @@ def display_district_analysis(data):
                     ].apply(lambda x: f"{x:,}")
                     display_party_data.columns = [
                         "Okrsek",
-                        "Votes",
-                        "Percentage",
-                        "Total Okrsek Votes",
+                        "Hlasy",
+                        "Podíl",
+                        "Hlasy celkem",
                     ]
                     st.dataframe(display_party_data, use_container_width=True)
 
     # Okrsek comparison
-    st.subheader("🔍 Okrsek Comparison")
+    st.subheader("🔍 Porovnání okrsků")
 
     if len(available_parties) >= 2:
         # Multi-party comparison
         selected_parties = st.multiselect(
-            "Select parties to compare across okrseks:",
+            "Vyberte strany k porovnání okrsků:",
             available_parties,
             default=available_parties[:3]
             if len(available_parties) >= 3
@@ -3028,11 +3155,11 @@ def display_district_analysis(data):
                     x="okrsek_name",
                     y="percentage",
                     color="party_name",
-                    title="Party Performance Comparison Across Top Okrseks",
+                    title="Porovnání výkonu stran v top okrscích",
                     labels={
-                        "percentage": "Vote Share (%)",
+                        "percentage": "Podíl hlasů (%)",
                         "okrsek_name": "Okrsek",
-                        "party_name": "Party",
+                        "party_name": "Strana",
                     },
                     barmode="group",
                 )
@@ -3041,28 +3168,29 @@ def display_district_analysis(data):
 
     # Summary statistics
     if not unique_okrseks.empty:
-        st.subheader("📈 Okrsek Summary Statistics")
+        st.subheader("📈 Souhrn okrsků")
 
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            st.metric("Total Okrseks", len(unique_okrseks))
+            st.metric("Počet okrsků", len(unique_okrseks))
 
         with col2:
             avg_turnout = unique_okrseks["turnout_percentage"].mean()
-            st.metric("Average Turnout", f"{avg_turnout:.1f}%")
+            st.metric("Průměrná účast", f"{avg_turnout:.1f}%")
 
         with col3:
             total_voters = unique_okrseks["registered_voters"].sum()
-            st.metric("Total Registered Voters", f"{total_voters:,}")
+            st.metric("Registrovaní voliči", f"{total_voters:,}")
 
         with col4:
             total_valid_votes = unique_okrseks["valid_votes"].sum()
-            st.metric("Total Valid Votes", f"{total_valid_votes:,}")
+            st.metric("Platné hlasy", f"{total_valid_votes:,}")
 
         # Additional info about data structure
         st.info(
-            f"📍 This election has {len(unique_okrseks)} okrseks (polling districts). Each okrsek represents a physical voting location where residents cast their ballots."
+            f"📍 Tyto volby mají {len(unique_okrseks)} okrsků. "
+            "Každý okrsek představuje konkrétní volební místnost."
         )
 
 
@@ -3421,7 +3549,7 @@ def create_cartogram_map(
 
     # Add each district to the map
     for idx, row in cartogram_gdf.iterrows():
-        district_code = get_district_code_from_geojson(row) or "Unknown"
+        district_code = get_district_code_from_geojson(row) or "Neznámý"
         vote_count = row.get("vote_count", 0)
         display_value = row.get("display_value", 0)
         radius = row.get("radius", 0)
@@ -3435,20 +3563,20 @@ def create_cartogram_map(
         <div style="font-family: Arial; width: 270px;">
             <h4 style="color: #1f77b4;">Okrsek {district_code}</h4>
             <hr>
-            <p><strong>Vote Count:</strong> {vote_count:,} votes</p>
-            <p><strong>Circle Area:</strong> {area_km2:.2f} km² (proportional)</p>
-            <p><strong>Moved Distance:</strong> {moved_distance * 111:.0f}m from original</p>
+            <p><strong>Počet hlasů:</strong> {vote_count:,} hlasů</p>
+            <p><strong>Plocha kruhu:</strong> {area_km2:.2f} km² (proporčně)</p>
+            <p><strong>Posun:</strong> {moved_distance * 111:.0f} m od původní polohy</p>
             <hr>
         """
 
         if viz_type == "Turnout":
-            popup_html += f"<p><strong>Turnout:</strong> {display_value:.1f}%</p>"
+            popup_html += f"<p><strong>Účast:</strong> {display_value:.1f}%</p>"
         elif viz_type == "Estimated Voters":
             popup_html += (
-                f"<p><strong>Registered Voters:</strong> {display_value:,.0f}</p>"
+                f"<p><strong>Registrovaní voliči:</strong> {display_value:,.0f}</p>"
             )
         elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
-            popup_html += f"<p><strong>Valid Votes:</strong> {display_value:,.0f}</p>"
+            popup_html += f"<p><strong>Platné hlasy:</strong> {display_value:,.0f}</p>"
         elif viz_type == "Party Results" and selected_party:
             popup_html += (
                 f"<p><strong>{selected_party}:</strong> {display_value:.1f}%</p>"
@@ -3457,9 +3585,9 @@ def create_cartogram_map(
         popup_html += """
             <hr>
             <p style="font-size: 10px; color: #666;">
-                ⭕ Circle size = vote count<br>
-                🎨 Circle color = data value<br>
-                📍 Position adjusted to avoid overlaps
+                ⭕ Velikost kruhu = počet hlasů<br>
+                🎨 Barva kruhu = hodnota metriky<br>
+                📍 Pozice posunuta kvůli překryvu
             </p>
         </div>
         """
@@ -3468,17 +3596,25 @@ def create_cartogram_map(
         color = get_color_for_value(display_value, viz_type)
 
         # Create circle marker with informative tooltip
-        tooltip_text = f"Okrsek {district_code}: {vote_count:,} votes"
+        tooltip_text = f"Okrsek {district_code}: {vote_count:,} hlasů"
 
         # Add display value to tooltip based on visualization type
         if viz_type == "Turnout":
-            tooltip_text = f"Okrsek {district_code}: {display_value:.1f}% turnout | {vote_count:,} votes"
+            tooltip_text = (
+                f"Okrsek {district_code}: {display_value:.1f}% účast | {vote_count:,} hlasů"
+            )
         elif viz_type == "Estimated Voters":
-            tooltip_text = f"Okrsek {district_code}: {int(display_value):,} voters | {vote_count:,} votes"
+            tooltip_text = (
+                f"Okrsek {district_code}: {int(display_value):,} voličů | {vote_count:,} hlasů"
+            )
         elif viz_type == "Valid Votes":
-            tooltip_text = f"Okrsek {district_code}: {int(display_value):,} valid votes"
+            tooltip_text = (
+                f"Okrsek {district_code}: {int(display_value):,} platných hlasů"
+            )
         elif viz_type == "Party Results" and selected_party:
-            tooltip_text = f"Okrsek {district_code}: {display_value:.1f}% {selected_party} | {vote_count:,} votes"
+            tooltip_text = (
+                f"Okrsek {district_code}: {display_value:.1f}% {selected_party} | {vote_count:,} hlasů"
+            )
 
         # Add voter estimate to tooltip if we have electoral data
         if electoral_data and vote_count > 0:
@@ -3489,11 +3625,11 @@ def create_cartogram_map(
                 voter_estimate = round(vote_count / num_seats)
                 # Add voter estimate to tooltip based on visualization type
                 if viz_type == "Party Results":
-                    tooltip_text += f" | ~{voter_estimate:,} voters"
+                    tooltip_text += f" | ~{voter_estimate:,} voličů"
                 elif viz_type not in [
                     "Estimated Voters"
                 ]:  # Don't duplicate for estimated voters viz
-                    tooltip_text += f" | ~{voter_estimate:,} voters"
+                    tooltip_text += f" | ~{voter_estimate:,} voličů"
 
         folium.Circle(
             location=[row.geometry.centroid.y, row.geometry.centroid.x],
@@ -3541,11 +3677,11 @@ def create_cartogram_map(
                 bottom: 50px; left: 50px; width: 220px; height: auto; min-height: 160px;
                 background-color: white; border:2px solid grey; z-index:9999; 
                 font-size:11px; font-family: Arial; padding: 8px; box-sizing: border-box;">
-        <h5 style="margin: 0 0 8px 0; font-size: 13px;">Force-Directed Cartogram</h5>
+        <h5 style="margin: 0 0 8px 0; font-size: 13px;">Kartogram</h5>
         <p style="margin: 3px 0; font-style: italic; font-weight: bold; font-size: 10px;">
-            ⭕ <strong>Circle Size</strong> = Vote Count (proportional)<br>
-            🎨 <strong>Circle Color</strong> = {viz_type}<br>
-            📍 <strong>Position</strong> = Collision-avoided
+            ⭕ <strong>Velikost kruhu</strong> = počet hlasů (proporcionálně)<br>
+            🎨 <strong>Barva kruhu</strong> = {viz_label(viz_type)}<br>
+            📍 <strong>Pozice</strong> = odsun kvůli překryvu
         </p>
         <hr style="margin: 5px 0;">
     """
@@ -3553,36 +3689,36 @@ def create_cartogram_map(
     # Add color legend
     if viz_type == "Turnout":
         legend_html += """
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥60% turnout</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 50-59%</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 40-49%</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 30-39%</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF6347"></i> <30% turnout</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥60% účast</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 50–59%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 40–49%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 30–39%</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF6347"></i> <30% účast</p>
         """
     elif viz_type == "Estimated Voters":
         legend_html += """
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥800 voters</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 600-799</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 400-599</p>
-        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 200-399 (Low-Med)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <200 (Low)</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#006400"></i> ≥800 voličů</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 600–799</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 400–599</p>
+        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFA500"></i> 200–399 (nižší)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <200 (nízké)</p>
         """
     elif viz_type == "Valid Votes":
         legend_html += """
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#2E8B57"></i> ≥1000 (High)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#90EE90"></i> 800-999 (Med-High)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 600-799 (Medium)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFA500"></i> 400-599 (Low-Med)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <400 (Low)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#2E8B57"></i> ≥1000 (vysoké)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#90EE90"></i> 800–999 (středně vysoké)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 600–799 (střední)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFA500"></i> 400–599 (nižší)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <400 (nízké)</p>
         """
     elif viz_type == "Party Results":
         legend_html += f"""
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#006400"></i> ≥25% (Very Strong)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#228B22"></i> 20-24% (Strong)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#32CD32"></i> 15-19% (Good)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 10-14% (Moderate)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#87CEEB"></i> 5-9% (Weak)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#4169E1"></i> <5% (Very Weak)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#006400"></i> ≥25% (velmi silné)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#228B22"></i> 20–24% (silné)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#32CD32"></i> 15–19% (dobré)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 10–14% (střední)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#87CEEB"></i> 5–9% (slabé)</p>
+        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#4169E1"></i> <5% (velmi slabé)</p>
         """
 
     legend_html += "</div>"
@@ -3682,7 +3818,7 @@ def icon_fill_layer(
         if use_color_scale and color_scale_data is not None:
             percentage = color_scale_data.get(code, 0)
             dot_color_final = get_color_from_percentage(percentage)
-            tooltip_suffix = f" | {percentage:.1f}% vote share"
+            tooltip_suffix = f" | {percentage:.1f}% podíl hlasů"
         else:
             dot_color_final = dot_color
             tooltip_suffix = ""
@@ -3695,12 +3831,17 @@ def icon_fill_layer(
                 fill=True,
                 fill_opacity=0.9,
                 stroke=False,
-                tooltip=f"Okrsek {code}: {votes:,} votes (1 dot = {k_votes_per_dot} votes){tooltip_suffix}",
+                tooltip=(
+                    f"Okrsek {code}: {votes:,} hlasů "
+                    f"(1 tečka = {k_votes_per_dot} hlasů){tooltip_suffix}"
+                ),
             )
             features.append(marker)
 
     # wrap in a feature-group so the layer can be toggled
-    fg = folium.FeatureGroup(name=f"Icon fill (1 dot = {k_votes_per_dot} votes)")
+    fg = folium.FeatureGroup(
+        name=f"Bodová vrstva (1 tečka = {k_votes_per_dot} hlasů)"
+    )
     for m in features:
         m.add_to(fg)
 
@@ -3715,15 +3856,15 @@ def main():
 
     # Header
     st.markdown(
-        '<h1 class="main-header">🏛️ Czech Municipalities Electoral Analysis</h1>',
+        '<h1 class="main-header">🏛️ Volební analýza obcí</h1>',
         unsafe_allow_html=True,
     )
 
     # Sidebar - Election Selection
-    st.sidebar.title("⚙️ Settings")
+    st.sidebar.title("⚙️ Nastavení")
 
     # Election selector
-    st.sidebar.subheader("🗳️ Select Election")
+    st.sidebar.subheader("🗳️ Volby")
 
     # Get available elections
     available_elections = get_election_info()
@@ -3732,24 +3873,29 @@ def main():
         for election_id, info in available_elections.items()
     }
 
-    # Create selectbox for elections
+    # Create selectbox for elections (URL-aware)
+    election_ids = list(election_labels.keys())
+    default_election = get_param_value(url_params, "election", election_ids[0])
+    if default_election not in election_ids:
+        default_election = election_ids[0]
+
     selected_election_id = st.sidebar.selectbox(
-        "Election:",
-        options=list(election_labels.keys()),
+        "Volby:",
+        options=election_ids,
         format_func=lambda x: election_labels[x],
-        index=0,  # Default to first election (kv2022)
+        index=election_ids.index(default_election),
         key="election_selector",
     )
+
+    if get_param_value(url_params, "election") != selected_election_id:
+        update_url_params(election=selected_election_id)
 
     # Show election info
     election_info = available_elections[selected_election_id]
     st.sidebar.caption(f"📅 {election_info['name']}")
-    st.sidebar.caption(f"📆 Date: {election_info['date']}")
+    st.sidebar.caption(f"📆 Datum: {election_info['date']}")
 
     st.sidebar.markdown("---")
-
-    # Municipality Selection
-    st.sidebar.subheader("🏛️ Municipality Selection")
 
     # Load municipality data and create selector
     municipality_index, comprehensive_data = ensure_data_exists(selected_election_id)
@@ -3760,43 +3906,41 @@ def main():
     # Get default municipality from URL params (we'll handle this via session state if needed)
     default_municipality = get_param_value(url_params, "municipality")
     selected_zastupitelstvo_code = create_municipality_selector(
-        municipality_index, comprehensive_data
+        municipality_index, comprehensive_data, default_municipality
     )
 
     # Update URL parameter for municipality selection
     update_url_params(municipality=selected_zastupitelstvo_code)
 
     if not selected_zastupitelstvo_code:
-        st.info(
-            "👈 Please select a council election from the sidebar to begin analysis."
-        )
+        st.info("👈 Vyberte obec nebo obvod v postranním panelu.")
         st.markdown("---")
 
         # Show overall municipalities overview
-        st.subheader("📊 Available Analysis Features")
-        st.markdown("""
-        **Once you select a council election, you'll have access to:**
+        st.subheader("📊 Co tady najdete")
+        st.markdown(
+            """
+        **Po výběru obce získáte:**
         
-        • **Overview** - Key statistics and party results
-        • **Turnout Analysis** - Detailed voter participation analysis  
-        • **Geographic Analysis** - Interactive maps and visualizations
-        • **Data Explorer** - Detailed data tables and filtering
-        • **District Analysis** - Electoral district breakdown
+        • **Souhrn** – klíčové statistiky a výsledky stran  
+        • **Účast** – účast voličů v okrscích  
+        • **Mapa** – interaktivní mapy a vrstvy  
+        • **Okrsky** – detailní rozpad podle okrsků  
+        • **Data (pokročilé)** – surová data a tabulky  
         
-        **Select from 6,000+ Czech council elections from the sidebar!**
-        
-        **Note**: Some areas (like Prague) have multiple elections:
-        - **Municipal Council** (OBEC) - Main city/town council
-        - **City District Council** (MCMO) - Local district council
-        """)
+        **Poznámka:** některé obce (např. Praha) mají více voleb:
+        - **Zastupitelstvo obce (OBEC)** – hlavní volby
+        - **Zastupitelstvo městské části (MCMO)** – lokální volby
+        """
+        )
         return
 
     # Get municipality/district info for title
     municipality_data = get_municipality_data(
         selected_zastupitelstvo_code, comprehensive_data
     )
-    municipality_name = "Unknown"
-    election_type = "Election"
+    municipality_name = "Neznámé"
+    election_type = "Volby"
 
     # Get election config to determine type
     election_config = get_election_config(selected_election_id)
@@ -3807,12 +3951,12 @@ def main():
         # Check if parliamentary or municipal
         if election_config.election_type == "parliamentary":
             municipality_name = metadata.get(
-                "district_name", f"District {selected_zastupitelstvo_code}"
+                "district_name", f"Obvod {selected_zastupitelstvo_code}"
             )
-            election_type = "Parliamentary Election"
+            election_type = "Parlamentní volby"
         else:
             municipality_name = metadata.get(
-                "municipality_name", "Unknown Municipality"
+                "municipality_name", "Neznámá obec"
             )
 
             # Determine specific election type for municipal
@@ -3822,16 +3966,16 @@ def main():
                 oznac_typu = first_district.get("type", "")
 
                 if oznac_typu == "OBEC":
-                    election_type = "Municipal Council Election"
+                    election_type = "Volby do zastupitelstva obce"
                 elif oznac_typu == "MCMO":
-                    election_type = "City District Council Election"
+                    election_type = "Volby do zastupitelstva městské části"
             else:
-                election_type = "Council Election"
+                election_type = "Volby do zastupitelstva"
 
-    st.subheader(f"📍 Analysis for: **{municipality_name}** - {election_type}")
+    st.subheader(f"📍 Analýza: **{municipality_name}** – {election_type}")
 
     # Load data for selected municipality/zastupitelstvo
-    with st.spinner(f"Loading data for {municipality_name} {election_type}..."):
+    with st.spinner(f"Načítám data pro {municipality_name} ({election_type})..."):
         geojson_data = None
         geojson_kod_mco_set = set()
         obec_mapping = {}
@@ -3841,27 +3985,30 @@ def main():
         )
 
     # Analysis Views as prominent tabs with URL parameter support
-    tab_options = [
-        "Overview",
-        "Turnout Analysis",
-        "Geographic Analysis",
-        "Data Explorer",
-        "District Analysis",
-    ]
+    tab_options = ["Souhrn", "Účast", "Mapa", "Okrsky", "Data (pokročilé)"]
 
     # Get default tab from URL params
     default_tab = get_param_value(url_params, "tab", tab_options[0])
+    legacy_tab_map = {
+        "Overview": "Souhrn",
+        "Turnout Analysis": "Účast",
+        "Geographic Analysis": "Mapa",
+        "Data Explorer": "Data (pokročilé)",
+        "District Analysis": "Okrsky",
+    }
+    if default_tab in legacy_tab_map:
+        default_tab = legacy_tab_map[default_tab]
     if default_tab not in tab_options:
         default_tab = tab_options[0]
 
     # Create a selectbox for tab selection that updates URL immediately
-    st.subheader("📊 Select Analysis View")
+    st.subheader("📊 Výběr pohledu")
     selected_tab = st.selectbox(
-        "Choose analysis view:",
+        "Zvolte pohled:",
         tab_options,
         index=tab_options.index(default_tab),
         key="main_tab_selector",
-        help="Select which analysis view to display. URL will update automatically for sharing.",
+        help="URL se aktualizuje pro sdílení nastavení.",
     )
 
     # Update URL parameter for tab selection immediately when selection changes
@@ -3875,24 +4022,25 @@ def main():
 
     # Quick stats in sidebar
     if electoral_data:
-        st.sidebar.subheader("📈 Quick Stats")
+        st.sidebar.subheader("📈 Rychlé statistiky")
         if "summary_statistics" in electoral_data:
             stats = electoral_data["summary_statistics"]
             st.sidebar.metric(
-                "Electoral Districts", stats.get("electoral_districts", "N/A")
+                "Okrsky", stats.get("electoral_districts", "N/A")
             )
             st.sidebar.metric(
-                "Registered Voters", f"{stats.get('registered_voters', 0):,}"
+                "Registrovaní voliči", f"{stats.get('registered_voters', 0):,}"
             )
-            st.sidebar.metric("Turnout %", f"{stats.get('turnout_percentage', 0):.1f}%")
+            st.sidebar.metric("Účast", f"{stats.get('turnout_percentage', 0):.1f}%")
 
-        st.sidebar.metric("Data Sources Loaded", len(electoral_data))
+        with st.sidebar.expander("Pokročilé", expanded=False):
+            st.sidebar.metric("Zdroje dat", len(electoral_data))
 
     # Add URL sharing info in sidebar
     st.sidebar.markdown("---")
-    st.sidebar.subheader("🔗 Share This Analysis")
+    st.sidebar.subheader("🔗 Sdílení")
     st.sidebar.info(
-        "💡 The URL automatically updates with your filter settings. Copy and share the link to let others see the same view!"
+        "💡 URL se automaticky aktualizuje podle filtrů. Sdílejte odkaz pro stejný pohled."
     )
 
     # For geographic analysis, we need to map zastupitelstvo_code to geographic municipality code
@@ -3928,7 +4076,7 @@ def main():
                 municipality_districts.append(feature)
 
         if municipality_districts:
-            st.sidebar.metric("Geographic Districts Found", len(municipality_districts))
+            st.sidebar.metric("Okrsky v mapě", len(municipality_districts))
         else:
             # Try a different approach - look for matching district codes in the electoral data
             if electoral_data and "district_data" in electoral_data:
@@ -3948,21 +4096,21 @@ def main():
 
                 if municipality_districts:
                     st.sidebar.metric(
-                        "Geographic Districts Found (by district match)",
+                        "Okrsky v mapě (párování podle kódu)",
                         len(municipality_districts),
                     )
 
     # Display content based on selected tab
-    if selected_tab == "Overview":
-        st.header("📊 Electoral Overview")
+    if selected_tab == "Souhrn":
+        st.header("📊 Souhrn")
         display_electoral_overview(electoral_data)
 
-    elif selected_tab == "Turnout Analysis":
-        st.header("📈 Turnout Analysis")
+    elif selected_tab == "Účast":
+        st.header("📈 Účast")
         display_turnout_analysis(electoral_data)
 
-    elif selected_tab == "Geographic Analysis":
-        st.header("🗺️ Geographic Analysis")
+    elif selected_tab == "Mapa":
+        st.header("🗺️ Mapa")
         geojson_data = None
         geojson_kod_mco_set = load_geojson_kod_mco_set(selected_election_id)
         obec_mapping = load_obec_mapping(selected_election_id)
@@ -3983,11 +4131,11 @@ def main():
             and electoral_data["polling_stations"]
         ):
             use_simplified_geo = st.checkbox(
-                "Use simplified boundaries (faster)",
+                "Zjednodušené hranice (rychlejší)",
                 value=True,
             )
             use_ram_cache = st.checkbox(
-                "Cache GeoJSON in RAM (fast, high memory)",
+                "Uložit GeoJSON do RAM (rychlé, vyšší paměť)",
                 value=False,
             )
             polling_stations = electoral_data["polling_stations"]
@@ -4018,12 +4166,12 @@ def main():
                 )
 
             selected_geo_obec = st.selectbox(
-                "Filter municipality (optional):",
+                "Filtrovat obec (volitelné):",
                 ["ALL"] + municipality_codes,
                 index=(["ALL"] + municipality_codes).index(selected_geo_obec),
-                format_func=lambda code: "All municipalities in district"
+                format_func=lambda code: "Všechny obce v obvodu"
                 if code == "ALL"
-                else f"{municipality_map.get(code) or 'Unknown'} ({code})",
+                else f"{municipality_map.get(code) or 'Neznámá'} ({code})",
                 key="geo_obec_select",
             )
 
@@ -4036,17 +4184,17 @@ def main():
                     if station.get("municipality_code") == selected_geo_obec
                 ]
                 st.caption(
-                    f"Filter applied: {municipality_map.get(selected_geo_obec) or 'Unknown'} "
-                    f"({selected_geo_obec}) - {len(selected_polling_stations)} polling stations"
+                    f"Filtr: {municipality_map.get(selected_geo_obec) or 'Neznámá'} "
+                    f"({selected_geo_obec}) – {len(selected_polling_stations)} volebních místností"
                 )
             else:
                 render_all = st.checkbox(
-                    "Render all municipalities in district (slow)",
+                    "Vykreslit všechny obce v obvodu (pomalé)",
                     value=False,
                 )
                 if not render_all:
                     st.info(
-                        "Select a municipality to render the map faster, or enable rendering for all."
+                        "Vyberte obec pro rychlejší vykreslení, nebo povolte vykreslení všech."
                     )
                     return
                 selected_polling_stations = polling_stations
@@ -4141,13 +4289,12 @@ def main():
                     }
 
                 st.info(
-                    f"📍 Parliamentary Elections: Matched {len(municipality_geojson.get('features', []) if municipality_geojson else 0)} "
-                    f"polling stations from {len(obec_codes)} municipalities"
+                    f"📍 Parlamentní volby: spárováno "
+                    f"{len(municipality_geojson.get('features', []) if municipality_geojson else 0)} "
+                    f"okrsků z {len(obec_codes)} obcí"
                 )
             else:
-                st.warning(
-                    "⚠️ No polling station data found for parliamentary elections"
-                )
+                st.warning("⚠️ Pro parlamentní volby nejsou dostupná data o okrscích.")
 
         else:
             geojson_data = load_geojson_data(selected_election_id)
@@ -4206,23 +4353,23 @@ def main():
                     }
             else:
                 # Enhanced debugging for municipality matching
-                st.subheader("🗺️ Geographic Analysis - Debugging Municipality Match")
+                st.subheader("🗺️ Mapa – ladění párování obce")
                 st.warning(
-                    f"📍 **No geographic boundaries found** for {municipality_name}"
+                    f"📍 **Nenalezeny hranice** pro {municipality_name}"
                 )
 
                 # Show detailed debugging info
-                with st.expander("🔧 Detailed Matching Analysis", expanded=True):
-                    st.write(f"**Municipality:** {municipality_name}")
-                    st.write(f"**Zastupitelstvo Code:** {selected_zastupitelstvo_code}")
+                with st.expander("🔧 Detail párování", expanded=True):
+                    st.write(f"**Obec:** {municipality_name}")
+                    st.write(f"**Kód zastupitelstva:** {selected_zastupitelstvo_code}")
                     st.write(
-                        f"**Municipality Codes Searched:** {geographic_municipality_codes}"
+                        f"**Hledané kódy obce:** {geographic_municipality_codes}"
                     )
 
                     # Sample some GeoJSON features to understand the structure
                     if geojson_data and "features" in geojson_data:
                         st.write(
-                            f"**Total GeoJSON Features:** {len(geojson_data.get('features', []))}"
+                            f"**Celkem prvků v GeoJSON:** {len(geojson_data.get('features', []))}"
                         )
 
                         # Show sample of available municipality codes in GeoJSON
@@ -4245,17 +4392,17 @@ def main():
 
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.write("**Sample MOMC codes:**")
+                            st.write("**Ukázka kódů MOMC:**")
                             st.write(sorted(list(momc_codes))[:10])
                         with col2:
-                            st.write("**Sample OBEC codes:**")
+                            st.write("**Ukázka kódů OBEC:**")
                             st.write(sorted(list(obec_codes))[:10])
                         with col3:
-                            st.write("**Sample CIS_OBEC codes:**")
+                            st.write("**Ukázka kódů CIS_OBEC:**")
                             st.write(sorted(list(cis_obec_codes))[:10])
 
                         # Show a sample feature structure
-                        st.write("**Sample GeoJSON feature properties:**")
+                        st.write("**Ukázka vlastností GeoJSON:**")
                         if sample_features:
                             sample_props = sample_features[0].get("properties", {})
                             st.json(
@@ -4263,35 +4410,34 @@ def main():
                             )  # Show first 10 properties
 
                     st.info(
-                        "**This suggests that the municipality codes in our electoral data don't match "
-                        "the codes used in the GeoJSON boundary data.** This is a common issue when "
-                        "different Czech government systems use different coding schemes.\n\n"
-                        "**Available analysis for this municipality:**\n"
-                        "• Overview - Party results and statistics\n"
-                        "• Turnout Analysis - Voter participation data\n"
-                        "• Data Explorer - Raw electoral data\n"
-                        "• District Analysis - Polling district breakdown"
+                        "**Zdá se, že kódy obcí v datech neodpovídají kódům v GeoJSON.** "
+                        "To je běžné při rozdílných číselnících mezi systémy.\n\n"
+                        "**Dostupné pohledy pro tuto obec:**\n"
+                        "• Souhrn – výsledky stran a statistiky\n"
+                        "• Účast – účast voličů\n"
+                        "• Data (pokročilé) – surová data\n"
+                        "• Okrsky – rozpad podle okrsků"
                     )
 
         display_geographic_analysis(
             municipality_geojson, geographic_electoral_data, selected_election_id
         )
 
-    elif selected_tab == "Data Explorer":
-        st.header("🔍 Data Explorer")
+    elif selected_tab == "Data (pokročilé)":
+        st.header("🔍 Data (pokročilé)")
         display_data_explorer(electoral_data)
 
-    elif selected_tab == "District Analysis":
-        st.header("🏘️ District Analysis")
+    elif selected_tab == "Okrsky":
+        st.header("🏘️ Okrsky")
         display_district_analysis(electoral_data)
 
     # Footer
     st.markdown("---")
     st.markdown(
-        f"**Czech Municipalities Electoral Analysis** | "
+        f"**Volební analýza obcí** | "
         f"**{municipality_name}** | "
-        "Built with Streamlit | "
-        f"Data sources: {len(electoral_data)} loaded"
+        "Postaveno na Streamlit | "
+        f"Zdroje dat: {len(electoral_data)}"
     )
 
 
