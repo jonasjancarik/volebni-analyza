@@ -219,6 +219,25 @@ def ensure_data_exists(election_id="kv2022"):
     return None, None
 
 
+def get_results_data_version(election_id="kv2022"):
+    """Return mtime for results files to bust Streamlit cache when data changes."""
+    election_config = get_election_config(election_id)
+
+    if election_config.election_type == "parliamentary":
+        results_file = (
+            election_config.results_dir / "parliamentary_election_results.json"
+        )
+    else:
+        results_file = (
+            election_config.results_dir / "all_municipalities_comprehensive.json"
+        )
+
+    try:
+        return results_file.stat().st_mtime
+    except FileNotFoundError:
+        return 0
+
+
 def create_municipality_selector(municipality_index, comprehensive_data):
     """Create municipality/district selection interface"""
     # Determine if this is parliamentary or municipal data
@@ -432,7 +451,10 @@ def load_geojson_data(election_id: str = "kv2022"):
     # Determine which geojson file to use based on election type
     if election_config.election_type == "parliamentary":
         # Use 2025 polling station geojson for parliamentary elections
-        cache_file = Path("input/raw/electoral_districts_boundaries_2025.geojson")
+        raw_cache_file = Path("input/raw/electoral_districts_boundaries_2025.geojson")
+        converted_cache_file = Path(
+            "input/raw/electoral_districts_boundaries_2025_wgs84.geojson"
+        )
         # Note: This file should be pre-downloaded (252.6 MB, 14,711 stations)
         # It can be downloaded from: https://geodata.csu.gov.cz/as/data/distribuce/Hosted/Volebni_okrsky_2025_gdb/FeatureServer/0/geojson.zip
         url = None  # Too large to download via HTTP, should be pre-existing
@@ -440,6 +462,56 @@ def load_geojson_data(election_id: str = "kv2022"):
         # Use 2022 geojson for municipal elections
         cache_file = Path("input/raw/electoral_districts_boundaries.geojson")
         url = "https://www.volby.cz/opendata/kv2022/geo/vol_okrsky_2022g100.geojson"
+
+    if election_config.election_type == "parliamentary":
+        raw_cache_file.parent.mkdir(parents=True, exist_ok=True)
+
+        if converted_cache_file.exists():
+            try:
+                with open(converted_cache_file, "r", encoding="utf-8") as f:
+                    geojson_data = json.load(f)
+
+                if (
+                    isinstance(geojson_data, dict)
+                    and geojson_data.get("type") == "FeatureCollection"
+                ):
+                    features = geojson_data.get("features", [])
+                    if features:
+                        return geojson_data
+            except Exception as e:
+                st.warning(
+                    f"⚠️ Error reading cached converted GeoJSON: {e}. Rebuilding..."
+                )
+
+        if not raw_cache_file.exists():
+            st.error(
+                f"❌ GeoJSON file not found: {raw_cache_file}\n\n"
+                f"The 2025 polling station GeoJSON (252.6 MB) must be downloaded separately.\n"
+                f"Please download it from the ČSÚ GIS portal and place it in the input/raw/ directory."
+            )
+            return None
+
+        try:
+            st.info("📐 Converting 2025 polling station GeoJSON to WGS84...")
+            gdf = gpd.read_file(raw_cache_file)
+            minx, miny, maxx, maxy = gdf.total_bounds
+            projected = max(abs(minx), abs(maxx)) > 180 or max(abs(miny), abs(maxy)) > 90
+
+            if projected:
+                if gdf.crs is None:
+                    gdf = gdf.set_crs(5514)
+                gdf = gdf.to_crs(4326)
+            elif gdf.crs is None:
+                gdf = gdf.set_crs(4326)
+
+            geojson_str = gdf.to_json()
+            with open(converted_cache_file, "w", encoding="utf-8") as f:
+                f.write(geojson_str)
+
+            return json.loads(geojson_str)
+        except Exception as e:
+            st.error(f"❌ Failed to convert 2025 GeoJSON to WGS84: {e}")
+            return None
 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -462,15 +534,6 @@ def load_geojson_data(election_id: str = "kv2022"):
 
         except Exception as e:
             st.warning(f"⚠️ Error reading cached file: {e}. Re-downloading...")
-
-    # For parliamentary elections, the file should already exist (too large to download via HTTP)
-    if election_config.election_type == "parliamentary":
-        st.error(
-            f"❌ GeoJSON file not found: {cache_file}\n\n"
-            f"The 2025 polling station GeoJSON (252.6 MB) must be downloaded separately.\n"
-            f"Please download it from the ČSÚ GIS portal and place it in the input/raw/ directory."
-        )
-        return None
 
     # Download the file (municipal elections only)
     try:
@@ -557,7 +620,11 @@ def load_obec_mapping(election_id: str):
 
 
 @st.cache_data
-def load_municipality_data(zastupitelstvo_code: str, election_id: str = "kv2022"):
+def load_municipality_data(
+    zastupitelstvo_code: str,
+    election_id: str = "kv2022",
+    data_version: float = 0,
+):
     """Load processed election data for a specific zastupitelstvo/district"""
     if not zastupitelstvo_code:
         return {}
@@ -2275,16 +2342,16 @@ def display_data_explorer(data):
 def display_district_analysis(data):
     """Display okrsek-level (polling district) analysis and comparisons"""
 
-    # Check if this is parliamentary election data (has candidates instead of district_data)
-    is_parliamentary = "candidates" in data and "district_data" not in data
+    has_candidates = bool(data.get("candidates"))
+    has_district_data = "district_data" in data and "district_party_results" in data
 
-    if is_parliamentary:
+    if has_candidates:
         st.subheader("👥 Candidate Analysis")
-        st.info(
-            "📊 **Parliamentary Election View**\n\n"
-            "This electoral district has detailed candidate data rather than polling station breakdowns. "
-            "Polling station-level analysis is not available for parliamentary elections in this view."
-        )
+        if not has_district_data:
+            st.info(
+                "📊 **Parliamentary Election View**\n\n"
+                "This electoral district has candidate data but no polling station breakdowns available."
+            )
 
         # Show candidate statistics if available
         if "candidates" in data and data["candidates"]:
@@ -2332,17 +2399,16 @@ def display_district_analysis(data):
                 use_container_width=True,
                 hide_index=True,
             )
+        if not has_district_data:
+            return
 
-        return
-
-    # Municipal election logic (original)
-    st.subheader("🏘️ Okrsek (Polling District) Analysis")
-
-    if "district_data" not in data or "district_party_results" not in data:
+    if not has_district_data:
         st.warning(
             "District data not available. Please ensure the analysis has been run."
         )
         return
+
+    st.subheader("🏘️ Okrsek (Polling District) Analysis")
 
     district_df = data["district_data"]
     district_party_df = data["district_party_results"]
@@ -2356,6 +2422,9 @@ def display_district_analysis(data):
 
     # The district_code is already available directly in our data structure
     district_df_filtered = district_df_filtered.copy()
+    district_df_filtered["district_code"] = district_df_filtered["district_code"].astype(
+        str
+    )
 
     # For party data, we may need to extract district_code from district_id if it exists
     district_party_df = district_party_df.copy()
@@ -2366,6 +2435,7 @@ def display_district_analysis(data):
         district_party_df["district_code"] = (
             district_party_df["district_id"].str.split("-").str[0]
         )
+    district_party_df["district_code"] = district_party_df["district_code"].astype(str)
 
     # Get unique okrseks (use district_code as the unique identifier for polling districts)
     # Each district_code represents a physical polling location/okrsek
@@ -2373,6 +2443,111 @@ def display_district_analysis(data):
     unique_okrseks["okrsek_name"] = unique_okrseks["district_code"].apply(
         lambda x: f"Okrsek {x}"
     )
+
+    # Okrsek detail view
+    st.subheader("🔎 Okrsek Detail")
+
+    polling_stations = data.get("polling_stations", [])
+    station_lookup = {}
+    if polling_stations:
+        station_lookup = {
+            str(station.get("station_number")): station
+            for station in polling_stations
+            if station.get("station_number")
+        }
+
+    okrsek_codes = unique_okrseks["district_code"].tolist()
+
+    def _okrsek_sort_key(code):
+        return (0, int(code)) if code.isdigit() else (1, code)
+
+    okrsek_codes = sorted(okrsek_codes, key=_okrsek_sort_key)
+
+    def _format_okrsek(code):
+        station = station_lookup.get(code)
+        if station:
+            name = station.get("municipality_name") or station.get(
+                "municipality_code"
+            )
+            if name:
+                return f"Okrsek {code} - {name}"
+        return f"Okrsek {code}"
+
+    selected_okrsek = st.selectbox(
+        "Vyber okrsek:",
+        okrsek_codes,
+        format_func=_format_okrsek,
+        key="okrsek_detail_select",
+    )
+
+    okrsek_row = district_df_filtered[
+        district_df_filtered["district_code"] == selected_okrsek
+    ]
+    okrsek_party_rows = district_party_df[
+        district_party_df["district_code"] == selected_okrsek
+    ].copy()
+
+    if not okrsek_party_rows.empty:
+        okrsek_party_rows["votes"] = pd.to_numeric(
+            okrsek_party_rows["votes"], errors="coerce"
+        ).fillna(0)
+        okrsek_party_rows = okrsek_party_rows.sort_values("votes", ascending=False)
+        if "percentage" not in okrsek_party_rows.columns:
+            total_votes = okrsek_party_rows["votes"].sum()
+            okrsek_party_rows["percentage"] = (
+                okrsek_party_rows["votes"] / total_votes * 100
+                if total_votes > 0
+                else 0
+            )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    if not okrsek_row.empty:
+        row = okrsek_row.iloc[0]
+        col1.metric("Registered Voters", f"{row.get('registered_voters', 0):,}")
+        col2.metric("Returned Ballots", f"{row.get('returned_ballots', 0):,}")
+        col3.metric("Valid Votes", f"{row.get('valid_votes', 0):,}")
+        col4.metric("Turnout", f"{row.get('turnout_percentage', 0):.1f}%")
+    else:
+        col1.metric("Registered Voters", "N/A")
+        col2.metric("Returned Ballots", "N/A")
+        col3.metric("Valid Votes", "N/A")
+        col4.metric("Turnout", "N/A")
+
+    if station_lookup.get(selected_okrsek):
+        station = station_lookup[selected_okrsek]
+        st.write(
+            f"**Obec:** {station.get('municipality_name', 'Unknown')} "
+            f"({station.get('municipality_code', 'Unknown')})"
+        )
+        st.write(f"**Okres:** {station.get('district_code', 'Unknown')}")
+
+    if not okrsek_party_rows.empty:
+        top_parties = okrsek_party_rows.head(15)
+        fig_okrsek = px.bar(
+            top_parties,
+            x="party_name",
+            y="votes",
+            title=f"Okrsek {selected_okrsek} - Party Results",
+            labels={"party_name": "Party", "votes": "Votes"},
+            color="votes",
+            color_continuous_scale="blues",
+        )
+        fig_okrsek.update_xaxes(tickangle=45)
+        st.plotly_chart(fig_okrsek, use_container_width=True)
+
+        with st.expander("📋 Okrsek Party Results"):
+            display_rows = okrsek_party_rows[
+                ["party_name", "votes", "percentage"]
+            ].copy()
+            display_rows["votes"] = display_rows["votes"].apply(lambda x: f"{int(x):,}")
+            display_rows["percentage"] = display_rows["percentage"].apply(
+                lambda x: f"{x:.2f}%"
+            )
+            display_rows.columns = ["Party", "Votes", "Percentage"]
+            st.dataframe(display_rows, use_container_width=True)
+    else:
+        st.info("No party results available for this okrsek.")
 
     # District turnout comparison
     st.subheader("📊 Turnout by Okrsek (Polling District)")
@@ -3369,8 +3544,9 @@ def main():
         obec_mapping = load_obec_mapping(
             selected_election_id
         )  # For parliamentary elections
+        data_version = get_results_data_version(selected_election_id)
         electoral_data = load_municipality_data(
-            selected_zastupitelstvo_code, selected_election_id
+            selected_zastupitelstvo_code, selected_election_id, data_version
         )
 
     # Analysis Views as prominent tabs with URL parameter support
@@ -3496,22 +3672,105 @@ def main():
 
     elif selected_tab == "Geographic Analysis":
         st.header("🗺️ Geographic Analysis")
+        # Optional municipal-part filter for parliamentary elections
+        election_config = get_election_config(selected_election_id)
+        is_parliamentary = election_config.election_type == "parliamentary"
+        geographic_electoral_data = electoral_data
+        selected_polling_stations = None
+        selected_geo_obec = get_param_value(url_params, "geo_obec", "ALL")
+
+        if (
+            is_parliamentary
+            and electoral_data
+            and "polling_stations" in electoral_data
+            and electoral_data["polling_stations"]
+        ):
+            polling_stations = electoral_data["polling_stations"]
+            municipality_map = {}
+            for station in polling_stations:
+                obec_code = station.get("municipality_code")
+                if not obec_code:
+                    continue
+                if obec_code not in municipality_map:
+                    municipality_map[obec_code] = station.get("municipality_name")
+
+            municipality_codes = sorted(
+                municipality_map.keys(),
+                key=lambda code: (
+                    municipality_map.get(code) or "",
+                    int(code) if code.isdigit() else code,
+                ),
+            )
+
+            if selected_geo_obec not in municipality_codes and selected_geo_obec != "ALL":
+                selected_geo_obec = "ALL"
+
+            selected_geo_obec = st.selectbox(
+                "Filter municipality (optional):",
+                ["ALL"] + municipality_codes,
+                index=(["ALL"] + municipality_codes).index(selected_geo_obec),
+                format_func=lambda code: "All municipalities in district"
+                if code == "ALL"
+                else f"{municipality_map.get(code) or 'Unknown'} ({code})",
+                key="geo_obec_select",
+            )
+
+            update_url_params(geo_obec=selected_geo_obec)
+
+            if selected_geo_obec != "ALL":
+                selected_polling_stations = [
+                    station
+                    for station in polling_stations
+                    if station.get("municipality_code") == selected_geo_obec
+                ]
+                st.caption(
+                    f"Filter applied: {municipality_map.get(selected_geo_obec) or 'Unknown'} "
+                    f"({selected_geo_obec}) - {len(selected_polling_stations)} polling stations"
+                )
+            else:
+                selected_polling_stations = polling_stations
+
+            station_codes = {
+                str(station.get("station_number"))
+                for station in selected_polling_stations
+                if station.get("station_number")
+            }
+
+            filtered_district_data = electoral_data.get("district_data")
+            if isinstance(filtered_district_data, pd.DataFrame):
+                filtered_district_data = filtered_district_data[
+                    filtered_district_data["district_code"].astype(str).isin(
+                        station_codes
+                    )
+                ]
+
+            filtered_party_results = electoral_data.get("district_party_results")
+            if isinstance(filtered_party_results, pd.DataFrame):
+                filtered_party_results = filtered_party_results[
+                    filtered_party_results["district_code"].astype(str).isin(
+                        station_codes
+                    )
+                ]
+
+            geographic_electoral_data = {
+                **electoral_data,
+                "polling_stations": selected_polling_stations,
+                "district_data": filtered_district_data,
+                "district_party_results": filtered_party_results,
+            }
+
         # Filter geojson for this municipality/electoral district
         municipality_geojson = None
         if geojson_data and "features" in geojson_data:
             municipality_districts = []
-
-            # Get election configuration to determine matching strategy
-            election_config = get_election_config(selected_election_id)
-            is_parliamentary = election_config.election_type == "parliamentary"
 
             # For parliamentary elections, use OBEC mapping
             if is_parliamentary and obec_mapping:
                 # For parliamentary elections, selected_zastupitelstvo_code is actually an electoral district number (1-14)
                 # But we need to match polling stations by OBEC code
                 # We need to get all polling stations from the electoral data
-                if electoral_data and "polling_stations" in electoral_data:
-                    polling_stations = electoral_data["polling_stations"]
+                if selected_polling_stations:
+                    polling_stations = selected_polling_stations
 
                     # Extract unique OBEC codes from polling stations
                     obec_codes = set()
@@ -3598,7 +3857,6 @@ def main():
                     "type": "FeatureCollection",
                     "features": municipality_districts,
                 }
-                display_geographic_analysis(municipality_geojson, electoral_data)
             else:
                 # Enhanced debugging for municipality matching
                 st.subheader("🗺️ Geographic Analysis - Debugging Municipality Match")
@@ -3657,16 +3915,18 @@ def main():
                                 dict(list(sample_props.items())[:10])
                             )  # Show first 10 properties
 
-                st.info(
-                    "**This suggests that the municipality codes in our electoral data don't match "
-                    "the codes used in the GeoJSON boundary data.** This is a common issue when "
-                    "different Czech government systems use different coding schemes.\n\n"
-                    "**Available analysis for this municipality:**\n"
-                    "• Overview - Party results and statistics\n"
-                    "• Turnout Analysis - Voter participation data\n"
-                    "• Data Explorer - Raw electoral data\n"
-                    "• District Analysis - Polling district breakdown"
-                )
+                    st.info(
+                        "**This suggests that the municipality codes in our electoral data don't match "
+                        "the codes used in the GeoJSON boundary data.** This is a common issue when "
+                        "different Czech government systems use different coding schemes.\n\n"
+                        "**Available analysis for this municipality:**\n"
+                        "• Overview - Party results and statistics\n"
+                        "• Turnout Analysis - Voter participation data\n"
+                        "• Data Explorer - Raw electoral data\n"
+                        "• District Analysis - Polling district breakdown"
+                    )
+
+        display_geographic_analysis(municipality_geojson, geographic_electoral_data)
 
     elif selected_tab == "Data Explorer":
         st.header("🔍 Data Explorer")
