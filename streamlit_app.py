@@ -3848,6 +3848,262 @@ def icon_fill_layer(
     return fg
 
 
+def prepare_sankey_flows(
+    flows_df: pd.DataFrame,
+    include_outside_bounds: bool,
+    include_same_list: bool,
+    use_family_labels: bool,
+    min_flow_share: float,
+    max_flows: int,
+) -> tuple[pd.DataFrame, float]:
+    df = flows_df.copy()
+    required_cols = {"source_party_name", "target_party_name", "weighted_flow_share"}
+    if not required_cols.issubset(df.columns):
+        return pd.DataFrame(), 0.0
+
+    if not include_outside_bounds and "outside_bounds" in df.columns:
+        df = df[df["outside_bounds"] == False]
+
+    if not include_same_list and "same_list_number" in df.columns:
+        df = df[df["same_list_number"] == False]
+
+    has_families = "source_family" in df.columns and "target_family" in df.columns
+    if use_family_labels and has_families:
+        df["source_label_raw"] = df.apply(
+            lambda r: r["source_family"]
+            if r["source_family"]
+            else r["source_party_name"],
+            axis=1,
+        )
+        df["target_label_raw"] = df.apply(
+            lambda r: r["target_family"]
+            if r["target_family"]
+            else r["target_party_name"],
+            axis=1,
+        )
+    else:
+        df["source_label_raw"] = df["source_party_name"]
+        df["target_label_raw"] = df["target_party_name"]
+
+    df["source_label"] = "MAGISTRÁT: " + df["source_label_raw"].fillna("Neznámé")
+    df["target_label"] = "MČ: " + df["target_label_raw"].fillna("Neznámé")
+
+    df = (
+        df.groupby(["source_label", "target_label"], as_index=False)[
+            "weighted_flow_share"
+        ]
+        .sum()
+        .sort_values("weighted_flow_share", ascending=False)
+    )
+
+    if min_flow_share > 0:
+        df = df[df["weighted_flow_share"] >= min_flow_share]
+
+    if max_flows > 0:
+        df = df.head(max_flows)
+
+    total_share = df["weighted_flow_share"].sum()
+    return df, total_share
+
+
+def _hex_to_rgba(hex_color: str, alpha: float) -> str:
+    hex_color = hex_color.strip()
+    if hex_color.lower().startswith("rgb"):
+        nums = re.findall(r"[\d.]+", hex_color)
+        if len(nums) >= 3:
+            r, g, b = [int(float(n)) for n in nums[:3]]
+            return f"rgba({r},{g},{b},{alpha})"
+        return hex_color
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) == 3:
+        hex_color = "".join([c * 2 for c in hex_color])
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def _format_sankey_label(label: str) -> str:
+    if label.startswith("MAGISTRÁT: "):
+        return label.replace("MAGISTRÁT: ", "")
+    if label.startswith("MČ: "):
+        return label.replace("MČ: ", "")
+    return label
+
+
+def _format_role_label(label: str) -> str:
+    if label.startswith("MAGISTRÁT: "):
+        return label.replace("MAGISTRÁT: ", "Magistrát: ")
+    if label.startswith("MČ: "):
+        return label.replace("MČ: ", "MČ: ")
+    return label
+
+
+def build_sankey_figure(flow_df: pd.DataFrame) -> go.Figure:
+    raw_labels = pd.unique(
+        flow_df["source_label"].tolist() + flow_df["target_label"].tolist()
+    ).tolist()
+    label_index = {label: idx for idx, label in enumerate(raw_labels)}
+
+    sources = flow_df["source_label"].map(label_index).tolist()
+    targets = flow_df["target_label"].map(label_index).tolist()
+    values = (flow_df["weighted_flow_share"] * 100).tolist()
+    link_customdata = [
+        [
+            _format_role_label(src),
+            _format_role_label(tgt),
+        ]
+        for src, tgt in zip(flow_df["source_label"], flow_df["target_label"])
+    ]
+
+    left_palette = px.colors.qualitative.Set3
+    right_palette = px.colors.qualitative.Bold
+
+    def pick_color(label: str) -> str:
+        palette = left_palette if label.startswith("MAGISTRÁT:") else right_palette
+        idx = sum(ord(ch) for ch in label) % len(palette)
+        return palette[idx]
+
+    node_colors = [pick_color(label) for label in raw_labels]
+    link_colors = [_hex_to_rgba(node_colors[idx], 0.35) for idx in sources]
+    display_labels = [_format_sankey_label(label) for label in raw_labels]
+
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node=dict(
+                    label=display_labels,
+                    pad=16,
+                    thickness=16,
+                    color=node_colors,
+                    line=dict(color="#1f2d3d", width=0.6),
+                ),
+                link=dict(
+                    source=sources,
+                    target=targets,
+                    value=values,
+                    color=link_colors,
+                    customdata=link_customdata,
+                    hovertemplate="%{customdata[0]} → %{customdata[1]}"
+                    "<br>%{value:.2f}% magistrátních hlasů<extra></extra>",
+                ),
+            )
+        ]
+    )
+
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=10, b=0),
+        height=700,
+        font=dict(
+            size=13,
+            family="IBM Plex Sans, Source Sans Pro, sans-serif",
+            color="#1f2d3d",
+        ),
+    )
+    return fig
+
+
+def display_flow_sankey(selected_election_id: str, selected_zastupitelstvo_code: str):
+    st.caption(
+        "Modelové přelivy Magistrát → MČ (Goodman EI). "
+        "Hodnoty = podíl magistrátních hlasů."
+    )
+    st.markdown(
+        """
+        <style>
+        .js-plotly-plot .plotly text {
+            text-shadow: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    election_config = get_election_config(selected_election_id)
+    if election_config.election_type != "municipal":
+        st.info("Sankey je dostupný jen pro komunální volby.")
+        return
+
+    if selected_zastupitelstvo_code not in {"500143", "554782"}:
+        st.warning(
+            "Přelivy jsou zatím připravené pouze pro Prahu 5 (MČ) / Prahu (OBEC)."
+        )
+
+    share_mode = st.radio(
+        "Normalizace:",
+        options=["ballots", "votes"],
+        format_func=lambda x: "Ekvivalent lístku (ballots)"
+        if x == "ballots"
+        else "Podíly hlasů (votes)",
+        horizontal=True,
+    )
+
+    flows_path = (
+        election_config.reports_dir
+        / f"ei_prague5_all_parties_{share_mode}.csv"
+    )
+
+    if not flows_path.exists():
+        st.warning("Sankey data nejsou k dispozici.")
+        st.code(
+            f"uv run python src/ecological_inference_all_parties.py --election {selected_election_id} --share-mode {share_mode}",
+            language="bash",
+        )
+        return
+
+    flows_df = pd.read_csv(flows_path)
+    if flows_df.empty:
+        st.warning("Sankey data jsou prázdná.")
+        return
+    if "weighted_flow_share" in flows_df.columns:
+        flows_df["weighted_flow_share"] = pd.to_numeric(
+            flows_df["weighted_flow_share"], errors="coerce"
+        ).fillna(0)
+    for col in ["outside_bounds", "same_list_number"]:
+        if col in flows_df.columns:
+            flows_df[col] = (
+                flows_df[col]
+                .astype(str)
+                .str.lower()
+                .isin(["true", "1", "yes"])
+            )
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        include_same = st.checkbox("Zahrnout retenci", value=True)
+    with col2:
+        include_outside = st.checkbox("Zahrnout mimo bounds", value=False)
+    with col3:
+        use_family = st.checkbox("Agregovat do rodin", value=False)
+    with col4:
+        max_flows = st.slider("Max. toků", 10, 120, 50, 5)
+
+    min_flow_pct = st.slider("Min. tok (%)", 0.0, 5.0, 0.5, 0.1)
+    sankey_df, total_share = prepare_sankey_flows(
+        flows_df,
+        include_outside_bounds=include_outside,
+        include_same_list=include_same,
+        use_family_labels=use_family,
+        min_flow_share=min_flow_pct / 100,
+        max_flows=max_flows,
+    )
+
+    if sankey_df.empty:
+        st.info("Po zadaných filtrech nezbyla žádná data.")
+        return
+
+    header_left, header_right = st.columns(2)
+    with header_left:
+        st.markdown("**Magistrát**")
+    with header_right:
+        st.markdown("**MČ**")
+
+    fig = build_sankey_figure(sankey_df)
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(f"Zobrazeno {total_share * 100:.1f}% magistrátních hlasů.")
+
+
 def main():
     """Main Streamlit application"""
 
@@ -3925,6 +4181,7 @@ def main():
         • **Souhrn** – klíčové statistiky a výsledky stran  
         • **Účast** – účast voličů v okrscích  
         • **Mapa** – interaktivní mapy a vrstvy  
+        • **Přelivy** – Sankey diagram OBEC → MČ (Praha 5)  
         • **Okrsky** – detailní rozpad podle okrsků  
         • **Data (pokročilé)** – surová data a tabulky  
         
@@ -3985,7 +4242,7 @@ def main():
         )
 
     # Analysis Views as prominent tabs with URL parameter support
-    tab_options = ["Souhrn", "Účast", "Mapa", "Okrsky", "Data (pokročilé)"]
+    tab_options = ["Souhrn", "Účast", "Mapa", "Přelivy", "Okrsky", "Data (pokročilé)"]
 
     # Get default tab from URL params
     default_tab = get_param_value(url_params, "tab", tab_options[0])
@@ -4421,6 +4678,12 @@ def main():
 
         display_geographic_analysis(
             municipality_geojson, geographic_electoral_data, selected_election_id
+        )
+
+    elif selected_tab == "Přelivy":
+        st.header("🔀 Přelivy (Sankey)")
+        display_flow_sankey(
+            selected_election_id, selected_zastupitelstvo_code
         )
 
     elif selected_tab == "Data (pokročilé)":

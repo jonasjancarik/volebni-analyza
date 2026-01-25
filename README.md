@@ -293,3 +293,35 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Czech Statistical Office (ČSÚ) for providing open electoral data
 - Streamlit team for the excellent visualization framework
 - Czech Pirate Party for supporting open data initiatives
+
+## 🧭 Ecological Inference (Prague 5 split-ticket)
+
+Estimate where OBEC Pirate support likely goes in MCMO using Goodman ecological
+regression with Duncan-Davis bounds.
+
+```bash
+uv run python src/ecological_inference.py --election kv2022 --share-mode votes
+```
+
+Outputs:
+- `output/kv2022/reports/ei_prague5_pirates_mcmo_votes.csv`
+- `output/kv2022/detailed/ei_prague5_inputs_votes.csv`
+- `output/kv2022/reports/ei_prague5_pirates_mcmo_votes_by_family.csv`
+- `output/kv2022/reports/ei_prague5_pirates_mcmo_votes_summary.json`
+
+Notes:
+- If Pirates are part of a coalition list, pass `--obec-list-number` or tweak
+  `--pirate-alias`. Use `--mcmo-list-number` if MČ list differs.
+- Use `--share-mode ballots` to normalize by seat counts (defaults: OBEC 65,
+  MCMO 41).
+
+### All parties (OBEC → MČ)
+
+```bash
+uv run python src/ecological_inference_all_parties.py --election kv2022 --share-mode ballots
+```
+
+Outputs:
+- `output/kv2022/reports/ei_prague5_all_parties_ballots.csv`
+- `output/kv2022/reports/ei_prague5_all_parties_ballots_summary.csv`
+- `output/kv2022/reports/ei_prague5_all_parties_ballots_by_family.csv`
