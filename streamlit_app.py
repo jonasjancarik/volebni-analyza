@@ -114,7 +114,7 @@ MAP_TYPE_LABELS = {
     "Geographic Map": "Geografická mapa",
     "Pydeck (fast)": "Rychlá mapa (Pydeck)",
     "Cartogram": "Kartogram",
-    "Dot Density": "Bodová hustota",
+    "Dot Density": "Tečková mapa (tečka = počet hlasů)",
 }
 
 
@@ -2188,32 +2188,21 @@ def display_geographic_analysis(
         )
 
     with col2:
-        base_map_options = ["Geographic Map", "Pydeck (fast)"]
-        advanced_map_options = ["Cartogram", "Dot Density"]
-        default_map_type = get_param_value(url_params, "map_type", base_map_options[0])
-        if default_map_type not in base_map_options + advanced_map_options:
-            default_map_type = base_map_options[0]
-
-        show_advanced_maps = default_map_type in advanced_map_options
-        show_advanced_maps = st.checkbox(
-            "Pokročilé mapy",
-            value=show_advanced_maps,
-            help="Zobrazí kartogram a bodovou hustotu.",
-            key="advanced_map_toggle",
-        )
-
-        map_options = base_map_options + (
-            advanced_map_options if show_advanced_maps else []
-        )
+        map_options = ["Geographic Map", "Dot Density", "Cartogram", "Pydeck (fast)"]
+        default_map_type = get_param_value(url_params, "map_type", map_options[0])
         if default_map_type not in map_options:
-            default_map_type = base_map_options[0]
+            default_map_type = map_options[0]
 
         map_type = st.selectbox(
             "Typ mapy:",
             map_options,
             index=map_options.index(default_map_type),
             format_func=map_type_label,
-            help="Volba mezi přesnou mapou, rychlým vykreslením a pokročilými vizualizacemi.",
+            help=(
+                "Geografická mapa obarví okrsky podle hodnoty. Tečková mapa kreslí "
+                "jednu tečku za zvolený počet hlasů. Kartogram zvětší okrsky podle "
+                "počtu hlasů. Rychlá mapa se hodí pro velká města."
+            ),
             key="map_type_select",
         )
 
@@ -2358,12 +2347,11 @@ def display_geographic_analysis(
         else:
             st.error("Nepodařilo se vytvořit data pro kartogram.")
     elif map_type == "Dot Density":
-        st.subheader("Bodová hustota")
-        st.info(
-            "🔵 **Bodová hustota**: Každá tečka představuje pevný počet hlasů "
-            "(např. 1 tečka = 100 hlasů). Tečky jsou rozmístěny uvnitř okrsků. "
-            "Při zapnutém barevném škálování barva značí podíl hlasů "
-            "(🔴 nízký → 🟡 střední → 🟢 vysoký)."
+        st.subheader("Tečková mapa")
+        st.caption(
+            "Každá tečka představuje zvolený počet hlasů a leží uvnitř okrsku, "
+            "ve kterém hlasy padly. Když zapnete barvení podle podílu, barva tečky "
+            "ukazuje podíl hlasů v okrsku: červená nízký, žlutá střední, zelená vysoký."
         )
 
         # Dot density controls
