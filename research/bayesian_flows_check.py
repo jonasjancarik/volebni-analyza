@@ -106,15 +106,26 @@ def main() -> None:
             chains=args.chains,
             nuts_sampler="nutpie",
             random_seed=1,
-            progressbar=False,
+            progressbar=True,
         )
     print(f"sampled in {(time.time() - started) / 60:.1f} min")
 
     # City-wide rate of a group = precinct rates weighted by the group's voters there
     weights = previous[sources].to_numpy()
     weights = weights / weights.sum(axis=0, keepdims=True)
-    draws = trace.posterior["precinct_rates"].stack(sample=("chain", "draw")).to_numpy()
-    citywide = np.einsum("ir,ircs->rcs", weights, draws)
+    per_chain = np.einsum(
+        "ir,kdirc->kdrc", weights, trace.posterior["precinct_rates"].to_numpy()
+    )
+    citywide = per_chain.reshape(-1, rows, cols).transpose(1, 2, 0)
+
+    # The hyperparameters often mix poorly even when the city-wide rates, which
+    # are what we report, agree between chains. Check those directly.
+    out_dir = Path(f"output/{args.election}/reports")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    np.save(out_dir / f"bayesian_flows_{args.code}_citywide_draws.npy", per_chain)
+    chain_means = per_chain.mean(axis=1)
+    chain_spread = chain_means.max(axis=0) - chain_means.min(axis=0)
+    citywide_rhat = az.rhat(az.convert_to_dataset({"rate": per_chain}))["rate"].to_numpy()
 
     regression = estimate_flows(previous, current)["transitions"]
     table = pd.DataFrame(
@@ -131,14 +142,15 @@ def main() -> None:
     diagnostics = {
         "precincts": n,
         "divergences": int(trace.sample_stats["diverging"].sum()),
-        "max_rhat": float(summary["r_hat"].max()),
-        "min_ess_bulk": float(summary["ess_bulk"].min()),
+        "max_rhat_hyperparameters": float(summary["r_hat"].max()),
+        "min_ess_bulk_hyperparameters": float(summary["ess_bulk"].min()),
+        "max_rhat_citywide_rates": float(citywide_rhat.max()),
+        "max_difference_between_chains_pp": float(chain_spread.max() * 100),
+        "mean_difference_between_chains_pp": float(chain_spread.mean() * 100),
         "minutes": round((time.time() - started) / 60, 1),
     }
     print(diagnostics)
 
-    out_dir = Path(f"output/{args.election}/reports")
-    out_dir.mkdir(parents=True, exist_ok=True)
     table.to_csv(out_dir / f"bayesian_flows_{args.code}.csv", index=False)
     (out_dir / f"bayesian_flows_{args.code}_diagnostics.json").write_text(
         json.dumps(diagnostics, indent=2), encoding="utf-8"
