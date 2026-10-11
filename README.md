@@ -81,6 +81,13 @@ the address of the Streamlit app to show a link to it in the header.
 
 The map uses the free OpenFreeMap base map and needs no API key.
 
+Voter-flow estimates take a few seconds each, so the API computes all of them
+in the background when it starts (about half a minute the first time) and
+keeps them in `output/<election>/cache/`, or in `VOLBY_CACHE_DIR` when that is
+set. A stored estimate is used only while the results of both elections and
+the model (`FLOW_MODEL_VERSION`) are the ones it was computed from. Set
+`VOLBY_PRECOMPUTE=0` to compute them only when a page asks for them.
+
 ### Running in Docker
 
 `docker compose up -d --build` serves the new app on `127.0.0.1:3023` (change

@@ -6,7 +6,10 @@ shapes them into the JSON the frontend works with.
 Nothing here depends on Streamlit; streamlit_app.py keeps its own loaders.
 """
 
+import hashlib
 import json
+import logging
+import os
 import re
 import threading
 from pathlib import Path
@@ -86,6 +89,8 @@ OKRESY = {
     "8104": "Nový Jičín", "8105": "Opava", "8106": "Ostrava-město",
 }
 
+logger = logging.getLogger(__name__)
+
 _lock = threading.Lock()
 _file_cache: Dict[Tuple[str, float], object] = {}
 _comparison_cache: Dict[tuple, Optional[dict]] = {}
@@ -131,6 +136,23 @@ def _data_version(election_id: str) -> float:
         return _results_file(_config(election_id)).stat().st_mtime
     except FileNotFoundError:
         return 0
+
+
+def _data_fingerprint(election_id: str) -> str:
+    """Hash of the results file. Unlike the modification time it is the same
+    on every machine, so a stored estimate stays valid after the data are copied."""
+    path = _results_file(_config(election_id))
+    key = (f"sha1:{path}", path.stat().st_mtime)
+    with _lock:
+        if key in _file_cache:
+            return _file_cache[key]
+    digest = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    with _lock:
+        _file_cache[key] = digest.hexdigest()
+    return _file_cache[key]
 
 
 def _results(election_id: str) -> dict:
@@ -772,6 +794,46 @@ def _flows_payload(flows: dict) -> dict:
     }
 
 
+def _stored_comparison_file(election_id: str, code: str, area: Optional[str]) -> Path:
+    # VOLBY_CACHE_DIR is for deployments where output/ is mounted read-only
+    base = os.environ.get("VOLBY_CACHE_DIR")
+    directory = Path(base) / election_id if base else _config(election_id).output_dir / "cache"
+    name = re.sub(r"[^0-9A-Za-z]", "", f"{code}{'_' + area if area else ''}".replace("_", "x"))
+    return directory / f"comparison_{name}.json"
+
+
+def _stored_comparison_key(election_id: str, previous_id: str) -> dict:
+    """What a stored comparison was computed from; any change makes it stale."""
+    return {
+        "flow_model_version": FLOW_MODEL_VERSION,
+        "min_precincts": MIN_PRECINCTS_FOR_FLOWS,
+        "rough_below": ROUGH_FLOWS_BELOW,
+        "data": _data_fingerprint(election_id),
+        "previous_data": _data_fingerprint(previous_id),
+    }
+
+
+def _read_stored_comparison(path: Path, key: dict) -> Optional[dict]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            stored = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return stored.get("result") if stored.get("key") == key else None
+
+
+def _write_stored_comparison(path: Path, key: dict, result: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        with open(temporary, "w", encoding="utf-8") as f:
+            json.dump({"key": key, "result": result}, f, ensure_ascii=False)
+        os.replace(temporary, path)
+    except OSError as error:
+        # The comparison still works, it is only computed again after a restart
+        logger.warning("Could not store the comparison in %s: %s", path, error)
+
+
 def comparison(election_id: str, code: str, area: Optional[str] = None) -> dict:
     """Matched precincts of this and the previous election and the voter flows.
 
@@ -794,6 +856,15 @@ def comparison(election_id: str, code: str, area: Optional[str] = None) -> dict:
     previous = _results(previous_id).get("municipalities", {}).get(code)
     if not previous:
         raise NotFound("Toto zastupitelstvo se v minulých volbách nevolilo.")
+
+    # The estimate takes seconds, so it is kept on disk across restarts
+    stored_file = _stored_comparison_file(election_id, code, area)
+    stored_key = _stored_comparison_key(election_id, previous_id)
+    stored = _read_stored_comparison(stored_file, stored_key)
+    if stored is not None:
+        with _lock:
+            _comparison_cache[key] = stored
+        return stored
 
     area_precincts = None
     if area:
@@ -865,4 +936,37 @@ def comparison(election_id: str, code: str, area: Optional[str] = None) -> dict:
     }
     with _lock:
         _comparison_cache[key] = result
+    _write_stored_comparison(stored_file, stored_key, result)
     return result
+
+
+def precompute_comparisons() -> int:
+    """Compute and store every voter-flow estimate the app can show.
+
+    Covers councils with enough precincts for an estimate and, for city-wide
+    councils, each city district that is large enough on its own. Comparisons
+    already stored for the current data and model are only read. Returns how
+    many comparisons are ready.
+    """
+    ready = 0
+    for election in list_elections():
+        if election["type"] != "municipal" or not election["previousId"]:
+            continue
+        election_id = election["id"]
+        previous = _results(election["previousId"]).get("municipalities", {})
+        for code, municipality in _results(election_id).get("municipalities", {}).items():
+            districts = municipality.get("district_data") or []
+            if len(districts) < MIN_PRECINCTS_FOR_FLOWS or code not in previous:
+                continue
+            sizes: Dict[str, int] = {}
+            for district in districts:
+                area = str(district.get("municipality_code"))
+                sizes[area] = sizes.get(area, 0) + 1
+            areas = [a for a, size in sizes.items() if size >= MIN_PRECINCTS_FOR_FLOWS]
+            for area in [None] + (areas if len(sizes) > 1 else []):
+                try:
+                    comparison(election_id, code, area)
+                    ready += 1
+                except Exception:  # one broken council must not stop the rest
+                    logger.exception("Comparison failed for %s %s %s", election_id, code, area)
+    return ready

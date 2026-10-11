@@ -7,7 +7,10 @@ Run from the repository root:
     uv run uvicorn --app-dir src web_api:app --host 0.0.0.0 --port 8600
 """
 
+import logging
 import os
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -18,7 +21,32 @@ from fastapi.staticfiles import StaticFiles
 
 import web_store as store
 
-app = FastAPI(title="Volební analýza", docs_url="/api/docs", openapi_url="/api/openapi.json")
+logger = logging.getLogger("uvicorn.error")
+
+
+def _precompute():
+    try:
+        logger.info("Voter-flow estimates ready: %s", store.precompute_comparisons())
+    except Exception:
+        logger.exception("Preparing voter-flow estimates failed")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Prepares the voter-flow estimates in the background, so that nobody waits
+    # for them; with the estimates already on disk this takes a moment.
+    # VOLBY_PRECOMPUTE=0 leaves them to be computed when first opened.
+    if os.environ.get("VOLBY_PRECOMPUTE", "1") != "0":
+        threading.Thread(target=_precompute, name="precompute", daemon=True).start()
+    yield
+
+
+app = FastAPI(
+    title="Volební analýza",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan,
+)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 

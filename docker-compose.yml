@@ -17,7 +17,12 @@ services:
     environment:
       # Public address of the original app; shows a "Původní verze" link when set
       VOLBY_LEGACY_URL: ${VOLBY_LEGACY_URL:-}
-    <<: *data
+      # output/ is read-only here, so computed voter flows go to their own volume
+      VOLBY_CACHE_DIR: /app/cache
+    volumes:
+      - ./output:/app/output:ro
+      - ./input:/app/input
+      - flow-cache:/app/cache
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8600/api/elections', timeout=5)"]
       interval: 30s
@@ -42,3 +47,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+volumes:
+  # Voter-flow estimates; safe to delete, they are computed again at start
+  flow-cache:
