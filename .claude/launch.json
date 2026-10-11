@@ -4,8 +4,46 @@
     {
       "name": "volebni-analyza",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "streamlit", "run", "streamlit_app.py", "--server.address", "0.0.0.0", "--server.port", "8501", "--server.headless", "true"],
+      "runtimeArgs": [
+        "run",
+        "streamlit",
+        "run",
+        "streamlit_app.py",
+        "--server.address",
+        "0.0.0.0",
+        "--server.port",
+        "8501",
+        "--server.headless",
+        "true"
+      ],
       "port": 8501
+    },
+    {
+      "name": "volebni-analyza-api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "--app-dir",
+        "src",
+        "web_api:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8600"
+      ],
+      "port": 8600
+    },
+    {
+      "name": "volebni-analyza-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "web",
+        "run",
+        "dev"
+      ],
+      "port": 5180
     }
   ]
 }
