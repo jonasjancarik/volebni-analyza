@@ -1,0 +1,7 @@
+[theme]
+# Same blue as the charts
+primaryColor = "#2563eb"
+
+[client]
+# Hides the developer menu and the Deploy button
+toolbarMode = "minimal"
