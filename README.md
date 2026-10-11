@@ -8,12 +8,13 @@
 
 ## 🏛️ What This Tool Does
 
-This tool provides **comprehensive electoral analysis** for any Czech municipality across multiple municipal elections (2022, 2018, 2014, and more). Originally developed for Prague 5, it now supports **all 6,377+ Czech municipalities** with detailed party results, turnout analysis, interactive visualizations, and **multi-election comparison capabilities**.
+This tool provides **comprehensive electoral analysis** for any Czech municipality across multiple municipal elections (2026, 2022, and earlier). Originally developed for Prague 5, it now supports **all 6,377+ Czech municipalities** with detailed party results, turnout analysis, interactive visualizations, and **multi-election comparison capabilities**.
 
 ### ✨ Key Features
 
 - **📊 All Municipalities**: Support for 6,377+ Czech municipalities
-- **🗳️ Multiple Elections**: Analyze data from 2022, 2018, 2014, and more
+- **🗳️ Multiple Elections**: 2026 and 2022 municipal elections, 2025 parliamentary elections
+- **↔️ Comparison with the previous election**: turnout and party results of 2026 next to 2022 for the same council
 - **🔄 Easy Election Switching**: Select different elections with a simple dropdown
 - **📈 Complete Election Data**: Party results, mandates, turnout statistics  
 - **📍 Geographic Analysis**: Interactive maps and district-level breakdowns
@@ -59,7 +60,10 @@ If you prefer to collect data manually first:
 # List available elections
 uv run python run_all_municipalities.py --list-elections
 
-# Collect data for a specific election (default: kv2022)
+# Collect data for the 2026 municipal elections
+uv run python run_all_municipalities.py --election kv2026
+
+# Collect data for 2022 (needed for the 2026 vs 2022 comparison)
 uv run python run_all_municipalities.py --election kv2022
 
 # Collect data for 2018 elections
@@ -190,6 +194,12 @@ uv run python run_streamlit.py --dev
 ### 🗳️ Supported Elections
 
 **Municipal Elections** (Komunální volby):
+- **2026** - October 9-10, 2026 ✅ Full data available
+  - Precinct batches are static files under `volby.cz/appdata/kv2026/20261009/odata/okrsky/`
+    (the older `vysledky_okrsky` endpoint is gone); see `districts_batch_url_template` in `src/election_config.py`
+  - Maps use the 2025 precinct boundaries. ČSÚ lists the 2026 boundaries in its
+    [GIS catalogue](https://geodata.csu.gov.cz/as/dp-gis/), but the download links did not work on 11 October 2026.
+    Once they do, point `boundaries_file` of `kv2026` at the new file.
 - **2022** - September 23-24, 2022 ✅ Full data available
 - **2018** - October 5-6, 2018 ✅ Full data available
 - **2014** - October 10-11, 2014 ✅ Full data available
@@ -274,11 +284,21 @@ print(f"Average turnout: {df['turnout'].mean():.1f}%")
 
 The dashboard provides several analysis views:
 
-- **📊 Overview**: Key statistics and party results
-- **📈 Turnout Analysis**: Detailed voter participation analysis
-- **🗺️ Geographic Analysis**: Interactive maps with district boundaries
-- **🔍 Data Explorer**: Raw data tables with filtering options
-- **🏘️ District Analysis**: Polling district breakdown and comparison
+The app opens on the newest election with a list of the largest cities. After
+you pick a municipality (type its name in the sidebar), the views are:
+
+- **Souhrn**: turnout, seats and party results, with the change since the previous election
+- **Účast**: turnout across precincts
+- **Mapa**: interactive precinct maps
+- **Okrsky**: precinct detail and party comparison between precincts
+- **Přelivy**: modelled vote flows (only where the ecological inference outputs exist, i.e. Prague 2022)
+- **Data**: raw tables
+
+Party shares in **Souhrn** are votes divided by all valid votes. ČSÚ's own
+percentage for municipal elections is recalculated for lists with fewer
+candidates than seats; the table shows it as a separate column where it differs.
+
+Precincts that ČSÚ corrected and re-sent are counted once (the latest record wins).
 
 ## 🤝 Contributing
 

@@ -42,7 +42,7 @@ def main():
     print("\n" + "=" * 50)
     print("📊 Features Available:")
     print("   • 6,377+ Czech municipalities")
-    print("   • 2022 municipal election data")
+    print("   • 2026 and 2022 municipal elections, 2025 parliamentary elections")
     print("   • Party results and mandate distribution")
     print("   • Turnout and voter statistics")
     print("   • District-level analysis")
