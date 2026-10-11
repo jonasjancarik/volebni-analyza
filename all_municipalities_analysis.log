@@ -1146,3 +1146,624 @@ UnboundLocalError: cannot access local variable 'registry_file' where it is not 
 🚀 Ready to use with Streamlit:
 2026-01-24 21:28:38,416 - __main__ - INFO -    streamlit run streamlit_app.py
 2026-01-24 21:28:38,416 - __main__ - INFO -    (Select 'Volby do Poslanecké sněmovny 2025' in the app)
+2026-10-11 10:00:12,130 - __main__ - INFO - ================================================================================
+2026-10-11 10:00:12,130 - __main__ - INFO - CZECH ELECTORAL ANALYSIS
+2026-10-11 10:00:12,130 - __main__ - INFO - ================================================================================
+2026-10-11 10:00:12,130 - __main__ - INFO - Election: Komunální volby 2026
+2026-10-11 10:00:12,130 - __main__ - INFO - Election ID: kv2026
+2026-10-11 10:00:12,130 - __main__ - INFO - Election Type: municipal
+2026-10-11 10:00:12,130 - __main__ - INFO - Election Date: 20261009
+2026-10-11 10:00:12,131 - __main__ - INFO - Input directory: input/kv2026
+2026-10-11 10:00:12,131 - __main__ - INFO - Output directory: output/kv2026
+2026-10-11 10:00:12,131 - __main__ - INFO - Max batches: 200
+2026-10-11 10:00:12,131 - __main__ - INFO - Registry only: False
+2026-10-11 10:00:12,131 - __main__ - INFO - No download: False
+2026-10-11 10:00:12,131 - __main__ - INFO - --------------------------------------------------------------------------------
+2026-10-11 10:00:12,131 - __main__ - INFO - 🏛️  STEP 1: Processing Municipality Registry
+2026-10-11 10:00:12,132 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:00:12,132 - municipality_registry - INFO - Downloading municipality registry for Komunální volby 2026...
+2026-10-11 10:00:12,703 - municipality_registry - INFO - Saved municipality registry to input/kv2026/raw/kvcoco_municipality_registry.xml
+2026-10-11 10:00:12,791 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:00:12,795 - __main__ - INFO - ✅ Found 6395 total entries
+2026-10-11 10:00:12,795 - __main__ - INFO - ✅ Found 6389 municipalities with valid elections
+2026-10-11 10:00:12,824 - municipality_registry - INFO - Saved municipality registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:00:12,824 - __main__ - INFO - ✅ Saved registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:00:12,824 - __main__ - INFO - 
+📊 Sample municipalities:
+2026-10-11 10:00:12,824 - __main__ - INFO -    1. Želechovice nad Dřevnicí (500011) - 15 seats
+2026-10-11 10:00:12,824 - __main__ - INFO -    2. Petrov nad Desnou (500020) - 11 seats
+2026-10-11 10:00:12,824 - __main__ - INFO -    3. Libhošť (500046) - 15 seats
+2026-10-11 10:00:12,824 - __main__ - INFO -    4. Praha 1 (500054) - 27 seats
+2026-10-11 10:00:12,824 - __main__ - INFO -    5. Krhová (500062) - 15 seats
+2026-10-11 10:00:12,824 - __main__ - INFO -    6. Poličná (500071) - 15 seats
+2026-10-11 10:00:12,825 - __main__ - INFO -    7. Praha 2 (500089) - 35 seats
+2026-10-11 10:00:12,825 - __main__ - INFO -    8. Praha 3 (500097) - 35 seats
+2026-10-11 10:00:12,825 - __main__ - INFO -    9. Bražec (500101) - 7 seats
+2026-10-11 10:00:12,825 - __main__ - INFO -   10. Praha 4 (500119) - 45 seats
+2026-10-11 10:00:12,825 - __main__ - INFO - 
+🗳️  STEP 2: Collecting Electoral Data
+2026-10-11 10:00:12,825 - __main__ - INFO - 🏛️  Using AllMunicipalitiesScraper for municipal elections
+2026-10-11 10:00:12,825 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:00:12,825 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:00:12,825 - all_municipalities_scraper - INFO - Starting complete electoral analysis for ALL Czech council elections (zastupitelstvo)
+2026-10-11 10:00:12,898 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:00:12,900 - all_municipalities_scraper - INFO - Downloading Electoral Parties Register for Komunální volby 2026...
+2026-10-11 10:00:14,311 - all_municipalities_scraper - INFO - Saved party registry to input/kv2026/raw/kvros_electoral_parties_register.xml
+2026-10-11 10:00:14,311 - all_municipalities_scraper - INFO - Parsing party registry for all municipalities...
+2026-10-11 10:00:14,577 - all_municipalities_scraper - INFO - Loaded party data for 6393 municipalities
+2026-10-11 10:00:14,577 - all_municipalities_scraper - INFO - Total party entries: 22548
+2026-10-11 10:00:14,577 - all_municipalities_scraper - INFO - Municipalities with party data: 6393
+2026-10-11 10:00:14,589 - all_municipalities_scraper - INFO - Collecting electoral data for ALL Czech municipalities...
+2026-10-11 10:00:14,589 - all_municipalities_scraper - INFO - Downloading additional batch files to ensure complete coverage...
+2026-10-11 10:00:14,709 - all_municipalities_scraper - INFO - Last batch to download: 165
+2026-10-11 10:00:14,825 - all_municipalities_scraper - INFO - Downloaded batch 1 to input/kv2026/raw/electoral_districts_batch_1.xml
+2026-10-11 10:00:14,972 - all_municipalities_scraper - INFO - Downloaded batch 2 to input/kv2026/raw/electoral_districts_batch_2.xml
+2026-10-11 10:00:15,119 - all_municipalities_scraper - INFO - Downloaded batch 3 to input/kv2026/raw/electoral_districts_batch_3.xml
+2026-10-11 10:00:15,252 - all_municipalities_scraper - INFO - Downloaded batch 4 to input/kv2026/raw/electoral_districts_batch_4.xml
+2026-10-11 10:00:15,606 - all_municipalities_scraper - INFO - Downloaded batch 5 to input/kv2026/raw/electoral_districts_batch_5.xml
+2026-10-11 10:00:15,800 - all_municipalities_scraper - INFO - Downloaded batch 6 to input/kv2026/raw/electoral_districts_batch_6.xml
+2026-10-11 10:00:16,018 - all_municipalities_scraper - INFO - Downloaded batch 7 to input/kv2026/raw/electoral_districts_batch_7.xml
+2026-10-11 10:00:16,211 - all_municipalities_scraper - INFO - Downloaded batch 8 to input/kv2026/raw/electoral_districts_batch_8.xml
+2026-10-11 10:00:16,394 - all_municipalities_scraper - INFO - Downloaded batch 9 to input/kv2026/raw/electoral_districts_batch_9.xml
+2026-10-11 10:00:16,562 - all_municipalities_scraper - INFO - Downloaded batch 10 to input/kv2026/raw/electoral_districts_batch_10.xml
+2026-10-11 10:00:16,731 - all_municipalities_scraper - INFO - Downloaded batch 11 to input/kv2026/raw/electoral_districts_batch_11.xml
+2026-10-11 10:00:16,901 - all_municipalities_scraper - INFO - Downloaded batch 12 to input/kv2026/raw/electoral_districts_batch_12.xml
+2026-10-11 10:00:17,072 - all_municipalities_scraper - INFO - Downloaded batch 13 to input/kv2026/raw/electoral_districts_batch_13.xml
+2026-10-11 10:00:17,229 - all_municipalities_scraper - INFO - Downloaded batch 14 to input/kv2026/raw/electoral_districts_batch_14.xml
+2026-10-11 10:00:17,394 - all_municipalities_scraper - INFO - Downloaded batch 15 to input/kv2026/raw/electoral_districts_batch_15.xml
+2026-10-11 10:00:17,552 - all_municipalities_scraper - INFO - Downloaded batch 16 to input/kv2026/raw/electoral_districts_batch_16.xml
+2026-10-11 10:00:17,708 - all_municipalities_scraper - INFO - Downloaded batch 17 to input/kv2026/raw/electoral_districts_batch_17.xml
+2026-10-11 10:00:17,878 - all_municipalities_scraper - INFO - Downloaded batch 18 to input/kv2026/raw/electoral_districts_batch_18.xml
+2026-10-11 10:00:18,033 - all_municipalities_scraper - INFO - Downloaded batch 19 to input/kv2026/raw/electoral_districts_batch_19.xml
+2026-10-11 10:00:18,203 - all_municipalities_scraper - INFO - Downloaded batch 20 to input/kv2026/raw/electoral_districts_batch_20.xml
+2026-10-11 10:00:18,385 - all_municipalities_scraper - INFO - Downloaded batch 21 to input/kv2026/raw/electoral_districts_batch_21.xml
+2026-10-11 10:00:18,536 - all_municipalities_scraper - INFO - Downloaded batch 22 to input/kv2026/raw/electoral_districts_batch_22.xml
+2026-10-11 10:00:18,699 - all_municipalities_scraper - INFO - Downloaded batch 23 to input/kv2026/raw/electoral_districts_batch_23.xml
+2026-10-11 10:00:18,946 - all_municipalities_scraper - INFO - Downloaded batch 24 to input/kv2026/raw/electoral_districts_batch_24.xml
+2026-10-11 10:00:19,128 - all_municipalities_scraper - INFO - Downloaded batch 25 to input/kv2026/raw/electoral_districts_batch_25.xml
+2026-10-11 10:00:19,296 - all_municipalities_scraper - INFO - Downloaded batch 26 to input/kv2026/raw/electoral_districts_batch_26.xml
+2026-10-11 10:00:19,479 - all_municipalities_scraper - INFO - Downloaded batch 27 to input/kv2026/raw/electoral_districts_batch_27.xml
+2026-10-11 10:00:19,649 - all_municipalities_scraper - INFO - Downloaded batch 28 to input/kv2026/raw/electoral_districts_batch_28.xml
+2026-10-11 10:00:19,838 - all_municipalities_scraper - INFO - Downloaded batch 29 to input/kv2026/raw/electoral_districts_batch_29.xml
+2026-10-11 10:00:20,020 - all_municipalities_scraper - INFO - Downloaded batch 30 to input/kv2026/raw/electoral_districts_batch_30.xml
+2026-10-11 10:00:20,199 - all_municipalities_scraper - INFO - Downloaded batch 31 to input/kv2026/raw/electoral_districts_batch_31.xml
+2026-10-11 10:00:20,413 - all_municipalities_scraper - INFO - Downloaded batch 32 to input/kv2026/raw/electoral_districts_batch_32.xml
+2026-10-11 10:00:20,572 - all_municipalities_scraper - INFO - Downloaded batch 33 to input/kv2026/raw/electoral_districts_batch_33.xml
+2026-10-11 10:00:20,717 - all_municipalities_scraper - INFO - Downloaded batch 34 to input/kv2026/raw/electoral_districts_batch_34.xml
+2026-10-11 10:00:20,896 - all_municipalities_scraper - INFO - Downloaded batch 35 to input/kv2026/raw/electoral_districts_batch_35.xml
+2026-10-11 10:00:21,038 - all_municipalities_scraper - INFO - Downloaded batch 36 to input/kv2026/raw/electoral_districts_batch_36.xml
+2026-10-11 10:00:21,224 - all_municipalities_scraper - INFO - Downloaded batch 37 to input/kv2026/raw/electoral_districts_batch_37.xml
+2026-10-11 10:00:21,486 - all_municipalities_scraper - INFO - Downloaded batch 38 to input/kv2026/raw/electoral_districts_batch_38.xml
+2026-10-11 10:00:21,669 - all_municipalities_scraper - INFO - Downloaded batch 39 to input/kv2026/raw/electoral_districts_batch_39.xml
+2026-10-11 10:00:21,831 - all_municipalities_scraper - INFO - Downloaded batch 40 to input/kv2026/raw/electoral_districts_batch_40.xml
+2026-10-11 10:00:21,997 - all_municipalities_scraper - INFO - Downloaded batch 41 to input/kv2026/raw/electoral_districts_batch_41.xml
+2026-10-11 10:00:22,162 - all_municipalities_scraper - INFO - Downloaded batch 42 to input/kv2026/raw/electoral_districts_batch_42.xml
+2026-10-11 10:00:22,347 - all_municipalities_scraper - INFO - Downloaded batch 43 to input/kv2026/raw/electoral_districts_batch_43.xml
+2026-10-11 10:00:22,529 - all_municipalities_scraper - INFO - Downloaded batch 44 to input/kv2026/raw/electoral_districts_batch_44.xml
+2026-10-11 10:00:22,688 - all_municipalities_scraper - INFO - Downloaded batch 45 to input/kv2026/raw/electoral_districts_batch_45.xml
+2026-10-11 10:00:22,847 - all_municipalities_scraper - INFO - Downloaded batch 46 to input/kv2026/raw/electoral_districts_batch_46.xml
+2026-10-11 10:00:23,037 - all_municipalities_scraper - INFO - Downloaded batch 47 to input/kv2026/raw/electoral_districts_batch_47.xml
+2026-10-11 10:00:23,192 - all_municipalities_scraper - INFO - Downloaded batch 48 to input/kv2026/raw/electoral_districts_batch_48.xml
+2026-10-11 10:00:23,418 - all_municipalities_scraper - INFO - Downloaded batch 49 to input/kv2026/raw/electoral_districts_batch_49.xml
+2026-10-11 10:00:23,596 - all_municipalities_scraper - INFO - Downloaded batch 50 to input/kv2026/raw/electoral_districts_batch_50.xml
+2026-10-11 10:00:23,763 - all_municipalities_scraper - INFO - Downloaded batch 51 to input/kv2026/raw/electoral_districts_batch_51.xml
+2026-10-11 10:00:23,929 - all_municipalities_scraper - INFO - Downloaded batch 52 to input/kv2026/raw/electoral_districts_batch_52.xml
+2026-10-11 10:00:24,114 - all_municipalities_scraper - INFO - Downloaded batch 53 to input/kv2026/raw/electoral_districts_batch_53.xml
+2026-10-11 10:00:24,274 - all_municipalities_scraper - INFO - Downloaded batch 54 to input/kv2026/raw/electoral_districts_batch_54.xml
+2026-10-11 10:00:24,444 - all_municipalities_scraper - INFO - Downloaded batch 55 to input/kv2026/raw/electoral_districts_batch_55.xml
+2026-10-11 10:00:24,613 - all_municipalities_scraper - INFO - Downloaded batch 56 to input/kv2026/raw/electoral_districts_batch_56.xml
+2026-10-11 10:00:24,772 - all_municipalities_scraper - INFO - Downloaded batch 57 to input/kv2026/raw/electoral_districts_batch_57.xml
+2026-10-11 10:00:24,924 - all_municipalities_scraper - INFO - Downloaded batch 58 to input/kv2026/raw/electoral_districts_batch_58.xml
+2026-10-11 10:00:25,084 - all_municipalities_scraper - INFO - Downloaded batch 59 to input/kv2026/raw/electoral_districts_batch_59.xml
+2026-10-11 10:00:25,231 - all_municipalities_scraper - INFO - Downloaded batch 60 to input/kv2026/raw/electoral_districts_batch_60.xml
+2026-10-11 10:00:25,381 - all_municipalities_scraper - INFO - Downloaded batch 61 to input/kv2026/raw/electoral_districts_batch_61.xml
+2026-10-11 10:00:25,541 - all_municipalities_scraper - INFO - Downloaded batch 62 to input/kv2026/raw/electoral_districts_batch_62.xml
+2026-10-11 10:00:25,708 - all_municipalities_scraper - INFO - Downloaded batch 63 to input/kv2026/raw/electoral_districts_batch_63.xml
+2026-10-11 10:00:25,891 - all_municipalities_scraper - INFO - Downloaded batch 64 to input/kv2026/raw/electoral_districts_batch_64.xml
+2026-10-11 10:00:26,066 - all_municipalities_scraper - INFO - Downloaded batch 65 to input/kv2026/raw/electoral_districts_batch_65.xml
+2026-10-11 10:00:26,296 - all_municipalities_scraper - INFO - Downloaded batch 66 to input/kv2026/raw/electoral_districts_batch_66.xml
+2026-10-11 10:00:26,464 - all_municipalities_scraper - INFO - Downloaded batch 67 to input/kv2026/raw/electoral_districts_batch_67.xml
+2026-10-11 10:00:26,679 - all_municipalities_scraper - INFO - Downloaded batch 68 to input/kv2026/raw/electoral_districts_batch_68.xml
+2026-10-11 10:00:27,053 - all_municipalities_scraper - INFO - Downloaded batch 69 to input/kv2026/raw/electoral_districts_batch_69.xml
+2026-10-11 10:00:27,635 - all_municipalities_scraper - INFO - Downloaded batch 70 to input/kv2026/raw/electoral_districts_batch_70.xml
+2026-10-11 10:00:28,269 - all_municipalities_scraper - INFO - Downloaded batch 71 to input/kv2026/raw/electoral_districts_batch_71.xml
+2026-10-11 10:00:28,731 - all_municipalities_scraper - INFO - Downloaded batch 72 to input/kv2026/raw/electoral_districts_batch_72.xml
+2026-10-11 10:00:29,302 - all_municipalities_scraper - INFO - Downloaded batch 73 to input/kv2026/raw/electoral_districts_batch_73.xml
+2026-10-11 10:00:29,490 - all_municipalities_scraper - INFO - Downloaded batch 74 to input/kv2026/raw/electoral_districts_batch_74.xml
+2026-10-11 10:00:29,723 - all_municipalities_scraper - INFO - Downloaded batch 75 to input/kv2026/raw/electoral_districts_batch_75.xml
+2026-10-11 10:00:29,978 - all_municipalities_scraper - INFO - Downloaded batch 76 to input/kv2026/raw/electoral_districts_batch_76.xml
+2026-10-11 10:00:30,148 - all_municipalities_scraper - INFO - Downloaded batch 77 to input/kv2026/raw/electoral_districts_batch_77.xml
+2026-10-11 10:00:30,281 - all_municipalities_scraper - INFO - Downloaded batch 78 to input/kv2026/raw/electoral_districts_batch_78.xml
+2026-10-11 10:00:30,427 - all_municipalities_scraper - INFO - Downloaded batch 79 to input/kv2026/raw/electoral_districts_batch_79.xml
+2026-10-11 10:00:30,599 - all_municipalities_scraper - INFO - Downloaded batch 80 to input/kv2026/raw/electoral_districts_batch_80.xml
+2026-10-11 10:00:30,775 - all_municipalities_scraper - INFO - Downloaded batch 81 to input/kv2026/raw/electoral_districts_batch_81.xml
+2026-10-11 10:00:30,960 - all_municipalities_scraper - INFO - Downloaded batch 82 to input/kv2026/raw/electoral_districts_batch_82.xml
+2026-10-11 10:00:31,334 - all_municipalities_scraper - INFO - Downloaded batch 83 to input/kv2026/raw/electoral_districts_batch_83.xml
+2026-10-11 10:00:31,534 - all_municipalities_scraper - INFO - Downloaded batch 84 to input/kv2026/raw/electoral_districts_batch_84.xml
+2026-10-11 10:00:31,735 - all_municipalities_scraper - INFO - Downloaded batch 85 to input/kv2026/raw/electoral_districts_batch_85.xml
+2026-10-11 10:00:31,962 - all_municipalities_scraper - INFO - Downloaded batch 86 to input/kv2026/raw/electoral_districts_batch_86.xml
+2026-10-11 10:00:32,143 - all_municipalities_scraper - INFO - Downloaded batch 87 to input/kv2026/raw/electoral_districts_batch_87.xml
+2026-10-11 10:00:32,292 - all_municipalities_scraper - INFO - Downloaded batch 88 to input/kv2026/raw/electoral_districts_batch_88.xml
+2026-10-11 10:00:32,467 - all_municipalities_scraper - INFO - Downloaded batch 89 to input/kv2026/raw/electoral_districts_batch_89.xml
+2026-10-11 10:00:32,632 - all_municipalities_scraper - INFO - Downloaded batch 90 to input/kv2026/raw/electoral_districts_batch_90.xml
+2026-10-11 10:00:32,792 - all_municipalities_scraper - INFO - Downloaded batch 91 to input/kv2026/raw/electoral_districts_batch_91.xml
+2026-10-11 10:00:32,944 - all_municipalities_scraper - INFO - Downloaded batch 92 to input/kv2026/raw/electoral_districts_batch_92.xml
+2026-10-11 10:00:33,092 - all_municipalities_scraper - INFO - Downloaded batch 93 to input/kv2026/raw/electoral_districts_batch_93.xml
+2026-10-11 10:00:33,243 - all_municipalities_scraper - INFO - Downloaded batch 94 to input/kv2026/raw/electoral_districts_batch_94.xml
+2026-10-11 10:00:33,406 - all_municipalities_scraper - INFO - Downloaded batch 95 to input/kv2026/raw/electoral_districts_batch_95.xml
+2026-10-11 10:00:33,550 - all_municipalities_scraper - INFO - Downloaded batch 96 to input/kv2026/raw/electoral_districts_batch_96.xml
+2026-10-11 10:00:33,721 - all_municipalities_scraper - INFO - Downloaded batch 97 to input/kv2026/raw/electoral_districts_batch_97.xml
+2026-10-11 10:00:33,858 - all_municipalities_scraper - INFO - Downloaded batch 98 to input/kv2026/raw/electoral_districts_batch_98.xml
+2026-10-11 10:00:34,005 - all_municipalities_scraper - INFO - Downloaded batch 99 to input/kv2026/raw/electoral_districts_batch_99.xml
+2026-10-11 10:00:34,163 - all_municipalities_scraper - INFO - Downloaded batch 100 to input/kv2026/raw/electoral_districts_batch_100.xml
+2026-10-11 10:00:34,330 - all_municipalities_scraper - INFO - Downloaded batch 101 to input/kv2026/raw/electoral_districts_batch_101.xml
+2026-10-11 10:00:34,500 - all_municipalities_scraper - INFO - Downloaded batch 102 to input/kv2026/raw/electoral_districts_batch_102.xml
+2026-10-11 10:00:34,828 - all_municipalities_scraper - INFO - Downloaded batch 103 to input/kv2026/raw/electoral_districts_batch_103.xml
+2026-10-11 10:00:34,987 - all_municipalities_scraper - INFO - Downloaded batch 104 to input/kv2026/raw/electoral_districts_batch_104.xml
+2026-10-11 10:00:35,122 - all_municipalities_scraper - INFO - Downloaded batch 105 to input/kv2026/raw/electoral_districts_batch_105.xml
+2026-10-11 10:00:35,274 - all_municipalities_scraper - INFO - Downloaded batch 106 to input/kv2026/raw/electoral_districts_batch_106.xml
+2026-10-11 10:00:35,454 - all_municipalities_scraper - INFO - Downloaded batch 107 to input/kv2026/raw/electoral_districts_batch_107.xml
+2026-10-11 10:00:35,599 - all_municipalities_scraper - INFO - Downloaded batch 108 to input/kv2026/raw/electoral_districts_batch_108.xml
+2026-10-11 10:00:35,752 - all_municipalities_scraper - INFO - Downloaded batch 109 to input/kv2026/raw/electoral_districts_batch_109.xml
+2026-10-11 10:00:35,924 - all_municipalities_scraper - INFO - Downloaded batch 110 to input/kv2026/raw/electoral_districts_batch_110.xml
+2026-10-11 10:00:36,092 - all_municipalities_scraper - INFO - Downloaded batch 111 to input/kv2026/raw/electoral_districts_batch_111.xml
+2026-10-11 10:00:36,256 - all_municipalities_scraper - INFO - Downloaded batch 112 to input/kv2026/raw/electoral_districts_batch_112.xml
+2026-10-11 10:00:36,397 - all_municipalities_scraper - INFO - Downloaded batch 113 to input/kv2026/raw/electoral_districts_batch_113.xml
+2026-10-11 10:00:36,568 - all_municipalities_scraper - INFO - Downloaded batch 114 to input/kv2026/raw/electoral_districts_batch_114.xml
+2026-10-11 10:00:36,726 - all_municipalities_scraper - INFO - Downloaded batch 115 to input/kv2026/raw/electoral_districts_batch_115.xml
+2026-10-11 10:00:36,880 - all_municipalities_scraper - INFO - Downloaded batch 116 to input/kv2026/raw/electoral_districts_batch_116.xml
+2026-10-11 10:00:37,023 - all_municipalities_scraper - INFO - Downloaded batch 117 to input/kv2026/raw/electoral_districts_batch_117.xml
+2026-10-11 10:00:37,166 - all_municipalities_scraper - INFO - Downloaded batch 118 to input/kv2026/raw/electoral_districts_batch_118.xml
+2026-10-11 10:00:37,301 - all_municipalities_scraper - INFO - Downloaded batch 119 to input/kv2026/raw/electoral_districts_batch_119.xml
+2026-10-11 10:00:37,440 - all_municipalities_scraper - INFO - Downloaded batch 120 to input/kv2026/raw/electoral_districts_batch_120.xml
+2026-10-11 10:00:37,577 - all_municipalities_scraper - INFO - Downloaded batch 121 to input/kv2026/raw/electoral_districts_batch_121.xml
+2026-10-11 10:00:37,738 - all_municipalities_scraper - INFO - Downloaded batch 122 to input/kv2026/raw/electoral_districts_batch_122.xml
+2026-10-11 10:00:37,886 - all_municipalities_scraper - INFO - Downloaded batch 123 to input/kv2026/raw/electoral_districts_batch_123.xml
+2026-10-11 10:00:38,045 - all_municipalities_scraper - INFO - Downloaded batch 124 to input/kv2026/raw/electoral_districts_batch_124.xml
+2026-10-11 10:00:38,184 - all_municipalities_scraper - INFO - Downloaded batch 125 to input/kv2026/raw/electoral_districts_batch_125.xml
+2026-10-11 10:00:38,336 - all_municipalities_scraper - INFO - Downloaded batch 126 to input/kv2026/raw/electoral_districts_batch_126.xml
+2026-10-11 10:00:38,493 - all_municipalities_scraper - INFO - Downloaded batch 127 to input/kv2026/raw/electoral_districts_batch_127.xml
+2026-10-11 10:00:38,639 - all_municipalities_scraper - INFO - Downloaded batch 128 to input/kv2026/raw/electoral_districts_batch_128.xml
+2026-10-11 10:00:38,785 - all_municipalities_scraper - INFO - Downloaded batch 129 to input/kv2026/raw/electoral_districts_batch_129.xml
+2026-10-11 10:00:38,926 - all_municipalities_scraper - INFO - Downloaded batch 130 to input/kv2026/raw/electoral_districts_batch_130.xml
+2026-10-11 10:00:39,058 - all_municipalities_scraper - INFO - Downloaded batch 131 to input/kv2026/raw/electoral_districts_batch_131.xml
+2026-10-11 10:00:39,201 - all_municipalities_scraper - INFO - Downloaded batch 132 to input/kv2026/raw/electoral_districts_batch_132.xml
+2026-10-11 10:00:39,333 - all_municipalities_scraper - INFO - Downloaded batch 133 to input/kv2026/raw/electoral_districts_batch_133.xml
+2026-10-11 10:00:39,476 - all_municipalities_scraper - INFO - Downloaded batch 134 to input/kv2026/raw/electoral_districts_batch_134.xml
+2026-10-11 10:00:39,629 - all_municipalities_scraper - INFO - Downloaded batch 135 to input/kv2026/raw/electoral_districts_batch_135.xml
+2026-10-11 10:00:39,782 - all_municipalities_scraper - INFO - Downloaded batch 136 to input/kv2026/raw/electoral_districts_batch_136.xml
+2026-10-11 10:00:39,947 - all_municipalities_scraper - INFO - Downloaded batch 137 to input/kv2026/raw/electoral_districts_batch_137.xml
+2026-10-11 10:00:40,125 - all_municipalities_scraper - INFO - Downloaded batch 138 to input/kv2026/raw/electoral_districts_batch_138.xml
+2026-10-11 10:00:40,277 - all_municipalities_scraper - INFO - Downloaded batch 139 to input/kv2026/raw/electoral_districts_batch_139.xml
+2026-10-11 10:00:40,426 - all_municipalities_scraper - INFO - Downloaded batch 140 to input/kv2026/raw/electoral_districts_batch_140.xml
+2026-10-11 10:00:40,580 - all_municipalities_scraper - INFO - Downloaded batch 141 to input/kv2026/raw/electoral_districts_batch_141.xml
+2026-10-11 10:00:40,716 - all_municipalities_scraper - INFO - Downloaded batch 142 to input/kv2026/raw/electoral_districts_batch_142.xml
+2026-10-11 10:00:40,856 - all_municipalities_scraper - INFO - Downloaded batch 143 to input/kv2026/raw/electoral_districts_batch_143.xml
+2026-10-11 10:00:41,031 - all_municipalities_scraper - INFO - Downloaded batch 144 to input/kv2026/raw/electoral_districts_batch_144.xml
+2026-10-11 10:00:41,176 - all_municipalities_scraper - INFO - Downloaded batch 145 to input/kv2026/raw/electoral_districts_batch_145.xml
+2026-10-11 10:00:41,340 - all_municipalities_scraper - INFO - Downloaded batch 146 to input/kv2026/raw/electoral_districts_batch_146.xml
+2026-10-11 10:00:41,465 - all_municipalities_scraper - INFO - Downloaded batch 147 to input/kv2026/raw/electoral_districts_batch_147.xml
+2026-10-11 10:00:41,605 - all_municipalities_scraper - INFO - Downloaded batch 148 to input/kv2026/raw/electoral_districts_batch_148.xml
+2026-10-11 10:00:41,737 - all_municipalities_scraper - INFO - Downloaded batch 149 to input/kv2026/raw/electoral_districts_batch_149.xml
+2026-10-11 10:00:41,878 - all_municipalities_scraper - INFO - Downloaded batch 150 to input/kv2026/raw/electoral_districts_batch_150.xml
+2026-10-11 10:00:42,057 - all_municipalities_scraper - INFO - Downloaded batch 151 to input/kv2026/raw/electoral_districts_batch_151.xml
+2026-10-11 10:00:42,217 - all_municipalities_scraper - INFO - Downloaded batch 152 to input/kv2026/raw/electoral_districts_batch_152.xml
+2026-10-11 10:00:42,365 - all_municipalities_scraper - INFO - Downloaded batch 153 to input/kv2026/raw/electoral_districts_batch_153.xml
+2026-10-11 10:00:42,518 - all_municipalities_scraper - INFO - Downloaded batch 154 to input/kv2026/raw/electoral_districts_batch_154.xml
+2026-10-11 10:00:42,705 - all_municipalities_scraper - INFO - Downloaded batch 155 to input/kv2026/raw/electoral_districts_batch_155.xml
+2026-10-11 10:00:42,837 - all_municipalities_scraper - INFO - Downloaded batch 156 to input/kv2026/raw/electoral_districts_batch_156.xml
+2026-10-11 10:00:43,018 - all_municipalities_scraper - INFO - Downloaded batch 157 to input/kv2026/raw/electoral_districts_batch_157.xml
+2026-10-11 10:00:43,175 - all_municipalities_scraper - INFO - Downloaded batch 158 to input/kv2026/raw/electoral_districts_batch_158.xml
+2026-10-11 10:00:43,332 - all_municipalities_scraper - INFO - Downloaded batch 159 to input/kv2026/raw/electoral_districts_batch_159.xml
+2026-10-11 10:00:43,490 - all_municipalities_scraper - INFO - Downloaded batch 160 to input/kv2026/raw/electoral_districts_batch_160.xml
+2026-10-11 10:00:43,618 - all_municipalities_scraper - INFO - Downloaded batch 161 to input/kv2026/raw/electoral_districts_batch_161.xml
+2026-10-11 10:00:43,777 - all_municipalities_scraper - INFO - Downloaded batch 162 to input/kv2026/raw/electoral_districts_batch_162.xml
+2026-10-11 10:00:43,909 - all_municipalities_scraper - INFO - Downloaded batch 163 to input/kv2026/raw/electoral_districts_batch_163.xml
+2026-10-11 10:00:44,060 - all_municipalities_scraper - INFO - Downloaded batch 164 to input/kv2026/raw/electoral_districts_batch_164.xml
+2026-10-11 10:00:44,228 - all_municipalities_scraper - INFO - Downloaded batch 165 to input/kv2026/raw/electoral_districts_batch_165.xml
+2026-10-11 10:00:44,228 - all_municipalities_scraper - INFO - Collected data from 164 batch files
+2026-10-11 10:00:44,228 - all_municipalities_scraper - INFO - Found 16709 total electoral districts
+2026-10-11 10:00:44,228 - all_municipalities_scraper - INFO - Covering 6389 council elections (zastupitelstvo)
+2026-10-11 10:00:44,276 - all_municipalities_scraper - INFO - Generating reports for all zastupitelstvo elections...
+2026-10-11 10:00:44,832 - all_municipalities_scraper - INFO - Saved comprehensive data for 6389 council elections to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:00:44,856 - all_municipalities_scraper - INFO - Saved municipality index to output/kv2026/results/municipality_index.json
+2026-10-11 10:00:44,856 - all_municipalities_scraper - INFO - Complete analysis finished. Results saved to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:00:44,856 - all_municipalities_scraper - INFO - Processed 6389 council elections (zastupitelstvo)
+2026-10-11 10:00:44,869 - __main__ - INFO - ✅ Complete analysis saved to: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:00:44,869 - __main__ - INFO - 
+📋 STEP 3: Generating Summary Report
+2026-10-11 10:00:45,010 - __main__ - INFO - ✅ Summary report saved to output/kv2026/reports/analysis_summary.md
+2026-10-11 10:00:45,011 - __main__ - INFO - ✅ JSON summary saved to output/kv2026/reports/analysis_summary.json
+2026-10-11 10:00:45,019 - __main__ - INFO - 
+🎉 ELECTORAL ANALYSIS COMPLETE!
+2026-10-11 10:00:45,019 - __main__ - INFO - ================================================================================
+2026-10-11 10:00:45,019 - __main__ - INFO - 📁 Output files:
+2026-10-11 10:00:45,019 - __main__ - INFO -    • Municipality registry: output/kv2026/processed/municipality_registry.json
+2026-10-11 10:00:45,019 - __main__ - INFO -    • Municipality index: output/kv2026/results/municipality_index.json
+2026-10-11 10:00:45,019 - __main__ - INFO -    • Complete analysis: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:00:45,019 - __main__ - INFO -    • Summary report: output/kv2026/reports/analysis_summary.md
+2026-10-11 10:00:45,019 - __main__ - INFO - ================================================================================
+2026-10-11 10:00:45,019 - __main__ - INFO - 
+🚀 Ready to use with Streamlit:
+2026-10-11 10:00:45,019 - __main__ - INFO -    streamlit run streamlit_app.py
+2026-10-11 10:00:45,019 - __main__ - INFO -    (Select 'Komunální volby 2026' in the app)
+2026-10-11 10:01:11,023 - __main__ - INFO - ================================================================================
+2026-10-11 10:01:11,023 - __main__ - INFO - CZECH ELECTORAL ANALYSIS
+2026-10-11 10:01:11,023 - __main__ - INFO - ================================================================================
+2026-10-11 10:01:11,023 - __main__ - INFO - Election: Komunální volby 2026
+2026-10-11 10:01:11,023 - __main__ - INFO - Election ID: kv2026
+2026-10-11 10:01:11,023 - __main__ - INFO - Election Type: municipal
+2026-10-11 10:01:11,023 - __main__ - INFO - Election Date: 20261009
+2026-10-11 10:01:11,023 - __main__ - INFO - Input directory: input/kv2026
+2026-10-11 10:01:11,023 - __main__ - INFO - Output directory: output/kv2026
+2026-10-11 10:01:11,023 - __main__ - INFO - Max batches: 200
+2026-10-11 10:01:11,023 - __main__ - INFO - Registry only: False
+2026-10-11 10:01:11,023 - __main__ - INFO - No download: True
+2026-10-11 10:01:11,023 - __main__ - INFO - --------------------------------------------------------------------------------
+2026-10-11 10:01:11,023 - __main__ - INFO - 🏛️  STEP 1: Processing Municipality Registry
+2026-10-11 10:01:11,023 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:01:11,093 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:01:11,095 - __main__ - INFO - ✅ Found 6395 total entries
+2026-10-11 10:01:11,095 - __main__ - INFO - ✅ Found 6389 municipalities with valid elections
+2026-10-11 10:01:11,120 - municipality_registry - INFO - Saved municipality registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:01:11,121 - __main__ - INFO - ✅ Saved registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:01:11,121 - __main__ - INFO - 
+📊 Sample municipalities:
+2026-10-11 10:01:11,121 - __main__ - INFO -    1. Želechovice nad Dřevnicí (500011) - 15 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -    2. Petrov nad Desnou (500020) - 11 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -    3. Libhošť (500046) - 15 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -    4. Praha 1 (500054) - 27 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -    5. Krhová (500062) - 15 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -    6. Poličná (500071) - 15 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -    7. Praha 2 (500089) - 35 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -    8. Praha 3 (500097) - 35 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -    9. Bražec (500101) - 7 seats
+2026-10-11 10:01:11,121 - __main__ - INFO -   10. Praha 4 (500119) - 45 seats
+2026-10-11 10:01:11,121 - __main__ - INFO - 
+🗳️  STEP 2: Collecting Electoral Data
+2026-10-11 10:01:11,121 - __main__ - INFO - 🏛️  Using AllMunicipalitiesScraper for municipal elections
+2026-10-11 10:01:11,121 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:01:11,121 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:01:11,121 - __main__ - INFO - ⏭️  Skipping download, processing existing files...
+2026-10-11 10:01:11,121 - all_municipalities_scraper - INFO - Starting complete electoral analysis for ALL Czech council elections (zastupitelstvo)
+2026-10-11 10:01:11,190 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:01:11,192 - all_municipalities_scraper - INFO - Parsing party registry for all municipalities...
+2026-10-11 10:01:11,410 - all_municipalities_scraper - INFO - Loaded party data for 6393 municipalities
+2026-10-11 10:01:11,410 - all_municipalities_scraper - INFO - Total party entries: 22548
+2026-10-11 10:01:11,410 - all_municipalities_scraper - INFO - Municipalities with party data: 6393
+2026-10-11 10:01:11,422 - all_municipalities_scraper - INFO - Collecting electoral data for ALL Czech municipalities...
+2026-10-11 10:01:11,422 - all_municipalities_scraper - INFO - Processing 165 existing batch files...
+2026-10-11 10:01:11,629 - all_municipalities_scraper - INFO - Dropped 60 superseded precinct records
+2026-10-11 10:01:11,629 - all_municipalities_scraper - INFO - Collected data from 164 batch files
+2026-10-11 10:01:11,629 - all_municipalities_scraper - INFO - Found 16649 total electoral districts
+2026-10-11 10:01:11,629 - all_municipalities_scraper - INFO - Covering 6389 council elections (zastupitelstvo)
+2026-10-11 10:01:11,649 - all_municipalities_scraper - INFO - Generating reports for all zastupitelstvo elections...
+2026-10-11 10:01:12,186 - all_municipalities_scraper - INFO - Saved comprehensive data for 6389 council elections to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:01:12,209 - all_municipalities_scraper - INFO - Saved municipality index to output/kv2026/results/municipality_index.json
+2026-10-11 10:01:12,209 - all_municipalities_scraper - INFO - Complete analysis finished. Results saved to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:01:12,209 - all_municipalities_scraper - INFO - Processed 6389 council elections (zastupitelstvo)
+2026-10-11 10:01:12,222 - __main__ - INFO - ✅ Complete analysis saved to: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:01:12,222 - __main__ - INFO - 
+📋 STEP 3: Generating Summary Report
+2026-10-11 10:01:12,356 - __main__ - INFO - ✅ Summary report saved to output/kv2026/reports/analysis_summary.md
+2026-10-11 10:01:12,356 - __main__ - INFO - ✅ JSON summary saved to output/kv2026/reports/analysis_summary.json
+2026-10-11 10:01:12,364 - __main__ - INFO - 
+🎉 ELECTORAL ANALYSIS COMPLETE!
+2026-10-11 10:01:12,364 - __main__ - INFO - ================================================================================
+2026-10-11 10:01:12,364 - __main__ - INFO - 📁 Output files:
+2026-10-11 10:01:12,364 - __main__ - INFO -    • Municipality registry: output/kv2026/processed/municipality_registry.json
+2026-10-11 10:01:12,364 - __main__ - INFO -    • Municipality index: output/kv2026/results/municipality_index.json
+2026-10-11 10:01:12,364 - __main__ - INFO -    • Complete analysis: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:01:12,364 - __main__ - INFO -    • Summary report: output/kv2026/reports/analysis_summary.md
+2026-10-11 10:01:12,364 - __main__ - INFO - ================================================================================
+2026-10-11 10:01:12,364 - __main__ - INFO - 
+🚀 Ready to use with Streamlit:
+2026-10-11 10:01:12,364 - __main__ - INFO -    streamlit run streamlit_app.py
+2026-10-11 10:01:12,364 - __main__ - INFO -    (Select 'Komunální volby 2026' in the app)
+2026-10-11 10:01:12,653 - __main__ - INFO - ================================================================================
+2026-10-11 10:01:12,653 - __main__ - INFO - CZECH ELECTORAL ANALYSIS
+2026-10-11 10:01:12,653 - __main__ - INFO - ================================================================================
+2026-10-11 10:01:12,653 - __main__ - INFO - Election: Komunální volby 2022
+2026-10-11 10:01:12,653 - __main__ - INFO - Election ID: kv2022
+2026-10-11 10:01:12,653 - __main__ - INFO - Election Type: municipal
+2026-10-11 10:01:12,653 - __main__ - INFO - Election Date: 20220923
+2026-10-11 10:01:12,654 - __main__ - INFO - Input directory: input/kv2022
+2026-10-11 10:01:12,654 - __main__ - INFO - Output directory: output/kv2022
+2026-10-11 10:01:12,654 - __main__ - INFO - Max batches: 200
+2026-10-11 10:01:12,654 - __main__ - INFO - Registry only: False
+2026-10-11 10:01:12,654 - __main__ - INFO - No download: True
+2026-10-11 10:01:12,654 - __main__ - INFO - --------------------------------------------------------------------------------
+2026-10-11 10:01:12,654 - __main__ - INFO - 🏛️  STEP 1: Processing Municipality Registry
+2026-10-11 10:01:12,654 - election_config - INFO - Ensured directories for election: Komunální volby 2022
+2026-10-11 10:01:12,730 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:01:12,734 - __main__ - INFO - ✅ Found 6395 total entries
+2026-10-11 10:01:12,734 - __main__ - INFO - ✅ Found 6390 municipalities with valid elections
+2026-10-11 10:01:12,763 - municipality_registry - INFO - Saved municipality registry to output/kv2022/processed/municipality_registry.json
+2026-10-11 10:01:12,763 - __main__ - INFO - ✅ Saved registry to output/kv2022/processed/municipality_registry.json
+2026-10-11 10:01:12,763 - __main__ - INFO - 
+📊 Sample municipalities:
+2026-10-11 10:01:12,763 - __main__ - INFO -    1. Želechovice nad Dřevnicí (500011) - 15 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -    2. Petrov nad Desnou (500020) - 11 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -    3. Libhošť (500046) - 15 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -    4. Praha 1 (500054) - 27 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -    5. Krhová (500062) - 15 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -    6. Poličná (500071) - 15 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -    7. Praha 2 (500089) - 35 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -    8. Praha 3 (500097) - 35 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -    9. Bražec (500101) - 7 seats
+2026-10-11 10:01:12,763 - __main__ - INFO -   10. Praha 4 (500119) - 45 seats
+2026-10-11 10:01:12,763 - __main__ - INFO - 
+🗳️  STEP 2: Collecting Electoral Data
+2026-10-11 10:01:12,763 - __main__ - INFO - 🏛️  Using AllMunicipalitiesScraper for municipal elections
+2026-10-11 10:01:12,763 - election_config - INFO - Ensured directories for election: Komunální volby 2022
+2026-10-11 10:01:12,764 - election_config - INFO - Ensured directories for election: Komunální volby 2022
+2026-10-11 10:01:12,764 - __main__ - INFO - ⏭️  Skipping download, processing existing files...
+2026-10-11 10:01:12,764 - all_municipalities_scraper - INFO - Starting complete electoral analysis for ALL Czech council elections (zastupitelstvo)
+2026-10-11 10:01:12,838 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:01:12,841 - all_municipalities_scraper - INFO - Parsing party registry for all municipalities...
+2026-10-11 10:01:13,089 - all_municipalities_scraper - INFO - Loaded party data for 6393 municipalities
+2026-10-11 10:01:13,090 - all_municipalities_scraper - INFO - Total party entries: 23369
+2026-10-11 10:01:13,090 - all_municipalities_scraper - INFO - Municipalities with party data: 6393
+2026-10-11 10:01:13,103 - all_municipalities_scraper - INFO - Collecting electoral data for ALL Czech municipalities...
+2026-10-11 10:01:13,104 - all_municipalities_scraper - INFO - Processing 200 existing batch files...
+2026-10-11 10:01:13,315 - all_municipalities_scraper - INFO - Dropped 47 superseded precinct records
+2026-10-11 10:01:13,316 - all_municipalities_scraper - INFO - Collected data from 154 batch files
+2026-10-11 10:01:13,316 - all_municipalities_scraper - INFO - Found 16854 total electoral districts
+2026-10-11 10:01:13,316 - all_municipalities_scraper - INFO - Covering 6383 council elections (zastupitelstvo)
+2026-10-11 10:01:13,336 - all_municipalities_scraper - INFO - Generating reports for all zastupitelstvo elections...
+2026-10-11 10:01:13,876 - all_municipalities_scraper - INFO - Saved comprehensive data for 6383 council elections to output/kv2022/results/all_municipalities_comprehensive.json
+2026-10-11 10:01:13,899 - all_municipalities_scraper - INFO - Saved municipality index to output/kv2022/results/municipality_index.json
+2026-10-11 10:01:13,899 - all_municipalities_scraper - INFO - Complete analysis finished. Results saved to output/kv2022/results/all_municipalities_comprehensive.json
+2026-10-11 10:01:13,899 - all_municipalities_scraper - INFO - Processed 6383 council elections (zastupitelstvo)
+2026-10-11 10:01:13,913 - __main__ - INFO - ✅ Complete analysis saved to: output/kv2022/results/all_municipalities_comprehensive.json
+2026-10-11 10:01:13,913 - __main__ - INFO - 
+📋 STEP 3: Generating Summary Report
+2026-10-11 10:01:14,055 - __main__ - INFO - ✅ Summary report saved to output/kv2022/reports/analysis_summary.md
+2026-10-11 10:01:14,055 - __main__ - INFO - ✅ JSON summary saved to output/kv2022/reports/analysis_summary.json
+2026-10-11 10:01:14,063 - __main__ - INFO - 
+🎉 ELECTORAL ANALYSIS COMPLETE!
+2026-10-11 10:01:14,063 - __main__ - INFO - ================================================================================
+2026-10-11 10:01:14,063 - __main__ - INFO - 📁 Output files:
+2026-10-11 10:01:14,064 - __main__ - INFO -    • Municipality registry: output/kv2022/processed/municipality_registry.json
+2026-10-11 10:01:14,064 - __main__ - INFO -    • Municipality index: output/kv2022/results/municipality_index.json
+2026-10-11 10:01:14,064 - __main__ - INFO -    • Complete analysis: output/kv2022/results/all_municipalities_comprehensive.json
+2026-10-11 10:01:14,064 - __main__ - INFO -    • Summary report: output/kv2022/reports/analysis_summary.md
+2026-10-11 10:01:14,064 - __main__ - INFO - ================================================================================
+2026-10-11 10:01:14,064 - __main__ - INFO - 
+🚀 Ready to use with Streamlit:
+2026-10-11 10:01:14,064 - __main__ - INFO -    streamlit run streamlit_app.py
+2026-10-11 10:01:14,064 - __main__ - INFO -    (Select 'Komunální volby 2022' in the app)
+2026-10-11 10:04:11,012 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:11,013 - __main__ - INFO - CZECH ELECTORAL ANALYSIS
+2026-10-11 10:04:11,013 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:11,013 - __main__ - INFO - Election: Komunální volby 2026
+2026-10-11 10:04:11,013 - __main__ - INFO - Election ID: kv2026
+2026-10-11 10:04:11,013 - __main__ - INFO - Election Type: municipal
+2026-10-11 10:04:11,013 - __main__ - INFO - Election Date: 20261009
+2026-10-11 10:04:11,013 - __main__ - INFO - Input directory: input/kv2026
+2026-10-11 10:04:11,013 - __main__ - INFO - Output directory: output/kv2026
+2026-10-11 10:04:11,013 - __main__ - INFO - Max batches: 200
+2026-10-11 10:04:11,013 - __main__ - INFO - Registry only: False
+2026-10-11 10:04:11,013 - __main__ - INFO - No download: True
+2026-10-11 10:04:11,013 - __main__ - INFO - --------------------------------------------------------------------------------
+2026-10-11 10:04:11,013 - __main__ - INFO - 🏛️  STEP 1: Processing Municipality Registry
+2026-10-11 10:04:11,013 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:11,085 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:04:11,088 - __main__ - INFO - ✅ Found 6395 total entries
+2026-10-11 10:04:11,088 - __main__ - INFO - ✅ Found 6389 municipalities with valid elections
+2026-10-11 10:04:11,113 - municipality_registry - INFO - Saved municipality registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:11,113 - __main__ - INFO - ✅ Saved registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:11,113 - __main__ - INFO - 
+📊 Sample municipalities:
+2026-10-11 10:04:11,113 - __main__ - INFO -    1. Želechovice nad Dřevnicí (500011) - 15 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -    2. Petrov nad Desnou (500020) - 11 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -    3. Libhošť (500046) - 15 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -    4. Praha 1 (500054) - 27 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -    5. Krhová (500062) - 15 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -    6. Poličná (500071) - 15 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -    7. Praha 2 (500089) - 35 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -    8. Praha 3 (500097) - 35 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -    9. Bražec (500101) - 7 seats
+2026-10-11 10:04:11,113 - __main__ - INFO -   10. Praha 4 (500119) - 45 seats
+2026-10-11 10:04:11,113 - __main__ - INFO - 
+🗳️  STEP 2: Collecting Electoral Data
+2026-10-11 10:04:11,113 - __main__ - INFO - 🏛️  Using AllMunicipalitiesScraper for municipal elections
+2026-10-11 10:04:11,113 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:11,114 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:11,114 - __main__ - INFO - ⏭️  Skipping download, processing existing files...
+2026-10-11 10:04:11,114 - all_municipalities_scraper - INFO - Starting complete electoral analysis for ALL Czech council elections (zastupitelstvo)
+2026-10-11 10:04:11,184 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:04:11,186 - all_municipalities_scraper - INFO - Parsing party registry for all municipalities...
+2026-10-11 10:04:11,407 - all_municipalities_scraper - INFO - Loaded party data for 6393 municipalities
+2026-10-11 10:04:11,407 - all_municipalities_scraper - INFO - Total party entries: 22548
+2026-10-11 10:04:11,407 - all_municipalities_scraper - INFO - Municipalities with party data: 6393
+2026-10-11 10:04:11,419 - all_municipalities_scraper - INFO - Collecting electoral data for ALL Czech municipalities...
+2026-10-11 10:04:11,419 - all_municipalities_scraper - INFO - Processing 165 existing batch files...
+2026-10-11 10:04:11,630 - all_municipalities_scraper - INFO - Dropped 60 superseded precinct records
+2026-10-11 10:04:11,630 - all_municipalities_scraper - INFO - Collected data from 164 batch files
+2026-10-11 10:04:11,630 - all_municipalities_scraper - INFO - Found 16649 total electoral districts
+2026-10-11 10:04:11,630 - all_municipalities_scraper - INFO - Covering 6389 council elections (zastupitelstvo)
+2026-10-11 10:04:11,650 - all_municipalities_scraper - INFO - Generating reports for all zastupitelstvo elections...
+2026-10-11 10:04:12,166 - all_municipalities_scraper - INFO - Saved comprehensive data for 6389 council elections to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:12,189 - all_municipalities_scraper - INFO - Saved municipality index to output/kv2026/results/municipality_index.json
+2026-10-11 10:04:12,190 - all_municipalities_scraper - INFO - Complete analysis finished. Results saved to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:12,190 - all_municipalities_scraper - INFO - Processed 6389 council elections (zastupitelstvo)
+2026-10-11 10:04:12,202 - __main__ - INFO - ✅ Complete analysis saved to: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:12,202 - __main__ - INFO - 
+🗺️  STEP 3: Preparing precinct boundaries for maps
+2026-10-11 10:04:12,239 - __main__ - INFO - 🗺️  Preparing precinct boundaries from input/raw/electoral_districts_boundaries_2025_wgs84.gpkg
+2026-10-11 10:04:14,521 - pyogrio._io - INFO - Created 14,711 records
+2026-10-11 10:04:14,522 - __main__ - INFO - ✅ Saved 14711 precinct boundaries to input/raw/electoral_districts_boundaries_2025_municipal.geojson
+2026-10-11 10:04:14,525 - __main__ - INFO - 
+📋 STEP 4: Generating Summary Report
+2026-10-11 10:04:14,660 - __main__ - INFO - ✅ Summary report saved to output/kv2026/reports/analysis_summary.md
+2026-10-11 10:04:14,661 - __main__ - INFO - ✅ JSON summary saved to output/kv2026/reports/analysis_summary.json
+2026-10-11 10:04:14,669 - __main__ - INFO - 
+🎉 ELECTORAL ANALYSIS COMPLETE!
+2026-10-11 10:04:14,669 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:14,669 - __main__ - INFO - 📁 Output files:
+2026-10-11 10:04:14,669 - __main__ - INFO -    • Municipality registry: output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:14,669 - __main__ - INFO -    • Municipality index: output/kv2026/results/municipality_index.json
+2026-10-11 10:04:14,669 - __main__ - INFO -    • Complete analysis: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:14,669 - __main__ - INFO -    • Summary report: output/kv2026/reports/analysis_summary.md
+2026-10-11 10:04:14,669 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:14,669 - __main__ - INFO - 
+🚀 Ready to use with Streamlit:
+2026-10-11 10:04:14,669 - __main__ - INFO -    streamlit run streamlit_app.py
+2026-10-11 10:04:14,669 - __main__ - INFO -    (Select 'Komunální volby 2026' in the app)
+2026-10-11 10:04:21,201 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:21,201 - __main__ - INFO - CZECH ELECTORAL ANALYSIS
+2026-10-11 10:04:21,201 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:21,201 - __main__ - INFO - Election: Komunální volby 2026
+2026-10-11 10:04:21,201 - __main__ - INFO - Election ID: kv2026
+2026-10-11 10:04:21,201 - __main__ - INFO - Election Type: municipal
+2026-10-11 10:04:21,201 - __main__ - INFO - Election Date: 20261009
+2026-10-11 10:04:21,201 - __main__ - INFO - Input directory: input/kv2026
+2026-10-11 10:04:21,201 - __main__ - INFO - Output directory: output/kv2026
+2026-10-11 10:04:21,201 - __main__ - INFO - Max batches: 200
+2026-10-11 10:04:21,201 - __main__ - INFO - Registry only: False
+2026-10-11 10:04:21,201 - __main__ - INFO - No download: True
+2026-10-11 10:04:21,201 - __main__ - INFO - --------------------------------------------------------------------------------
+2026-10-11 10:04:21,201 - __main__ - INFO - 🏛️  STEP 1: Processing Municipality Registry
+2026-10-11 10:04:21,201 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:21,272 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:04:21,275 - __main__ - INFO - ✅ Found 6395 total entries
+2026-10-11 10:04:21,275 - __main__ - INFO - ✅ Found 6389 municipalities with valid elections
+2026-10-11 10:04:21,301 - municipality_registry - INFO - Saved municipality registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:21,301 - __main__ - INFO - ✅ Saved registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:21,301 - __main__ - INFO - 
+📊 Sample municipalities:
+2026-10-11 10:04:21,301 - __main__ - INFO -    1. Želechovice nad Dřevnicí (500011) - 15 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -    2. Petrov nad Desnou (500020) - 11 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -    3. Libhošť (500046) - 15 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -    4. Praha 1 (500054) - 27 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -    5. Krhová (500062) - 15 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -    6. Poličná (500071) - 15 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -    7. Praha 2 (500089) - 35 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -    8. Praha 3 (500097) - 35 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -    9. Bražec (500101) - 7 seats
+2026-10-11 10:04:21,301 - __main__ - INFO -   10. Praha 4 (500119) - 45 seats
+2026-10-11 10:04:21,301 - __main__ - INFO - 
+🗳️  STEP 2: Collecting Electoral Data
+2026-10-11 10:04:21,301 - __main__ - INFO - 🏛️  Using AllMunicipalitiesScraper for municipal elections
+2026-10-11 10:04:21,302 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:21,302 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:21,302 - __main__ - INFO - ⏭️  Skipping download, processing existing files...
+2026-10-11 10:04:21,302 - all_municipalities_scraper - INFO - Starting complete electoral analysis for ALL Czech council elections (zastupitelstvo)
+2026-10-11 10:04:21,378 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:04:21,381 - all_municipalities_scraper - INFO - Parsing party registry for all municipalities...
+2026-10-11 10:04:21,604 - all_municipalities_scraper - INFO - Loaded party data for 6393 municipalities
+2026-10-11 10:04:21,604 - all_municipalities_scraper - INFO - Total party entries: 22548
+2026-10-11 10:04:21,604 - all_municipalities_scraper - INFO - Municipalities with party data: 6393
+2026-10-11 10:04:21,617 - all_municipalities_scraper - INFO - Collecting electoral data for ALL Czech municipalities...
+2026-10-11 10:04:21,618 - all_municipalities_scraper - INFO - Processing 165 existing batch files...
+2026-10-11 10:04:21,795 - all_municipalities_scraper - INFO - Dropped 60 superseded precinct records
+2026-10-11 10:04:21,795 - all_municipalities_scraper - INFO - Collected data from 164 batch files
+2026-10-11 10:04:21,795 - all_municipalities_scraper - INFO - Found 16649 total electoral districts
+2026-10-11 10:04:21,795 - all_municipalities_scraper - INFO - Covering 6389 council elections (zastupitelstvo)
+2026-10-11 10:04:21,816 - all_municipalities_scraper - INFO - Generating reports for all zastupitelstvo elections...
+2026-10-11 10:04:22,346 - all_municipalities_scraper - INFO - Saved comprehensive data for 6389 council elections to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:22,368 - all_municipalities_scraper - INFO - Saved municipality index to output/kv2026/results/municipality_index.json
+2026-10-11 10:04:22,368 - all_municipalities_scraper - INFO - Complete analysis finished. Results saved to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:22,368 - all_municipalities_scraper - INFO - Processed 6389 council elections (zastupitelstvo)
+2026-10-11 10:04:22,382 - __main__ - INFO - ✅ Complete analysis saved to: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:22,382 - __main__ - INFO - 
+🗺️  STEP 3: Preparing precinct boundaries for maps
+2026-10-11 10:04:22,418 - __main__ - INFO - 🗺️  Preparing precinct boundaries from input/raw/electoral_districts_boundaries_2025_wgs84.gpkg
+2026-10-11 10:04:24,637 - pyogrio._io - INFO - Created 14,711 records
+2026-10-11 10:04:24,637 - __main__ - INFO - ✅ Saved 14711 precinct boundaries to input/raw/electoral_districts_boundaries_2025_municipal.geojson
+2026-10-11 10:04:24,640 - __main__ - INFO - 
+📋 STEP 4: Generating Summary Report
+2026-10-11 10:04:24,762 - __main__ - INFO - ✅ Summary report saved to output/kv2026/reports/analysis_summary.md
+2026-10-11 10:04:24,763 - __main__ - INFO - ✅ JSON summary saved to output/kv2026/reports/analysis_summary.json
+2026-10-11 10:04:24,771 - __main__ - INFO - 
+🎉 ELECTORAL ANALYSIS COMPLETE!
+2026-10-11 10:04:24,771 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:24,771 - __main__ - INFO - 📁 Output files:
+2026-10-11 10:04:24,771 - __main__ - INFO -    • Municipality registry: output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:24,771 - __main__ - INFO -    • Municipality index: output/kv2026/results/municipality_index.json
+2026-10-11 10:04:24,771 - __main__ - INFO -    • Complete analysis: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:24,771 - __main__ - INFO -    • Summary report: output/kv2026/reports/analysis_summary.md
+2026-10-11 10:04:24,771 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:24,771 - __main__ - INFO - 
+🚀 Ready to use with Streamlit:
+2026-10-11 10:04:24,771 - __main__ - INFO -    streamlit run streamlit_app.py
+2026-10-11 10:04:24,771 - __main__ - INFO -    (Select 'Komunální volby 2026' in the app)
+2026-10-11 10:04:50,753 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:50,753 - __main__ - INFO - CZECH ELECTORAL ANALYSIS
+2026-10-11 10:04:50,753 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:50,753 - __main__ - INFO - Election: Komunální volby 2026
+2026-10-11 10:04:50,753 - __main__ - INFO - Election ID: kv2026
+2026-10-11 10:04:50,753 - __main__ - INFO - Election Type: municipal
+2026-10-11 10:04:50,753 - __main__ - INFO - Election Date: 20261009
+2026-10-11 10:04:50,753 - __main__ - INFO - Input directory: input/kv2026
+2026-10-11 10:04:50,753 - __main__ - INFO - Output directory: output/kv2026
+2026-10-11 10:04:50,753 - __main__ - INFO - Max batches: 200
+2026-10-11 10:04:50,753 - __main__ - INFO - Registry only: False
+2026-10-11 10:04:50,753 - __main__ - INFO - No download: True
+2026-10-11 10:04:50,753 - __main__ - INFO - --------------------------------------------------------------------------------
+2026-10-11 10:04:50,753 - __main__ - INFO - 🏛️  STEP 1: Processing Municipality Registry
+2026-10-11 10:04:50,753 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:50,824 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:04:50,827 - __main__ - INFO - ✅ Found 6395 total entries
+2026-10-11 10:04:50,827 - __main__ - INFO - ✅ Found 6389 municipalities with valid elections
+2026-10-11 10:04:50,852 - municipality_registry - INFO - Saved municipality registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:50,852 - __main__ - INFO - ✅ Saved registry to output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:50,852 - __main__ - INFO - 
+📊 Sample municipalities:
+2026-10-11 10:04:50,852 - __main__ - INFO -    1. Želechovice nad Dřevnicí (500011) - 15 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -    2. Petrov nad Desnou (500020) - 11 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -    3. Libhošť (500046) - 15 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -    4. Praha 1 (500054) - 27 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -    5. Krhová (500062) - 15 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -    6. Poličná (500071) - 15 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -    7. Praha 2 (500089) - 35 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -    8. Praha 3 (500097) - 35 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -    9. Bražec (500101) - 7 seats
+2026-10-11 10:04:50,852 - __main__ - INFO -   10. Praha 4 (500119) - 45 seats
+2026-10-11 10:04:50,852 - __main__ - INFO - 
+🗳️  STEP 2: Collecting Electoral Data
+2026-10-11 10:04:50,852 - __main__ - INFO - 🏛️  Using AllMunicipalitiesScraper for municipal elections
+2026-10-11 10:04:50,852 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:50,852 - election_config - INFO - Ensured directories for election: Komunální volby 2026
+2026-10-11 10:04:50,852 - __main__ - INFO - ⏭️  Skipping download, processing existing files...
+2026-10-11 10:04:50,852 - all_municipalities_scraper - INFO - Starting complete electoral analysis for ALL Czech council elections (zastupitelstvo)
+2026-10-11 10:04:50,922 - municipality_registry - INFO - Parsed 6395 municipality entries from registry
+2026-10-11 10:04:50,925 - all_municipalities_scraper - INFO - Parsing party registry for all municipalities...
+2026-10-11 10:04:51,142 - all_municipalities_scraper - INFO - Loaded party data for 6393 municipalities
+2026-10-11 10:04:51,142 - all_municipalities_scraper - INFO - Total party entries: 22548
+2026-10-11 10:04:51,142 - all_municipalities_scraper - INFO - Municipalities with party data: 6393
+2026-10-11 10:04:51,154 - all_municipalities_scraper - INFO - Collecting electoral data for ALL Czech municipalities...
+2026-10-11 10:04:51,154 - all_municipalities_scraper - INFO - Processing 165 existing batch files...
+2026-10-11 10:04:51,323 - all_municipalities_scraper - INFO - Dropped 60 superseded precinct records
+2026-10-11 10:04:51,323 - all_municipalities_scraper - INFO - Collected data from 164 batch files
+2026-10-11 10:04:51,323 - all_municipalities_scraper - INFO - Found 16649 total electoral districts
+2026-10-11 10:04:51,323 - all_municipalities_scraper - INFO - Covering 6389 council elections (zastupitelstvo)
+2026-10-11 10:04:51,342 - all_municipalities_scraper - INFO - Generating reports for all zastupitelstvo elections...
+2026-10-11 10:04:51,845 - all_municipalities_scraper - INFO - Saved comprehensive data for 6389 council elections to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:51,878 - all_municipalities_scraper - INFO - Saved municipality index to output/kv2026/results/municipality_index.json
+2026-10-11 10:04:51,879 - all_municipalities_scraper - INFO - Complete analysis finished. Results saved to output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:51,879 - all_municipalities_scraper - INFO - Processed 6389 council elections (zastupitelstvo)
+2026-10-11 10:04:51,894 - __main__ - INFO - ✅ Complete analysis saved to: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:51,894 - __main__ - INFO - 
+🗺️  STEP 3: Preparing precinct boundaries for maps
+2026-10-11 10:04:51,929 - __main__ - INFO - 🗺️  Preparing precinct boundaries from input/raw/electoral_districts_boundaries_2025_wgs84.gpkg
+2026-10-11 10:04:53,306 - pyogrio._io - INFO - Created 14,711 records
+2026-10-11 10:04:53,307 - __main__ - INFO - ✅ Saved 14711 precinct boundaries to input/raw/electoral_districts_boundaries_2025_municipal.geojson
+2026-10-11 10:04:53,309 - __main__ - INFO - 
+📋 STEP 4: Generating Summary Report
+2026-10-11 10:04:53,439 - __main__ - INFO - ✅ Summary report saved to output/kv2026/reports/analysis_summary.md
+2026-10-11 10:04:53,440 - __main__ - INFO - ✅ JSON summary saved to output/kv2026/reports/analysis_summary.json
+2026-10-11 10:04:53,447 - __main__ - INFO - 
+🎉 ELECTORAL ANALYSIS COMPLETE!
+2026-10-11 10:04:53,447 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:53,447 - __main__ - INFO - 📁 Output files:
+2026-10-11 10:04:53,447 - __main__ - INFO -    • Municipality registry: output/kv2026/processed/municipality_registry.json
+2026-10-11 10:04:53,447 - __main__ - INFO -    • Municipality index: output/kv2026/results/municipality_index.json
+2026-10-11 10:04:53,447 - __main__ - INFO -    • Complete analysis: output/kv2026/results/all_municipalities_comprehensive.json
+2026-10-11 10:04:53,447 - __main__ - INFO -    • Summary report: output/kv2026/reports/analysis_summary.md
+2026-10-11 10:04:53,447 - __main__ - INFO - ================================================================================
+2026-10-11 10:04:53,447 - __main__ - INFO - 
+🚀 Ready to use with Streamlit:
+2026-10-11 10:04:53,447 - __main__ - INFO -    streamlit run streamlit_app.py
+2026-10-11 10:04:53,447 - __main__ - INFO -    (Select 'Komunální volby 2026' in the app)
