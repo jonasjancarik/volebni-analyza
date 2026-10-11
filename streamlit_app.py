@@ -4172,13 +4172,26 @@ def _group_colors(groups) -> Dict[str, str]:
     return colors
 
 
-def build_flow_sankey(flows: Dict, previous_name: str, current_name: str) -> go.Figure:
+def build_flow_sankey(
+    flows: Dict, previous_name: str, current_name: str, show_stayed_home: bool = False
+) -> go.Figure:
     electorate_flows = flows["electorate_flows"]
     sources, targets = list(electorate_flows.index), list(electorate_flows.columns)
     colors = _group_colors(sources + targets)
 
-    labels = [f"{_short_group_name(name)} {previous_name}" for name in sources] + [
-        f"{_short_group_name(name)} {current_name}" for name in targets
+    def node_label(name, year, is_source):
+        # Without the people who stayed home twice, the non-voter nodes hold
+        # only those who changed their behaviour; the label has to say so
+        if name == NON_VOTERS and not show_stayed_home:
+            return (
+                f"Nevolili {previous_name}, teď přišli"
+                if is_source
+                else f"Volili {previous_name}, teď nepřišli"
+            )
+        return f"{_short_group_name(name)} {year}"
+
+    labels = [node_label(name, previous_name, True) for name in sources] + [
+        node_label(name, current_name, False) for name in targets
     ]
     node_colors = [colors[name] for name in sources + targets]
 
@@ -4186,8 +4199,8 @@ def build_flow_sankey(flows: Dict, previous_name: str, current_name: str) -> go.
     for source_position, source in enumerate(sources):
         for target_position, target in enumerate(targets):
             share = electorate_flows.loc[source, target] * 100
-            # People who stayed home twice would take up half of the picture
-            if share < 0.1 or (source == NON_VOTERS and target == NON_VOTERS):
+            stayed_home = source == NON_VOTERS and target == NON_VOTERS
+            if share < 0.1 or (stayed_home and not show_stayed_home):
                 continue
             link_source.append(source_position)
             link_target.append(len(sources) + target_position)
@@ -4275,9 +4288,28 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
             "Odhad, kam odešli voliči jednotlivých kandidátek a kolik lidí přišlo "
             "nebo zůstalo doma. Šířka pruhu odpovídá počtu voličů."
         )
+        electorate = flows["electorate_flows"] * 100
+        stayed_home = electorate.loc[NON_VOTERS, NON_VOTERS]
+        newly_voted = electorate.loc[NON_VOTERS].sum() - stayed_home
+        stopped_voting = electorate[NON_VOTERS].sum() - stayed_home
+
+        show_stayed_home = st.toggle(
+            "Zobrazit i ty, kdo nevolili ani jednou",
+            value=False,
+            key="comparison_show_stayed_home",
+            help="Je to největší skupina, proto je ve výchozím stavu skrytá, aby byly vidět přesuny mezi kandidátkami.",
+        )
         st.plotly_chart(
-            build_flow_sankey(flows, previous_name, current_name),
+            build_flow_sankey(flows, previous_name, current_name, show_stayed_home),
             use_container_width=True,
+        )
+        st.markdown(
+            f"Ze všech zapsaných voličů podle modelu **{fmt_pct(stayed_home)}** nevolilo "
+            f"ani v jednom roce, **{fmt_pct(newly_voted)}** přišlo nově a "
+            f"**{fmt_pct(stopped_voting)}** volit přestalo. "
+            "Poslední dvě čísla jsou spodní odhad: z okrskových výsledků se dá spolehlivě "
+            "určit jen to, o kolik se účast změnila celkem, ne kolik lidí se mezi voliči "
+            "a nevoliči ve skutečnosti vyměnilo."
         )
 
         transitions = flows["transitions"] * 100
@@ -4337,7 +4369,7 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
             "Jde o modelový odhad, ne o měření. Vychází z výsledků v okrscích a "
             "předpokládá, že se voliči stejné kandidátky chovali ve všech okrscích "
             "podobně. Malé přesuny (řádově jednotky procent) proto berte jako "
-            "orientační a přesuny mezi voliči a nevoliči model spíš podceňuje.",
+            "orientační.",
             f"Model vysvětluje {fmt_pct(flows['explained_variation'] * 100, 0)} "
             f"rozdílů mezi okrsky a pracuje s {fmt_int(matched)} okrsky.",
         ]
