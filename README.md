@@ -391,6 +391,12 @@ rates for the council plus estimated noise. It converges in under a minute:
 PYTENSOR_FLAGS='cxx=' uv run --with pymc --with nutpie python research/bayesian_flows_check.py --code 500143 --model simple --draws 2000 --tune 2000
 ```
 
+`research/bayesian_flows_batch.py` runs the simple model for every council with
+50+ matched precincts (27 in 2026) and writes
+`output/kv2026/reports/bayesian_simple_summary.csv` with its agreement with the
+app's estimate. All 27 converged; the mean difference grows from 1.7 points for
+Prague (1 087 precincts) to 5-7 points for councils with 50-60 precincts.
+
 `python3 research/bayesian_progress.py` shows how far running fits are.
 
 
