@@ -57,6 +57,16 @@ The CartoDB base maps need a free API key from
 `CARTO_BASEMAPS_KEY = "your-key"`, or set an environment variable of the same
 name. Without it only OpenStreetMap is offered.
 
+### Running in Docker
+
+`docker compose up -d --build` serves the app on `127.0.0.1:3022` (change the
+port with `VOLBY_PORT`). The image holds only the code. Election results and
+precinct boundaries are not in Git, so copy `output/` and the files the app
+reads from `input/` (`input/raw/*.geojson`, `input/raw/*.gpkg` and
+`input/ps2025/processed/`) next to `docker-compose.yml` before starting it,
+together with `.streamlit/secrets.toml` (an empty file is enough if you have
+no CARTO key).
+
 ### 3. Manual Data Collection (Optional)
 
 If you prefer to collect data manually first:

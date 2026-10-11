@@ -1,0 +1,10 @@
+# Election data is mounted at run time, never baked into the image
+input/
+output/
+.git/
+.venv/
+.streamlit/secrets.toml
+__pycache__/
+*.log
+research/
+tests/

@@ -1,0 +1,19 @@
+services:
+  web:
+    build:
+      context: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${VOLBY_PORT:-3022}:8501"
+    volumes:
+      # Results and boundaries are not in Git; copy them next to this file
+      - ./output:/app/output:ro
+      - ./input:/app/input
+      # Optional API key for the CARTO base maps
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
