@@ -44,8 +44,7 @@ export function Home({ electionId }: { electionId: string }) {
   return (
     <div className="page">
       <section className="hero">
-        <div className="eyebrow">{election.name}</div>
-        <h1>{parliamentary ? "Jak volil váš kraj?" : "Jak se volilo u vás?"}</h1>
+        <h1>{election.name}</h1>
         <p className="lede">
           {parliamentary
             ? "Výsledky stran, kandidáti a mapa okrsků ve všech čtrnácti krajích."
