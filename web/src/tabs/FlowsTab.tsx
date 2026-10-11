@@ -128,7 +128,8 @@ function FlowsBody({ comparison, colorByName, focusName }: BodyProps) {
               Kam se voliči přesunuli mezi roky {previousYear} a {currentYear}
             </h2>
             <div className="card-sub">
-              Šířka pruhu odpovídá počtu voličů. Kliknutím na kandidátku zvýrazníte její pruhy.
+              Šířka pruhu odpovídá počtu voličů, procento u kandidátky je její podíl mezi těmi, kdo přišli volit.
+              Kliknutím na kandidátku zvýrazníte její pruhy.
             </div>
           </div>
           <label className="toggle">

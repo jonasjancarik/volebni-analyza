@@ -141,7 +141,14 @@ export function Sankey({ flows, previousYear, currentYear, nonVoters, colorOf, s
           const y0 = node.y0 ?? 0;
           const y1 = node.y1 ?? 0;
           const left = node.side === "source";
-          const size = left ? flows.sourceSize[node.index!] : flows.targetSize[node.index! - flows.sources.length];
+          const sizes = left ? flows.sourceSize : flows.targetSize;
+          const names = left ? flows.sources : flows.targets;
+          const size = sizes[left ? node.index! : node.index! - flows.sources.length];
+          // Lists show their share of those who voted, like the results elsewhere;
+          // non-voters can only be a share of everyone on the electoral roll
+          const voted = 100 - (sizes[names.indexOf(nonVoters)] ?? 0);
+          const isNonVoters = node.name === nonVoters;
+          const share = isNonVoters ? `${fmtPct(size, 0)} zapsaných` : fmtPct(voted > 0 ? (size / voted) * 100 : 0, 0);
           const tall = y1 - y0 >= 11;
           const picked = highlight?.side === node.side && highlight.name === node.name;
           return (
@@ -165,10 +172,10 @@ export function Sankey({ flows, previousYear, currentYear, nonVoters, colorOf, s
                   style={{ paintOrder: "stroke", stroke: "var(--surface)", strokeWidth: 3, strokeLinejoin: "round" }}
                 >
                   {truncate(node.label, labelLimit)}
-                  {!narrow && (node.name !== nonVoters || showStayedHome) ? (
+                  {!narrow && (!isNonVoters || showStayedHome) ? (
                     <tspan className="muted" style={{ fontWeight: 400 }}>
                       {"  "}
-                      {fmtPct(size, 0)}
+                      {share}
                     </tspan>
                   ) : null}
                 </text>
