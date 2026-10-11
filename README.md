@@ -52,6 +52,11 @@ uv run python run_streamlit.py
 streamlit run streamlit_app.py
 ```
 
+The CartoDB base maps need a free API key from
+<https://carto.com/basemaps/apikey/>. Put it in `.streamlit/secrets.toml` (gitignored) as
+`CARTO_BASEMAPS_KEY = "your-key"`, or set an environment variable of the same
+name. Without it only OpenStreetMap is offered.
+
 ### 3. Manual Data Collection (Optional)
 
 If you prefer to collect data manually first:

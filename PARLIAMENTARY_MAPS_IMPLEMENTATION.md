@@ -142,7 +142,8 @@ Electoral District 1 (Praha):
 4. **Explore Maps**
    - Choose visualization type (Turnout, Valid Votes, Party Results, etc.)
    - Select map type (Geographic Map, Cartogram, Dot Density)
-   - Choose base map style (OpenStreetMap, CartoDB, etc.)
+   - Choose base map style (OpenStreetMap; the CartoDB styles appear only when
+     `CARTO_BASEMAPS_KEY` is set to a key from https://carto.com/basemaps/apikey/)
    - For Party Results: Select specific party from dropdown
 
 5. **Interact with Map**

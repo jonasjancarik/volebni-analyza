@@ -16,6 +16,7 @@ import json
 import requests
 import re
 from pathlib import Path
+from urllib.parse import quote
 import sys
 import os
 import numpy as np
@@ -1018,29 +1019,56 @@ def get_district_code_from_geojson(properties):
     return str(code) if code is not None else ""
 
 
+def _read_carto_basemaps_key():
+    """Read the key from the environment, falling back to .streamlit/secrets.toml"""
+    key = os.environ.get("CARTO_BASEMAPS_KEY", "")
+    if not key:
+        try:
+            key = st.secrets.get("CARTO_BASEMAPS_KEY", "")
+        except Exception:
+            # No secrets file at all
+            key = ""
+    return str(key).strip()
+
+
+# CARTO basemaps need an API key (https://carto.com/basemaps/apikey/); without
+# one the tiles come back watermarked, so the styles are only offered when set.
+CARTO_BASEMAPS_KEY = _read_carto_basemaps_key()
+CARTO_BASEMAP_STYLES = {
+    "CartoDB Positron": "light_all",
+    "CartoDB Dark Matter": "dark_all",
+    "CartoDB Voyager": "rastertiles/voyager",
+}
+
+
+def available_base_map_styles():
+    """Base map styles that can be shown with the current configuration"""
+    styles = ["OpenStreetMap"]
+    if CARTO_BASEMAPS_KEY:
+        styles.extend(CARTO_BASEMAP_STYLES)
+    return styles
+
+
 def create_map_with_tiles(location, zoom_start, base_map_style):
     """Create a Folium map with proper tile handling and attribution"""
-    if base_map_style == "OpenStreetMap":
+    carto_style = CARTO_BASEMAP_STYLES.get(base_map_style)
+    if carto_style and CARTO_BASEMAPS_KEY:
         return folium.Map(
-            location=location, zoom_start=zoom_start, tiles="OpenStreetMap"
+            location=location,
+            zoom_start=zoom_start,
+            tiles=(
+                f"https://{{s}}.basemaps.cartocdn.com/{carto_style}"
+                f"/{{z}}/{{x}}/{{y}}{{r}}.png?key={quote(CARTO_BASEMAPS_KEY)}"
+            ),
+            attr=(
+                '&copy; <a href="https://www.openstreetmap.org/copyright">'
+                "OpenStreetMap</a> contributors &copy; "
+                '<a href="https://carto.com/attributions">CARTO</a>'
+            ),
+            subdomains="abcd",
         )
-    elif base_map_style == "CartoDB Positron":
-        return folium.Map(
-            location=location, zoom_start=zoom_start, tiles="CartoDB positron"
-        )
-    elif base_map_style == "CartoDB Dark Matter":
-        return folium.Map(
-            location=location, zoom_start=zoom_start, tiles="CartoDB dark_matter"
-        )
-    elif base_map_style == "CartoDB Voyager":
-        return folium.Map(
-            location=location, zoom_start=zoom_start, tiles="CartoDB voyager"
-        )
-    else:
-        # Default fallback
-        return folium.Map(
-            location=location, zoom_start=zoom_start, tiles="OpenStreetMap"
-        )
+    # Default fallback
+    return folium.Map(location=location, zoom_start=zoom_start, tiles="OpenStreetMap")
 
 
 def create_folium_map(
@@ -2215,12 +2243,7 @@ def display_geographic_analysis(
         )
 
     with col3:
-        style_options = [
-            "OpenStreetMap",
-            "CartoDB Positron",
-            "CartoDB Dark Matter",
-            "CartoDB Voyager",
-        ]
+        style_options = available_base_map_styles()
         default_style = get_param_value(url_params, "base_map_style", style_options[0])
         if default_style not in style_options:
             default_style = style_options[0]

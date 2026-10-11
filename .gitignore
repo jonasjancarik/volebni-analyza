@@ -22,3 +22,5 @@ wheels/
 # OS files
 .DS_Store
 Thumbs.db
+# Local secrets (API keys)
+.streamlit/secrets.toml
