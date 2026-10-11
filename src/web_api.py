@@ -7,9 +7,9 @@ Run from the repository root:
     uv run uvicorn --app-dir src web_api:app --host 0.0.0.0 --port 8600
 """
 
-import logging
 import os
-import threading
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -21,24 +21,19 @@ from fastapi.staticfiles import StaticFiles
 
 import web_store as store
 
-logger = logging.getLogger("uvicorn.error")
-
-
-def _precompute():
-    try:
-        logger.info("Voter-flow estimates ready: %s", store.precompute_comparisons())
-    except Exception:
-        logger.exception("Preparing voter-flow estimates failed")
-
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Prepares the voter-flow estimates in the background, so that nobody waits
-    # for them; with the estimates already on disk this takes a moment.
-    # VOLBY_PRECOMPUTE=0 leaves them to be computed when first opened.
+    # Prepares the voter-flow estimates, so that nobody waits for them; with
+    # the estimates already on disk this takes a moment. It runs as a separate
+    # process because the computation would slow down every request served
+    # meanwhile. VOLBY_PRECOMPUTE=0 leaves the estimates to be computed when
+    # first opened.
+    worker = None
     if os.environ.get("VOLBY_PRECOMPUTE", "1") != "0":
-        threading.Thread(target=_precompute, name="precompute", daemon=True).start()
+        worker = subprocess.Popen([sys.executable, str(Path(__file__).with_name("web_store.py"))])
     yield
+    if worker and worker.poll() is None:
+        worker.terminate()
 
 
 app = FastAPI(

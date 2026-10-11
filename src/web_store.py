@@ -970,3 +970,8 @@ def precompute_comparisons() -> int:
                 except Exception:  # one broken council must not stop the rest
                     logger.exception("Comparison failed for %s %s %s", election_id, code, area)
     return ready
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
+    logger.info("Voter-flow estimates ready: %s", precompute_comparisons())
