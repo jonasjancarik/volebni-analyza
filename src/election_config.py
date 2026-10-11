@@ -33,6 +33,10 @@ class ElectionConfig:
     # vysledky_okrsky endpoint. "{batch}" is replaced by the batch number.
     districts_batch_url_template: Optional[str] = None
 
+    # Precinct boundaries used by municipal maps (file in input/raw).
+    # None = the 2022 boundaries published with kv2022.
+    boundaries_file: Optional[str] = None
+
     # XML file names
     municipality_registry_file: str = "kvcoco.xml"
     party_registry_file: str = "kvros.xml"
@@ -198,6 +202,10 @@ ELECTIONS = {
             "https://www.volby.cz/appdata/kv2026/20261009/odata/okrsky/"
             "vysledky_okrsky{batch}.xml"
         ),
+        # ČSÚ lists 2026 boundaries in its GIS catalogue, but the download
+        # links are not live yet; the 2025 boundaries cover 14 543 of 14 551
+        # precincts.
+        boundaries_file="electoral_districts_boundaries_2025_municipal.geojson",
     ),
     "kv2022": ElectionConfig(
         election_id="kv2022",

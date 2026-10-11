@@ -33,6 +33,60 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def ensure_municipal_boundaries(election_config):
+    """Build the precinct boundaries file for municipal maps from the 2025 GeoPackage.
+
+    The result uses the property names of the 2022 GeoJSON (KOD, CISLO, OBEC,
+    MOMC), so the map code handles both files the same way.
+    """
+    if not election_config.boundaries_file:
+        return
+
+    target_file = Path("input/raw") / election_config.boundaries_file
+    source_file = Path("input/raw/electoral_districts_boundaries_2025_wgs84.gpkg")
+
+    if target_file.exists():
+        logger.info(f"✅ Precinct boundaries ready: {target_file}")
+        return
+
+    if not source_file.exists():
+        logger.warning(
+            f"⚠️  {source_file} not found, maps will use the 2022 precinct "
+            "boundaries. Run the ps2025 collection first to get newer ones."
+        )
+        return
+
+    try:
+        import geopandas as gpd
+        import shapely
+    except Exception as exc:
+        logger.error(f"❌ Missing geopandas, cannot prepare boundaries: {exc}")
+        return
+
+    logger.info(f"🗺️  Preparing precinct boundaries from {source_file}")
+    gdf = gpd.read_file(source_file, layer="okrsky_simplified")
+
+    # Roughly the detail of the 2022 file (generalised to 100 m);
+    # coverage_simplify keeps shared borders without gaps
+    gdf["geometry"] = shapely.make_valid(
+        shapely.coverage_simplify(gdf.geometry.values, 0.0015)
+    )
+    kod_mco = gdf["kod_mco"].astype(str).str.strip()
+    result = gpd.GeoDataFrame(
+        {
+            "KOD": gdf["kod"].astype(str),
+            "CISLO": gdf["cislo"].astype(str),
+            "OBEC": gdf["kod_obec"].astype(str),
+            "MOMC": kod_mco.where(kod_mco != "", "0"),
+        },
+        geometry=gdf.geometry,
+        crs=gdf.crs,
+    )
+    result = result[~result.geometry.is_empty]
+    result.to_file(target_file, driver="GeoJSON", COORDINATE_PRECISION=5)
+    logger.info(f"✅ Saved {len(result)} precinct boundaries to {target_file}")
+
+
 def ensure_parliamentary_geojson_wgs84(election_config):
     """Convert 2025 polling station GeoJSON to WGS84 for map rendering."""
     if election_config.election_type != "parliamentary":
@@ -350,6 +404,10 @@ def main():
             if election_config.election_type == "parliamentary":
                 logger.info("\n🗺️  STEP 3: Preparing GeoJSON for maps")
                 ensure_parliamentary_geojson_wgs84(election_config)
+                summary_step_label = "STEP 4"
+            elif election_config.boundaries_file:
+                logger.info("\n🗺️  STEP 3: Preparing precinct boundaries for maps")
+                ensure_municipal_boundaries(election_config)
                 summary_step_label = "STEP 4"
 
             # Generate summary report

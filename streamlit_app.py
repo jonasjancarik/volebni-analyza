@@ -512,8 +512,12 @@ def load_geojson_data(election_id: str = "kv2022"):
         # It can be downloaded from: https://geodata.csu.gov.cz/as/data/distribuce/Hosted/Volebni_okrsky_2025_gdb/FeatureServer/0/geojson.zip
         url = None  # Too large to download via HTTP, should be pre-existing
     else:
-        # Use 2022 geojson for municipal elections
+        # Newer boundaries when the election has them prepared, 2022 otherwise
         cache_file = Path("input/raw/electoral_districts_boundaries.geojson")
+        if election_config.boundaries_file:
+            newer_file = Path("input/raw") / election_config.boundaries_file
+            if newer_file.exists():
+                cache_file = newer_file
         url = "https://www.volby.cz/opendata/kv2022/geo/vol_okrsky_2022g100.geojson"
 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
