@@ -37,6 +37,14 @@ from election_config import (
     get_election_info,
     list_available_elections,
 )
+from election_comparison import (
+    NON_VOTERS,
+    OTHER_LISTS,
+    estimate_flows,
+    group_columns,
+    match_precincts,
+    precinct_table,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -4106,6 +4114,335 @@ def display_flow_sankey(selected_election_id: str, selected_zastupitelstvo_code:
     st.caption(f"Zobrazeno {fmt_pct(total_share * 100, 1)} magistrátních hlasů.")
 
 
+# Flows need enough precincts to tell the groups apart
+MIN_PRECINCTS_FOR_FLOWS = 30
+GROUP_PALETTE = [
+    "#2563eb", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6",
+    "#14b8a6", "#ec4899", "#84cc16", "#f97316", "#0ea5e9",
+    "#a855f7", "#eab308", "#06b6d4", "#d946ef", "#65a30d", "#dc2626",
+]
+
+
+@st.cache_data(show_spinner="Porovnávám volby…")
+def compute_election_comparison(
+    code: str,
+    election_id: str,
+    previous_election_id: str,
+    data_version: float,
+    previous_data_version: float,
+):
+    """Matched precinct tables of both elections and, if possible, voter flows."""
+    current = load_municipality_data(code, election_id, data_version)
+    previous = load_municipality_data(code, previous_election_id, previous_data_version)
+
+    tables = []
+    for data in (previous, current):
+        district_df = data.get("district_data")
+        party_df = data.get("district_party_results")
+        if not isinstance(district_df, pd.DataFrame) or not isinstance(
+            party_df, pd.DataFrame
+        ):
+            return None
+        tables.append(precinct_table(district_df, party_df))
+
+    all_current_precincts = len(tables[1])
+    previous_table, current_table = match_precincts(*tables)
+    flows = None
+    if len(current_table) >= MIN_PRECINCTS_FOR_FLOWS:
+        flows = estimate_flows(previous_table, current_table)
+
+    return {
+        "previous": previous_table,
+        "current": current_table,
+        "all_current_precincts": all_current_precincts,
+        "flows": flows,
+    }
+
+
+def _short_group_name(name: str, limit: int = 34) -> str:
+    return name if len(name) <= limit else name[: limit - 2].rstrip() + "…"
+
+
+def _group_colors(groups) -> Dict[str, str]:
+    """The same list keeps its colour on both sides of the diagram."""
+    colors = {NON_VOTERS: "#9ca3af", OTHER_LISTS: "#d1d5db"}
+    for group in groups:
+        if group not in colors:
+            colors[group] = GROUP_PALETTE[(len(colors) - 2) % len(GROUP_PALETTE)]
+    return colors
+
+
+def build_flow_sankey(flows: Dict, previous_name: str, current_name: str) -> go.Figure:
+    electorate_flows = flows["electorate_flows"]
+    sources, targets = list(electorate_flows.index), list(electorate_flows.columns)
+    colors = _group_colors(sources + targets)
+
+    labels = [f"{_short_group_name(name)} {previous_name}" for name in sources] + [
+        f"{_short_group_name(name)} {current_name}" for name in targets
+    ]
+    node_colors = [colors[name] for name in sources + targets]
+
+    link_source, link_target, link_value, link_color, link_text = [], [], [], [], []
+    for source_position, source in enumerate(sources):
+        for target_position, target in enumerate(targets):
+            share = electorate_flows.loc[source, target] * 100
+            # People who stayed home twice would take up half of the picture
+            if share < 0.1 or (source == NON_VOTERS and target == NON_VOTERS):
+                continue
+            link_source.append(source_position)
+            link_target.append(len(sources) + target_position)
+            link_value.append(share)
+            link_color.append(_hex_to_rgba(colors[source], 0.4))
+            link_text.append(
+                f"{source} ({previous_name}) → {target} ({current_name})<br>"
+                f"{fmt_pct(flows['transitions'].loc[source, target] * 100, 0)} skupiny, "
+                f"{fmt_pct(share)} všech voličů"
+            )
+
+    fig = go.Figure(
+        go.Sankey(
+            arrangement="snap",
+            # The default label shadow makes the text look smudged
+            textfont=dict(color="#111827", size=13, shadow="none"),
+            node=dict(
+                label=labels,
+                color=node_colors,
+                pad=14,
+                thickness=14,
+                line=dict(width=0),
+                hovertemplate="%{label}<extra></extra>",
+            ),
+            link=dict(
+                source=link_source,
+                target=link_target,
+                value=link_value,
+                color=link_color,
+                customdata=link_text,
+                hovertemplate="%{customdata}<extra></extra>",
+            ),
+        )
+    )
+    fig.update_layout(height=620, margin=dict(l=0, r=0, t=10, b=10), font=dict(size=13))
+    return fig
+
+
+def _flow_breakdown_chart(shares: pd.Series, colors: Dict[str, str]) -> go.Figure:
+    shares = shares[shares >= 0.5].sort_values(ascending=False)
+    fig = go.Figure(
+        go.Bar(
+            y=[_short_group_name(name, 30) for name in shares.index],
+            x=shares.values,
+            orientation="h",
+            marker_color=[colors[name] for name in shares.index],
+            text=[fmt_pct(value, 0) for value in shares.values],
+            textposition="outside",
+            cliponaxis=False,
+            customdata=list(shares.index),
+            hovertemplate="%{customdata}<br>%{x:.0f} %<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        height=60 + 32 * len(shares),
+        margin=dict(l=0, r=50, t=10, b=10),
+        xaxis=dict(visible=False),
+        yaxis=dict(autorange="reversed"),
+    )
+    return fig
+
+
+def display_election_comparison(comparison, previous_name: str, current_name: str):
+    """Voter flows between two elections and changes in individual precincts"""
+    if not comparison or len(comparison["current"]) == 0:
+        st.info(
+            f"Okrsky se mezi roky {previous_name} a {current_name} nepodařilo spárovat, "
+            "srovnání proto není k dispozici."
+        )
+        return
+
+    previous_table, current_table = comparison["previous"], comparison["current"]
+    flows = comparison["flows"]
+    matched = len(current_table)
+    skipped = comparison["all_current_precincts"] - matched
+
+    st.subheader(f"Přesuny voličů {previous_name} → {current_name}")
+    if flows is None:
+        st.info(
+            f"Odhad přesunů voličů potřebuje aspoň {MIN_PRECINCTS_FOR_FLOWS} okrsků, "
+            f"tady je jich {matched}. Změny v jednotlivých okrscích najdete níže."
+        )
+    else:
+        st.markdown(
+            "Odhad, kam odešli voliči jednotlivých kandidátek a kolik lidí přišlo "
+            "nebo zůstalo doma. Šířka pruhu odpovídá počtu voličů."
+        )
+        st.plotly_chart(
+            build_flow_sankey(flows, previous_name, current_name),
+            use_container_width=True,
+        )
+
+        transitions = flows["transitions"] * 100
+        colors = _group_colors(list(transitions.index) + list(transitions.columns))
+
+        def default_group(groups):
+            pirates = [g for g in groups if "pirát" in g.lower()]
+            return groups.index(pirates[0]) if pirates else 0
+
+        col1, col2 = st.columns(2)
+        with col1:
+            sources = list(transitions.index)
+            source = st.selectbox(
+                f"Kam odešli voliči z roku {previous_name}",
+                sources,
+                index=default_group(sources),
+                key="comparison_source",
+            )
+            st.plotly_chart(
+                _flow_breakdown_chart(transitions.loc[source], colors),
+                use_container_width=True,
+            )
+        with col2:
+            targets = list(transitions.columns)
+            target = st.selectbox(
+                f"Odkud přišli voliči v roce {current_name}",
+                targets,
+                index=default_group(targets),
+                key="comparison_target",
+            )
+            origin = flows["electorate_flows"][target]
+            st.plotly_chart(
+                _flow_breakdown_chart(origin / origin.sum() * 100, colors),
+                use_container_width=True,
+            )
+
+        with st.expander("Celá tabulka přesunů"):
+            matrix = transitions.round(0).astype(int)
+            matrix.insert(
+                0,
+                "Podíl všech voličů (%)",
+                (flows["source_size"] * 100).round(1),
+            )
+            matrix.index.name = f"Skupina {previous_name}"
+            st.dataframe(
+                czech_table(matrix.reset_index(), {"Podíl všech voličů (%)": 1}),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                f"Řádky jsou skupiny voličů z roku {previous_name}, sloupce říkají, "
+                f"kolik procent z nich skončilo u které kandidátky v roce {current_name}. "
+                "Každý řádek dává dohromady 100 %."
+            )
+
+        notes = [
+            "Jde o modelový odhad, ne o měření. Vychází z výsledků v okrscích a "
+            "předpokládá, že se voliči stejné kandidátky chovali ve všech okrscích "
+            "podobně. Malé přesuny (řádově jednotky procent) proto berte jako "
+            "orientační a přesuny mezi voliči a nevoliči model spíš podceňuje.",
+            f"Model vysvětluje {fmt_pct(flows['explained_variation'] * 100, 0)} "
+            f"rozdílů mezi okrsky a pracuje s {fmt_int(matched)} okrsky.",
+        ]
+        if matched < 150:
+            notes.append(
+                "Na tak malém počtu okrsků je odhad hrubý, spolehlivější je u velkých měst."
+            )
+        if skipped > 0:
+            notes.append(
+                f"{fmt_int(skipped)} okrsků je vynecháno, protože v roce {previous_name} "
+                "neexistovaly nebo se jim výrazně změnil počet voličů."
+            )
+        notes.append(
+            "Hlasy jsou přepočtené na voliče, kandidátky pod 3 % jsou sloučené "
+            "do skupiny Ostatní kandidátky."
+        )
+        st.caption(" ".join(notes))
+
+    st.subheader("Změna v okrscích")
+    same_lists = [
+        group
+        for group in group_columns(current_table)
+        if group in previous_table.columns and group not in (NON_VOTERS, OTHER_LISTS)
+    ]
+    turnout_option = "Volební účast"
+    options = [turnout_option] + same_lists
+    pirates = [group for group in same_lists if "pirát" in group.lower()]
+    metric = st.selectbox(
+        "Co porovnat",
+        options,
+        index=options.index(pirates[0]) if pirates else 0,
+        key="comparison_metric",
+        help="Nabízí se účast a kandidátky, které kandidovaly v obou volbách pod stejným názvem.",
+    )
+
+    def precinct_values(table):
+        if metric == turnout_option:
+            return table["turnout"]
+        voted = table["registered"] - table[NON_VOTERS]
+        return (table[metric] / voted.replace(0, np.nan) * 100).fillna(0)
+
+    precincts = pd.DataFrame(
+        {
+            "Okrsek": current_table.index,
+            previous_name: precinct_values(previous_table).round(2).values,
+            current_name: precinct_values(current_table).round(2).values,
+            "Zapsaní voliči": current_table["registered"].astype(int).values,
+        }
+    )
+    precincts["Změna (p. b.)"] = (precincts[current_name] - precincts[previous_name]).round(2)
+    unit = "Účast (%)" if metric == turnout_option else "Podíl hlasů (%)"
+
+    if len(precincts) < 3:
+        st.dataframe(
+            czech_table(
+                precincts,
+                {previous_name: 2, current_name: 2, "Změna (p. b.)": 2},
+                signed=("Změna (p. b.)",),
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        return
+
+    improved = int((precincts["Změna (p. b.)"] > 0).sum())
+    st.markdown(
+        f"Hodnota vzrostla v **{fmt_int(improved)}** z {fmt_int(len(precincts))} okrsků. "
+        "Body nad čárou jsou okrsky, kde je výsledek lepší než minule."
+    )
+
+    upper = float(max(precincts[previous_name].max(), precincts[current_name].max())) * 1.05
+    fig = px.scatter(
+        precincts,
+        x=previous_name,
+        y=current_name,
+        size="Zapsaní voliči",
+        size_max=12,
+        hover_name="Okrsek",
+        color="Změna (p. b.)",
+        color_continuous_scale="RdYlGn",
+        color_continuous_midpoint=0,
+        labels={previous_name: f"{unit} {previous_name}", current_name: f"{unit} {current_name}"},
+    )
+    fig.add_shape(
+        type="line", x0=0, y0=0, x1=upper, y1=upper, line=dict(color="#6b7280", dash="dash")
+    )
+    fig.update_layout(height=480, margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.dataframe(
+        czech_table(
+            precincts.sort_values("Změna (p. b.)", ascending=False),
+            {previous_name: 2, current_name: 2, "Změna (p. b.)": 2},
+            signed=("Změna (p. b.)",),
+        ),
+        use_container_width=True,
+        hide_index=True,
+        height=min(38 + 35 * len(precincts), 420),
+    )
+    st.caption(
+        "Velikost bodu odpovídá počtu zapsaných voličů. "
+        "Kliknutím na záhlaví sloupce tabulku seřadíte."
+    )
+
+
 def get_previous_election_id(election_id: str) -> Optional[str]:
     """Closest earlier election of the same type that has data on disk."""
     elections = get_election_info()
@@ -4327,6 +4664,8 @@ def main():
 
     # Views, with URL parameter support
     tab_options = ["Souhrn", "Účast", "Mapa", "Okrsky"]
+    if previous_data:
+        tab_options.insert(1, "Srovnání")
     flows_ready = (
         not is_parliamentary
         and selected_zastupitelstvo_code in {"500143", "554782"}
@@ -4390,6 +4729,19 @@ def main():
     # Display content based on selected tab
     if selected_tab == "Souhrn":
         display_electoral_overview(electoral_data, previous_data, previous_name)
+
+    elif selected_tab == "Srovnání":
+        display_election_comparison(
+            compute_election_comparison(
+                selected_zastupitelstvo_code,
+                selected_election_id,
+                previous_election_id,
+                data_version,
+                get_results_data_version(previous_election_id),
+            ),
+            previous_name,
+            available_elections[selected_election_id]["date"][:4],
+        )
 
     elif selected_tab == "Účast":
         display_turnout_analysis(electoral_data, previous_data, previous_name)

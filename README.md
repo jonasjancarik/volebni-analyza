@@ -288,6 +288,8 @@ The app opens on the newest election with a list of the largest cities. After
 you pick a municipality (type its name in the sidebar), the views are:
 
 - **Souhrn**: turnout, seats and party results, with the change since the previous election
+- **Srovnání**: estimated voter flows between this and the previous election (including
+  non-voters) and precinct-by-precinct change of turnout or of a list that ran in both
 - **Účast**: turnout across precincts
 - **Mapa**: interactive precinct maps
 - **Okrsky**: precinct detail and party comparison between precincts
@@ -299,6 +301,25 @@ percentage for municipal elections is recalculated for lists with fewer
 candidates than seats; the table shows it as a separate column where it differs.
 
 Precincts that ČSÚ corrected and re-sent are counted once (the latest record wins).
+
+### How the voter flows are estimated
+
+`src/election_comparison.py` matches precincts of the two elections by number
+(dropping those whose electorate changed by more than 35 %), converts votes to
+voters (a list's share of the precinct's votes times the returned envelopes),
+merges lists under 3 % into one group and adds non-voters. It then fits one
+transition matrix for the whole municipality: an ecological regression like the
+Goodman model in `src/ei_models.py`, but for all groups at once and with the
+shares constrained to be non-negative and to add up to 100 %.
+
+Treat the result as a model estimate. It assumes voters of a list behaved alike
+in every precinct, ignores people who moved, died or came of age, and tends to
+underestimate movement between voters and non-voters. Flows are shown only for
+councils with at least 30 matched precincts.
+
+```bash
+uv run --with pytest pytest tests/
+```
 
 ## 🤝 Contributing
 
