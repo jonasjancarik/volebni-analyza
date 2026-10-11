@@ -2122,6 +2122,31 @@ def display_turnout_analysis(data, previous_data=None, previous_name=""):
     )
 
 
+PARTY_URL_SEPARATOR = "|"
+
+
+def party_combination_label(parties) -> str:
+    return " + ".join(parties)
+
+
+def combine_parties(party_data: pd.DataFrame, parties, label: str) -> pd.DataFrame:
+    """Add the selected parties to party_data as one party holding their summed votes"""
+    subset = party_data[party_data["party_name"].isin(parties)]
+    combined = subset.groupby("district_id", as_index=False).agg(
+        {
+            **{
+                column: "first"
+                for column in subset.columns
+                if column not in ("district_id", "votes", "percentage")
+            },
+            "votes": "sum",
+            "percentage": "sum",
+        }
+    )
+    combined["party_name"] = label
+    return pd.concat([party_data, combined], ignore_index=True)
+
+
 def display_geographic_analysis(
     geojson_data, electoral_data=None, election_id: str = "kv2022"
 ):
@@ -2257,6 +2282,7 @@ def display_geographic_analysis(
         )
 
     selected_party = None
+    selected_parties = []
     if viz_type == "Party Results" and party_data is not None:
         with col4:
             # Get available parties
@@ -2266,19 +2292,37 @@ def display_geographic_analysis(
                 else []
             )
             if available_parties:
-                default_party = get_param_value(
-                    url_params, "selected_party", available_parties[0]
-                )
-                if default_party not in available_parties:
-                    default_party = available_parties[0]
+                default_parties = [
+                    party
+                    for party in (
+                        get_param_value(url_params, "selected_party", "") or ""
+                    ).split(PARTY_URL_SEPARATOR)
+                    if party in available_parties
+                ] or [available_parties[0]]
 
-                selected_party = st.selectbox(
-                    "Vyberte stranu:",
+                selected_parties = st.multiselect(
+                    "Vyberte strany:",
                     available_parties,
-                    index=available_parties.index(default_party),
-                    help="Vyberte stranu pro zobrazení výsledků.",
-                    key="selected_party_select",
+                    default=default_parties,
+                    help=(
+                        "Vyberte jednu stranu, nebo několik stran najednou. "
+                        "Hlasy vybraných stran se sečtou a mapa je ukáže dohromady."
+                    ),
+                    key="selected_parties_select",
                 )
+                if not selected_parties:
+                    st.info("Vyberte aspoň jednu stranu, kterou má mapa ukázat.")
+                    return
+
+                selected_party = party_combination_label(selected_parties)
+                if len(selected_parties) > 1:
+                    party_data = combine_parties(
+                        party_data, selected_parties, selected_party
+                    )
+                    electoral_data = {
+                        **electoral_data,
+                        "district_party_results": party_data,
+                    }
             else:
                 st.warning("Nejsou dostupná data o stranách.")
                 viz_type = "Turnout"  # Fallback
@@ -2288,7 +2332,9 @@ def display_geographic_analysis(
         viz_type=viz_type,
         map_type=map_type,
         base_map_style=base_map_style_main,
-        selected_party=selected_party if viz_type == "Party Results" else None,
+        selected_party=PARTY_URL_SEPARATOR.join(selected_parties)
+        if viz_type == "Party Results"
+        else None,
     )
 
     # Create and display the map based on type
