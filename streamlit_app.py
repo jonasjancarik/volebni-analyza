@@ -39,6 +39,7 @@ from election_config import (
     list_available_elections,
 )
 from election_comparison import (
+    FLOW_MODEL_VERSION,
     NON_VOTERS,
     OTHER_LISTS,
     estimate_flows,
@@ -1077,6 +1078,7 @@ def create_folium_map(
     viz_type="Turnout",
     selected_party=None,
     base_map_style="OpenStreetMap",
+    share_thresholds=None,
 ):
     """Create an interactive Folium map with electoral districts and optional data overlay"""
 
@@ -1256,18 +1258,11 @@ def create_folium_map(
 
             elif viz_type == "Party Results":
                 # Party percentage color scale: Green (high support) to Blue (low support)
-                if value >= 25:
-                    return "#006400"  # Dark green (very strong)
-                elif value >= 20:
-                    return "#228B22"  # Forest green (strong)
-                elif value >= 15:
-                    return "#32CD32"  # Lime green (good)
-                elif value >= 10:
-                    return "#FFD700"  # Gold (moderate)
-                elif value >= 5:
-                    return "#87CEEB"  # Sky blue (weak)
-                else:
-                    return "#4169E1"  # Royal blue (very weak)
+                return share_color(
+                    value,
+                    share_thresholds or DEFAULT_SHARE_THRESHOLDS,
+                    PARTY_SHARE_COLORS,
+                )
 
             return "#CCCCCC"  # Default gray
 
@@ -1547,14 +1542,11 @@ def create_folium_map(
                 <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <200 (nízké)</p>
                 """
             elif viz_type == "Party Results":
-                legend_html += f"""
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#006400"></i> ≥25% (velmi silné)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#228B22"></i> 20–24% (silné)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#32CD32"></i> 15–19% (dobré)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 10–14% (střední)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#87CEEB"></i> 5–9% (slabé)</p>
-                <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#4169E1"></i> <5% (velmi slabé)</p>
-                """
+                legend_html += share_legend_rows(
+                    share_thresholds or DEFAULT_SHARE_THRESHOLDS,
+                    PARTY_SHARE_COLORS,
+                    words=None if share_thresholds else PARTY_SHARE_WORDS,
+                )
 
             legend_html += '<p style="margin: 3px 0;"><i class="fa fa-square" style="color:#CCCCCC"></i> Bez dat</p></div>'
 
@@ -2124,6 +2116,60 @@ def display_turnout_analysis(data, previous_data=None, previous_name=""):
 
 PARTY_URL_SEPARATOR = "|"
 
+# Lower edges of the five upper colour bands for a party's vote share, highest first
+DEFAULT_SHARE_THRESHOLDS = [25, 20, 15, 10, 5]
+PARTY_SHARE_COLORS = ["#006400", "#228B22", "#32CD32", "#FFD700", "#87CEEB", "#4169E1"]
+PARTY_SHARE_WORDS = ["velmi silné", "silné", "dobré", "střední", "slabé", "velmi slabé"]
+DOT_SHARE_COLORS = ["#00FF00", "#32CD32", "#228B22", "#FFD700", "#FF8C00", "#FF4500"]
+DOT_SHARE_WORDS = ["velmi vysoké", "vysoké", "dobré", "střední", "nízké", "velmi nízké"]
+
+
+def share_thresholds_for_values(values):
+    """Split the range of the given vote shares into six equally wide colour bands"""
+    values = [float(v) for v in values if pd.notna(v)]
+    if not values:
+        return DEFAULT_SHARE_THRESHOLDS
+    lowest, highest = min(values), max(values)
+    step = (highest - lowest) / 6
+    if step >= 1:
+        return [round(lowest + step * k) for k in range(5, 0, -1)]
+    step = max(step, 0.1)
+    return [round(lowest + step * k, 1) for k in range(5, 0, -1)]
+
+
+def share_color(value, thresholds, colors):
+    for threshold, color in zip(thresholds, colors):
+        if value >= threshold:
+            return color
+    return colors[-1]
+
+
+def share_legend_rows(thresholds, colors, icon="fa-square", words=None, margin="3px"):
+    """Legend lines for a vote share scale, one per colour band"""
+    whole = all(float(t).is_integer() for t in thresholds)
+
+    def num(value):
+        return str(int(value)) if whole else f"{value:.1f}".replace(".", ",")
+
+    ranges = [f"≥{num(thresholds[0])}%"]
+    for upper, lower in zip(thresholds, thresholds[1:]):
+        ranges.append(f"{num(lower)}–{num(upper - 1 if whole else upper)}%")
+    ranges.append(f"<{num(thresholds[-1])}%")
+
+    rows = ""
+    for i, (color, text) in enumerate(zip(colors, ranges)):
+        word = f" ({words[i]})" if words else ""
+        rows += (
+            f'<p style="margin: {margin} 0;"><i class="fa {icon}" '
+            f'style="color:{color}"></i> {text}{word}</p>'
+        )
+    if not words:
+        rows += (
+            '<p style="margin: 5px 0 3px 0; font-size: 10px; color: #666;">'
+            "Barvy jsou rozložené mezi nejnižší a nejvyšší podíl v obci.</p>"
+        )
+    return rows
+
 
 def party_combination_label(parties) -> str:
     return " + ".join(parties)
@@ -2283,6 +2329,8 @@ def display_geographic_analysis(
 
     selected_party = None
     selected_parties = []
+    # Set for a combination of parties, whose share outgrows the fixed scale
+    share_thresholds = None
     if viz_type == "Party Results" and party_data is not None:
         with col4:
             # Get available parties
@@ -2323,6 +2371,14 @@ def display_geographic_analysis(
                         **electoral_data,
                         "district_party_results": party_data,
                     }
+                    bloc = party_data[party_data["party_name"] == selected_party]
+                    bloc_totals = bloc.groupby(
+                        bloc["district_id"].str.split("-").str[0]
+                    )[["votes", "total_district_votes"]].sum()
+                    bloc_totals = bloc_totals[bloc_totals["total_district_votes"] > 0]
+                    share_thresholds = share_thresholds_for_values(
+                        bloc_totals["votes"] / bloc_totals["total_district_votes"] * 100
+                    )
             else:
                 st.warning("Nejsou dostupná data o stranách.")
                 viz_type = "Turnout"  # Fallback
@@ -2407,7 +2463,11 @@ def display_geographic_analysis(
 
         if cartogram_gdf is not None:
             cartogram_map = create_cartogram_map(
-                cartogram_gdf, viz_type, selected_party, electoral_data
+                cartogram_gdf,
+                viz_type,
+                selected_party,
+                electoral_data,
+                share_thresholds,
             )
 
             if cartogram_map:
@@ -2622,6 +2682,7 @@ def display_geographic_analysis(
                     dot_color=dot_color,
                     color_scale_data=color_scale_data,
                     use_color_scale=use_color_scale,
+                    share_thresholds=share_thresholds,
                 )
                 icon_layer.add_to(dot_map)
 
@@ -2637,6 +2698,13 @@ def display_geographic_analysis(
                         legend_title = "Účast (%)"
                         legend_type = "účast v okrscích"
 
+                    dot_legend_rows = share_legend_rows(
+                        share_thresholds or DEFAULT_SHARE_THRESHOLDS,
+                        DOT_SHARE_COLORS,
+                        icon="fa-circle",
+                        words=None if share_thresholds else DOT_SHARE_WORDS,
+                        margin="2px",
+                    )
                     color_legend_html = f"""
                     <div style="position: fixed; 
                                 bottom: 50px; right: 50px; width: 200px; height: auto;
@@ -2644,12 +2712,7 @@ def display_geographic_analysis(
                                 font-size:11px; font-family: Arial; padding: 8px; box-sizing: border-box;">
                         <h5 style="margin: 0 0 8px 0; font-size: 13px;">Barevná škála teček</h5>
                         <p style="margin: 3px 0; font-weight: bold;">{legend_title}</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#00FF00"></i> ≥25% (velmi vysoké)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#32CD32"></i> 20–24% (vysoké)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#228B22"></i> 15–19% (dobré)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FFD700"></i> 10–14% (střední)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF8C00"></i> 5–9% (nízké)</p>
-                        <p style="margin: 2px 0;"><i class="fa fa-circle" style="color:#FF4500"></i> <5% (velmi nízké)</p>
+                        {dot_legend_rows}
                         <hr style="margin: 5px 0;">
                         <p style="font-size: 10px; color: #666;">
                             🔵 Počet teček = počet hlasů<br>
@@ -2680,6 +2743,7 @@ def display_geographic_analysis(
                     viz_type,
                     selected_party,
                     base_map_style_main,
+                    share_thresholds,
                 )
                 map_data = st_folium(
                     map_obj,
@@ -2700,6 +2764,7 @@ def display_geographic_analysis(
             viz_type,
             selected_party,
             base_map_style_main,
+            share_thresholds,
         )
 
         # Display the map
@@ -3545,7 +3610,11 @@ def create_cartogram(
 
 
 def create_cartogram_map(
-    cartogram_gdf, viz_type="Turnout", selected_party=None, electoral_data=None
+    cartogram_gdf,
+    viz_type="Turnout",
+    selected_party=None,
+    electoral_data=None,
+    share_thresholds=None,
 ):
     """Create a Folium map from cartogram GeoDataFrame with circular districts"""
     if cartogram_gdf is None or cartogram_gdf.empty:
@@ -3612,18 +3681,11 @@ def create_cartogram_map(
             else:
                 return "#FF6347"
         elif viz_type == "Party Results":
-            if value >= 25:
-                return "#006400"
-            elif value >= 20:
-                return "#228B22"
-            elif value >= 15:
-                return "#32CD32"
-            elif value >= 10:
-                return "#FFD700"
-            elif value >= 5:
-                return "#87CEEB"
-            else:
-                return "#4169E1"
+            return share_color(
+                value,
+                share_thresholds or DEFAULT_SHARE_THRESHOLDS,
+                PARTY_SHARE_COLORS,
+            )
         return "#CCCCCC"
 
     # Add each district to the map
@@ -3791,14 +3853,11 @@ def create_cartogram_map(
         <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FF6347"></i> <400 (nízké)</p>
         """
     elif viz_type == "Party Results":
-        legend_html += f"""
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#006400"></i> ≥25% (velmi silné)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#228B22"></i> 20–24% (silné)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#32CD32"></i> 15–19% (dobré)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#FFD700"></i> 10–14% (střední)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#87CEEB"></i> 5–9% (slabé)</p>
-        <p style="margin: 3px 0;"><i class="fa fa-square" style="color:#4169E1"></i> <5% (velmi slabé)</p>
-        """
+        legend_html += share_legend_rows(
+            share_thresholds or DEFAULT_SHARE_THRESHOLDS,
+            PARTY_SHARE_COLORS,
+            words=None if share_thresholds else PARTY_SHARE_WORDS,
+        )
 
     legend_html += "</div>"
 
@@ -3834,6 +3893,7 @@ def icon_fill_layer(
     seed=42,
     color_scale_data=None,  # pd.Series indexed by district_code, holding percentages for color scaling
     use_color_scale=False,  # Whether to use color scaling instead of single color
+    share_thresholds=None,  # Colour band edges; the fixed 5-25 % scale when omitted
 ):
     """
     Returns a folium.FeatureGroup with dot-fills for every district.
@@ -3845,18 +3905,9 @@ def icon_fill_layer(
 
     def get_color_from_percentage(percentage):
         """Convert percentage to color scale: red (low) to green (high)"""
-        if percentage >= 25:
-            return "#00FF00"  # Bright lime green (very high) - most attention-grabbing
-        elif percentage >= 20:
-            return "#32CD32"  # Lime green (high) - bright and noticeable
-        elif percentage >= 15:
-            return "#228B22"  # Forest green (good) - solid green
-        elif percentage >= 10:
-            return "#FFD700"  # Gold (moderate)
-        elif percentage >= 5:
-            return "#FF8C00"  # Dark orange (low)
-        else:
-            return "#FF4500"  # Red orange (very low)
+        return share_color(
+            percentage, share_thresholds or DEFAULT_SHARE_THRESHOLDS, DOT_SHARE_COLORS
+        )
 
     rng = np.random.default_rng(seed)
 
