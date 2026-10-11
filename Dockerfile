@@ -1,3 +1,11 @@
+# Frontend of the new app (web/), built into static files
+FROM node:24-bookworm-slim AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web ./
+RUN npm run build
+
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 WORKDIR /app
@@ -11,8 +19,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY streamlit_app.py ./
 COPY src ./src
 COPY .streamlit/config.toml ./.streamlit/config.toml
+COPY --from=web /web/dist ./web/dist
 
-EXPOSE 8501
-CMD ["uv", "run", "--no-sync", "streamlit", "run", "streamlit_app.py", \
-     "--server.address", "0.0.0.0", "--server.port", "8501", \
-     "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+# The image serves the new app; docker-compose.yml overrides the command for
+# the original Streamlit app.
+EXPOSE 8600 8501
+CMD ["uv", "run", "--no-sync", "uvicorn", "--app-dir", "src", "web_api:app", \
+     "--host", "0.0.0.0", "--port", "8600"]

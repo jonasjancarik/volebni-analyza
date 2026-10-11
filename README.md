@@ -57,12 +57,37 @@ The CartoDB base maps need a free API key from
 `CARTO_BASEMAPS_KEY = "your-key"`, or set an environment variable of the same
 name. Without it only OpenStreetMap is offered.
 
+### The new web app
+
+A redesigned app lives next to the Streamlit dashboard: a JSON API
+(`src/web_api.py`, FastAPI) over the same result files and a React frontend in
+`web/`. It covers the same data with a different workflow: search for a
+council, pick the list you follow, then move between the overview, the
+precinct map, voter flows, the precinct table and downloads. The Streamlit app
+stays available for comparison.
+
+```bash
+# API on port 8600
+uv run uvicorn --app-dir src web_api:app --host 0.0.0.0 --port 8600
+
+# Frontend with hot reload on port 5180 (proxies /api to the API)
+npm --prefix web install
+npm --prefix web run dev
+```
+
+For a single process, build the frontend once with `npm --prefix web run build`;
+the API then serves it from `web/dist` on port 8600. Set `VOLBY_LEGACY_URL` to
+the address of the Streamlit app to show a link to it in the header.
+
+The map uses the free OpenFreeMap base map and needs no API key.
+
 ### Running in Docker
 
-`docker compose up -d --build` serves the app on `127.0.0.1:3022` (change the
-port with `VOLBY_PORT`). The image holds only the code. Election results and
-precinct boundaries are not in Git, so copy `output/` and the files the app
-reads from `input/` (`input/raw/*.geojson`, `input/raw/*.gpkg` and
+`docker compose up -d --build` serves the new app on `127.0.0.1:3023` (change
+the port with `VOLBY_APP_PORT`) and the original Streamlit app on
+`127.0.0.1:3022` (`VOLBY_PORT`). The image holds only the code. Election
+results and precinct boundaries are not in Git, so copy `output/` and the files
+the apps read from `input/` (`input/raw/*.geojson`, `input/raw/*.gpkg` and
 `input/ps2025/processed/`) next to `docker-compose.yml` before starting it,
 together with `.streamlit/secrets.toml` (an empty file is enough if you have
 no CARTO key).
