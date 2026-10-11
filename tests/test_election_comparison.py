@@ -82,8 +82,8 @@ def test_redrawn_precincts_are_left_out():
 
 def test_flows_add_up_to_the_previous_electorate():
     rng = np.random.default_rng(2)
-    registered = rng.integers(400, 1500, size=120)
-    shares = rng.dirichlet([3, 2, 5], size=120)
+    registered = rng.integers(400, 1500, size=100)
+    shares = rng.dirichlet([3, 2, 5], size=100)
     previous = pd.DataFrame(shares * registered[:, None], columns=["A", "B", NON_VOTERS])
     previous.insert(0, "turnout", 50.0)
     previous.insert(0, "registered", registered)
@@ -92,8 +92,41 @@ def test_flows_add_up_to_the_previous_electorate():
     current.insert(0, "turnout", 50.0)
     current.insert(0, "registered", registered)
 
-    result = estimate_flows(previous, current)
+    result = estimate_flows(previous, current, resamples=30)
 
     assert np.isclose(result["electorate_flows"].to_numpy().sum(), 1)
     assert abs(result["transitions"].loc["A", "A"] - 0.8) < 0.02
     assert result["explained_variation"] > 0.99
+    # 100 precincts are too few to split into types; the interval brackets the estimate
+    assert result["precinct_types"] == 1
+    low, high = result["transitions_low"], result["transitions_high"]
+    assert (low.to_numpy() <= result["transitions"].to_numpy()).all()
+    assert (high.to_numpy() >= result["transitions"].to_numpy()).all()
+    assert high.loc["A", "A"] - low.loc["A", "A"] < 0.05
+
+
+def test_precinct_types_are_used_when_voters_behave_differently_by_area():
+    rng = np.random.default_rng(3)
+    registered = rng.integers(500, 1200, size=600)
+    # Two kinds of precincts: list A strong in the first, weak in the second,
+    # and its voters stay loyal only in the first
+    centre = rng.dirichlet([30, 10, 60], size=300)
+    estate = rng.dirichlet([8, 30, 62], size=300)
+    loyal = np.array([[0.9, 0.05, 0.05], [0.1, 0.8, 0.1], [0.02, 0.03, 0.95]])
+    leaving = np.array([[0.3, 0.5, 0.2], [0.1, 0.8, 0.1], [0.02, 0.03, 0.95]])
+    shares = np.vstack([centre, estate])
+    moved = np.vstack([centre @ loyal, estate @ leaving])
+    columns = ["A", "B", NON_VOTERS]
+
+    def table(values):
+        frame = pd.DataFrame(values * registered[:, None], columns=columns)
+        frame.insert(0, "turnout", 50.0)
+        frame.insert(0, "registered", registered)
+        return frame
+
+    result = estimate_flows(table(shares), table(moved), resamples=0)
+
+    voters_a = shares[:, 0] * registered
+    true_retention = (voters_a[:300].sum() * 0.9 + voters_a[300:].sum() * 0.3) / voters_a.sum()
+    assert result["precinct_types"] >= 2
+    assert abs(result["transitions"].loc["A", "A"] - true_retention) < 0.03

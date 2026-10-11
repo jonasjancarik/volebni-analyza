@@ -4250,6 +4250,7 @@ def compute_election_comparison(
     previous_election_id: str,
     data_version: float,
     previous_data_version: float,
+    model_version: int = FLOW_MODEL_VERSION,
 ):
     """Matched precinct tables of both elections and, if possible, voter flows."""
     current = load_municipality_data(code, election_id, data_version)
@@ -4328,7 +4329,8 @@ def build_flow_sankey(
             link_color.append(_hex_to_rgba(colors[source], 0.4))
             link_text.append(
                 f"{source} ({previous_name}) → {target} ({current_name})<br>"
-                f"{fmt_pct(flows['transitions'].loc[source, target] * 100, 0)} skupiny, "
+                f"{fmt_pct(flows['transitions'].loc[source, target] * 100, 0)} skupiny "
+                f"(odhad {fmt_range(flows['transitions_low'].loc[source, target] * 100, flows['transitions_high'].loc[source, target] * 100)}), "
                 f"{fmt_pct(share)} všech voličů"
             )
 
@@ -4365,26 +4367,51 @@ def build_flow_sankey(
     return fig
 
 
-def _flow_breakdown_chart(shares: pd.Series, colors: Dict[str, str]) -> go.Figure:
-    shares = shares[shares >= 0.5].sort_values(ascending=False)
+def fmt_range(low, high) -> str:
+    """Interval of two percentages, e.g. '26–35 %'"""
+    return f"{low:.0f}–{high:.0f}\u00a0%"
+
+
+def _flow_breakdown_chart(
+    shares: pd.Series, low: pd.Series, high: pd.Series, colors: Dict[str, str]
+) -> go.Figure:
+    """Bars with the estimate and a whisker for its interval."""
+    shares = shares[(shares >= 0.5) | (high >= 3)].sort_values(ascending=False)
+    low, high = low[shares.index], high[shares.index]
+    labels = [
+        f"<b>{fmt_pct(value, 0)}</b>  ({fmt_range(low[name], high[name])})"
+        for name, value in shares.items()
+    ]
     fig = go.Figure(
         go.Bar(
-            y=[_short_group_name(name, 30) for name in shares.index],
+            y=[_short_group_name(name, 24) for name in shares.index],
             x=shares.values,
             orientation="h",
             marker_color=[colors[name] for name in shares.index],
-            text=[fmt_pct(value, 0) for value in shares.values],
-            textposition="outside",
-            cliponaxis=False,
-            customdata=list(shares.index),
-            hovertemplate="%{customdata}<br>%{x:.0f} %<extra></extra>",
+            error_x=dict(
+                type="data",
+                symmetric=False,
+                array=(high - shares).clip(lower=0).values,
+                arrayminus=(shares - low).clip(lower=0).values,
+                color="#374151",
+                thickness=1.5,
+                width=4,
+            ),
+            customdata=list(zip(shares.index, labels)),
+            hovertemplate="%{customdata[0]}<br>%{customdata[1]}<extra></extra>",
         )
     )
+    # Labels sit right of the whisker so that the two never overlap
+    for position, (name, label) in enumerate(zip(shares.index, labels)):
+        fig.add_annotation(
+            x=max(high[name], shares[name]), y=position, text=label,
+            xanchor="left", xshift=8, showarrow=False, font=dict(size=12),
+        )
     fig.update_layout(
         height=60 + 32 * len(shares),
-        margin=dict(l=0, r=50, t=10, b=10),
+        margin=dict(l=0, r=120, t=10, b=10),
         xaxis=dict(visible=False),
-        yaxis=dict(autorange="reversed"),
+        yaxis=dict(autorange="reversed", automargin=True),
     )
     return fig
 
@@ -4419,6 +4446,20 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
         newly_voted = electorate.loc[NON_VOTERS].sum() - stayed_home
         stopped_voting = electorate[NON_VOTERS].sum() - stayed_home
 
+        # The same three shares in every refit on resampled precincts
+        draws = flows["electorate_flow_draws"] * 100
+        row = list(electorate.index).index(NON_VOTERS)
+        column = list(electorate.columns).index(NON_VOTERS)
+        tail = (1 - flows["interval"]) / 2 * 100
+
+        def draw_range(values):
+            return fmt_range(*np.percentile(values, [tail, 100 - tail]))
+
+        newly_voted_range = draw_range(draws[:, row, :].sum(axis=1) - draws[:, row, column])
+        stopped_voting_range = draw_range(
+            draws[:, :, column].sum(axis=1) - draws[:, row, column]
+        )
+
         show_stayed_home = st.toggle(
             "Zobrazit i ty, kdo nevolili ani jednou",
             value=False,
@@ -4431,8 +4472,9 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
         )
         st.markdown(
             f"Ze všech zapsaných voličů podle modelu **{fmt_pct(stayed_home)}** nevolilo "
-            f"ani v jednom roce, **{fmt_pct(newly_voted)}** přišlo nově a "
-            f"**{fmt_pct(stopped_voting)}** volit přestalo. "
+            f"ani v jednom roce, **{fmt_pct(newly_voted)}** přišlo nově "
+            f"({newly_voted_range}) a **{fmt_pct(stopped_voting)}** volit přestalo "
+            f"({stopped_voting_range}). "
             "Poslední dvě čísla jsou spodní odhad: z okrskových výsledků se dá spolehlivě "
             "určit jen to, o kolik se účast změnila celkem, ne kolik lidí se mezi voliči "
             "a nevoliči ve skutečnosti vyměnilo."
@@ -4455,7 +4497,12 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
                 key="comparison_source",
             )
             st.plotly_chart(
-                _flow_breakdown_chart(transitions.loc[source], colors),
+                _flow_breakdown_chart(
+                    transitions.loc[source],
+                    flows["transitions_low"].loc[source] * 100,
+                    flows["transitions_high"].loc[source] * 100,
+                    colors,
+                ),
                 use_container_width=True,
             )
         with col2:
@@ -4467,13 +4514,39 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
                 key="comparison_target",
             )
             origin = flows["electorate_flows"][target]
+            origin_draws = draws[:, :, targets.index(target)]
+            origin_draws = origin_draws / origin_draws.sum(axis=1, keepdims=True) * 100
+            origin_low, origin_high = np.percentile(origin_draws, [tail, 100 - tail], axis=0)
+            origin_share = origin / origin.sum() * 100
             st.plotly_chart(
-                _flow_breakdown_chart(origin / origin.sum() * 100, colors),
+                _flow_breakdown_chart(
+                    origin_share,
+                    pd.Series(origin_low, index=origin.index).clip(upper=origin_share),
+                    pd.Series(origin_high, index=origin.index).clip(lower=origin_share),
+                    colors,
+                ),
                 use_container_width=True,
             )
+        st.caption(
+            "Tučně je odhad, v závorce a čárkou v grafu rozpětí, ve kterém se odhad "
+            "pohybuje, když se počítá z různých náhodných výběrů okrsků. "
+            "Čím je rozpětí širší, tím méně se dá číslu věřit."
+        )
 
         with st.expander("Celá tabulka přesunů"):
-            matrix = transitions.round(0).astype(int)
+            low_table = flows["transitions_low"] * 100
+            high_table = flows["transitions_high"] * 100
+            matrix = pd.DataFrame(
+                {
+                    target: [
+                        f"{transitions.loc[source, target]:.0f} "
+                        f"({low_table.loc[source, target]:.0f}–{high_table.loc[source, target]:.0f})"
+                        for source in transitions.index
+                    ]
+                    for target in transitions.columns
+                },
+                index=transitions.index,
+            )
             matrix.insert(
                 0,
                 "Podíl všech voličů (%)",
@@ -4487,18 +4560,30 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
             )
             st.caption(
                 f"Řádky jsou skupiny voličů z roku {previous_name}, sloupce říkají, "
-                f"kolik procent z nich skončilo u které kandidátky v roce {current_name}. "
-                "Každý řádek dává dohromady 100 %."
+                f"kolik procent z nich skončilo u které kandidátky v roce {current_name}; "
+                "v závorce je rozpětí odhadu. Odhady v řádku dávají dohromady 100 %."
             )
 
         notes = [
             "Jde o modelový odhad, ne o měření. Vychází z výsledků v okrscích a "
-            "předpokládá, že se voliči stejné kandidátky chovali ve všech okrscích "
+            "předpokládá, že se voliči stejné kandidátky chovali v podobných okrscích "
             "podobně. Malé přesuny (řádově jednotky procent) proto berte jako "
             "orientační.",
             f"Model vysvětluje {fmt_pct(flows['explained_variation'] * 100, 0)} "
             f"rozdílů mezi okrsky a pracuje s {fmt_int(matched)} okrsky.",
         ]
+        if flows["precinct_types"] > 1:
+            notes.append(
+                f"Okrsky jsou rozdělené do {flows['precinct_types']} skupin podle toho, "
+                f"jak se v nich volilo v roce {previous_name}, a přesuny se odhadují "
+                "v každé skupině zvlášť, protože voliči stejné kandidátky se v různých "
+                "částech města nemusí chovat stejně."
+            )
+        notes.append(
+            f"Rozpětí je {flows['interval'] * 100:.0f}% interval z opakovaných výpočtů "
+            "na náhodně vybraných okrscích. Ukazuje, jak moc odhad závisí na konkrétních "
+            "okrscích, ne celkovou chybu modelu."
+        )
         if matched < 150:
             notes.append(
                 "Na tak malém počtu okrsků je odhad hrubý, spolehlivější je u velkých měst."

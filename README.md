@@ -313,14 +313,36 @@ Precincts that ČSÚ corrected and re-sent are counted once (the latest record w
 (dropping those whose electorate changed by more than 35 %), converts votes to
 voters (a list's share of the precinct's votes times the returned envelopes),
 merges lists under 3 % into one group and adds non-voters. It then fits one
-transition matrix for the whole municipality: an ecological regression like the
-Goodman model in `src/ei_models.py`, but for all groups at once and with the
-shares constrained to be non-negative and to add up to 100 %.
+transition matrix: an ecological regression like the Goodman model in
+`src/ei_models.py`, but for all groups at once and with the shares constrained
+to be non-negative and to add up to 100 %.
 
-Treat the result as a model estimate. It assumes voters of a list behaved alike
-in every precinct, ignores people who moved, died or came of age, and tends to
-underestimate movement between voters and non-voters. Flows are shown only for
-councils with at least 30 matched precincts.
+Two refinements make the estimate more honest:
+
+- **Types of precincts.** Voters of one list need not behave alike across a
+  city. Precincts are clustered by how they voted in the previous election and
+  a separate matrix is fitted for each cluster. The number of clusters (1 to 6)
+  is the one that best predicts the current result in precincts left out of the
+  fit; small municipalities stay with one.
+- **Intervals.** The fit is repeated on 100 resamples of the precincts and the
+  app shows the 90 % range next to every estimate. The range tells how much a
+  number depends on which precincts are in the data. It does not cover the
+  error of the model's assumptions.
+
+Treat the result as a model estimate. It ignores people who moved, died or came
+of age, and it underestimates movement between voters and non-voters: precinct
+results pin down the net change in turnout, not the gross exchange. Flows are
+shown only for councils with at least 30 matched precincts.
+
+`research/bayesian_flows_check.py` fits a Bayesian hierarchical model
+(multinomial-Dirichlet, every precinct with its own rates) to the same data as
+a one-off cross-check. It needs PyMC and takes much longer, so it is not part of the app:
+
+```bash
+PYTENSOR_FLAGS='cxx=' uv run --with pymc --with nutpie python research/bayesian_flows_check.py --code 554782
+```
+
+(`PYTENSOR_FLAGS='cxx='` avoids a C compiler failure seen on macOS 27.)
 
 ```bash
 uv run --with pytest pytest tests/
