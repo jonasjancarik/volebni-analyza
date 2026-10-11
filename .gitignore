@@ -22,5 +22,6 @@ wheels/
 # OS files
 .DS_Store
 Thumbs.db
-# Local secrets (API keys)
+# Local secrets (API keys) and deployment settings
 .streamlit/secrets.toml
+.env
