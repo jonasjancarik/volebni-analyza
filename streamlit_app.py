@@ -4179,7 +4179,7 @@ def build_flow_sankey(
     sources, targets = list(electorate_flows.index), list(electorate_flows.columns)
     colors = _group_colors(sources + targets)
 
-    def node_label(name, year, is_source):
+    def node_label(name, is_source):
         # Without the people who stayed home twice, the non-voter nodes hold
         # only those who changed their behaviour; the label has to say so
         if name == NON_VOTERS and not show_stayed_home:
@@ -4188,10 +4188,10 @@ def build_flow_sankey(
                 if is_source
                 else f"Volili {previous_name}, teď nepřišli"
             )
-        return f"{_short_group_name(name)} {year}"
+        return _short_group_name(name)
 
-    labels = [node_label(name, previous_name, True) for name in sources] + [
-        node_label(name, current_name, False) for name in targets
+    labels = [node_label(name, True) for name in sources] + [
+        node_label(name, False) for name in targets
     ]
     node_colors = [colors[name] for name in sources + targets]
 
@@ -4235,7 +4235,13 @@ def build_flow_sankey(
             ),
         )
     )
-    fig.update_layout(height=620, margin=dict(l=0, r=0, t=10, b=10), font=dict(size=13))
+    # The year belongs to the whole column, not to every label
+    for x, anchor, year in ((0, "left", previous_name), (1, "right", current_name)):
+        fig.add_annotation(
+            x=x, y=1.06, xref="paper", yref="paper", xanchor=anchor,
+            text=f"<b>{year}</b>", showarrow=False, font=dict(size=15),
+        )
+    fig.update_layout(height=640, margin=dict(l=0, r=0, t=40, b=10), font=dict(size=13))
     return fig
 
 
