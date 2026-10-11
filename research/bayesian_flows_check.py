@@ -65,11 +65,15 @@ def main() -> None:
     parser.add_argument("--tune", type=int, default=700)
     parser.add_argument("--chains", type=int, default=4)
     parser.add_argument(
+        "--progress-seconds", type=int, default=60, help="how often to report progress"
+    )
+    parser.add_argument(
         "--max-precincts", type=int, default=0, help="random subsample for a faster run"
     )
     args = parser.parse_args()
 
     import arviz as az
+    import nutpie
     import pymc as pm
 
     previous, current = match_precincts(
@@ -88,7 +92,7 @@ def main() -> None:
     n, rows, cols = len(x), len(sources), len(targets)
     print(f"{n} precincts, {rows} x {cols} groups")
 
-    with pm.Model() as model:
+    with pm.Model() as model:  # noqa: F841 - used below
         mean_rates = pm.Dirichlet("mean_rates", a=np.ones((rows, cols)), shape=(rows, cols))
         concentration = pm.Gamma("concentration", alpha=2.0, beta=0.05, shape=rows)
         precinct_rates = pm.Dirichlet(
@@ -100,13 +104,44 @@ def main() -> None:
         pm.Multinomial("observed", n=totals, p=expected, observed=counts)
 
         started = time.time()
-        trace = pm.sample(
+        out_dir = Path(f"output/{args.election}/reports")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        progress_file = out_dir / f"bayesian_flows_{args.code}_progress.txt"
+
+        def report_progress(chains):
+            """One status line per call, on stdout and in the progress file.
+
+            The terminal progress bar prints nothing when output goes to a
+            log, and a run takes minutes to hours.
+            """
+            done = sum(chain.finished_draws for chain in chains)
+            total = sum(chain.total_draws for chain in chains)
+            minutes = (time.time() - started) / 60
+            remaining = minutes * (total - done) / done if done else float("nan")
+            line = (
+                f"{time.strftime('%H:%M')}  {done / total * 100:5.1f} %  "
+                f"({done}/{total} draws, "
+                f"{sum(chain.tuning for chain in chains)} of {len(chains)} chains still tuning)  "
+                f"running {minutes:.0f} min, about {remaining:.0f} min left"
+            )
+            print(line, flush=True)
+            progress_file.write_text(line + "\n", encoding="utf-8")
+
+        # nutpie directly: pm.sample() does not let us pass a progress callback
+        trace = nutpie.sample(
+            nutpie.compile_pymc_model(model),
             draws=args.draws,
             tune=args.tune,
             chains=args.chains,
-            nuts_sampler="nutpie",
-            random_seed=1,
-            progressbar=True,
+            seed=1,
+            progress_bar=False,
+            progress_callback=report_progress,
+            progress_rate=args.progress_seconds * 1000,
+        )
+        posterior, sample_stats = trace["posterior"], trace["sample_stats"]
+        progress_file.write_text(
+            f"{time.strftime('%H:%M')}  finished in {(time.time() - started) / 60:.0f} min\n",
+            encoding="utf-8",
         )
     print(f"sampled in {(time.time() - started) / 60:.1f} min")
 
@@ -114,14 +149,12 @@ def main() -> None:
     weights = previous[sources].to_numpy()
     weights = weights / weights.sum(axis=0, keepdims=True)
     per_chain = np.einsum(
-        "ir,kdirc->kdrc", weights, trace.posterior["precinct_rates"].to_numpy()
+        "ir,kdirc->kdrc", weights, posterior["precinct_rates"].to_numpy()
     )
     citywide = per_chain.reshape(-1, rows, cols).transpose(1, 2, 0)
 
     # The hyperparameters often mix poorly even when the city-wide rates, which
     # are what we report, agree between chains. Check those directly.
-    out_dir = Path(f"output/{args.election}/reports")
-    out_dir.mkdir(parents=True, exist_ok=True)
     np.save(out_dir / f"bayesian_flows_{args.code}_citywide_draws.npy", per_chain)
     chain_means = per_chain.mean(axis=1)
     chain_spread = chain_means.max(axis=0) - chain_means.min(axis=0)
@@ -138,12 +171,16 @@ def main() -> None:
             "regression": regression.to_numpy().ravel(),
         }
     )
-    summary = az.summary(trace, var_names=["mean_rates", "concentration"])
+    hyperparameters = az.convert_to_dataset(
+        {name: posterior[name].to_numpy() for name in ("mean_rates", "concentration")}
+    )
+    hyper_rhat = max(float(v.max()) for v in az.rhat(hyperparameters).data_vars.values())
+    hyper_ess = min(float(v.min()) for v in az.ess(hyperparameters).data_vars.values())
     diagnostics = {
         "precincts": n,
-        "divergences": int(trace.sample_stats["diverging"].sum()),
-        "max_rhat_hyperparameters": float(summary["r_hat"].max()),
-        "min_ess_bulk_hyperparameters": float(summary["ess_bulk"].min()),
+        "divergences": int(sample_stats["diverging"].sum()),
+        "max_rhat_hyperparameters": hyper_rhat,
+        "min_ess_bulk_hyperparameters": hyper_ess,
         "max_rhat_citywide_rates": float(citywide_rhat.max()),
         "max_difference_between_chains_pp": float(chain_spread.max() * 100),
         "mean_difference_between_chains_pp": float(chain_spread.mean() * 100),
