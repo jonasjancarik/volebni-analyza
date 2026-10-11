@@ -4117,7 +4117,11 @@ def display_flow_sankey(selected_election_id: str, selected_zastupitelstvo_code:
 
 
 # Flows need enough precincts to tell the groups apart
-MIN_PRECINCTS_FOR_FLOWS = 30
+# Thresholds come from comparing this estimate with a Bayesian model on the 13
+# largest Prague districts: around 100 precincts and more the two agreed within
+# 3-5 points on average, under about 60 they could differ by tens of points
+MIN_PRECINCTS_FOR_FLOWS = 50
+ROUGH_FLOWS_BELOW = 100
 GROUP_PALETTE = [
     "#2563eb", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6",
     "#14b8a6", "#ec4899", "#84cc16", "#f97316", "#0ea5e9",
@@ -4353,6 +4357,13 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
             "Odhad, kam odešli voliči jednotlivých kandidátek a kolik lidí přišlo "
             "nebo zůstalo doma. Šířka pruhu odpovídá počtu voličů."
         )
+        if matched < ROUGH_FLOWS_BELOW:
+            st.warning(
+                f"Hrubý odhad: k dispozici je jen {fmt_int(matched)} okrsků. "
+                "U takto malých obvodů dávají různé metody výpočtu znatelně odlišné "
+                "výsledky, u jednotlivých kandidátek i o desítky procentních bodů. "
+                "Věřte jen velkým přesunům s úzkým rozpětím."
+            )
         electorate = flows["electorate_flows"] * 100
         stayed_home = electorate.loc[NON_VOTERS, NON_VOTERS]
         newly_voted = electorate.loc[NON_VOTERS].sum() - stayed_home
@@ -4496,10 +4507,6 @@ def display_election_comparison(comparison, previous_name: str, current_name: st
             "na náhodně vybraných okrscích. Ukazuje, jak moc odhad závisí na konkrétních "
             "okrscích, ne celkovou chybu modelu."
         )
-        if matched < 150:
-            notes.append(
-                "Na tak malém počtu okrsků je odhad hrubý, spolehlivější je u velkých měst."
-            )
         if skipped > 0:
             notes.append(
                 f"{fmt_int(skipped)} okrsků je vynecháno, protože v roce {previous_name} "

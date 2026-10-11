@@ -343,7 +343,10 @@ Two refinements make the estimate more honest:
 Treat the result as a model estimate. It ignores people who moved, died or came
 of age, and it underestimates movement between voters and non-voters: precinct
 results pin down the net change in turnout, not the gross exchange. Flows are
-shown only for councils with at least 30 matched precincts.
+shown only for councils with at least 50 matched precincts, and with a warning
+below 100. The thresholds come from running the simple Bayesian model below on the
+13 largest Prague districts: from about 100 precincts the two methods agreed within
+3-5 points on average, under about 60 they could differ by tens of points.
 
 `research/bayesian_flows_check.py` fits a Bayesian hierarchical model
 (multinomial-Dirichlet, every precinct with its own rates) to the same data as

@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 # Bump when the estimate changes, so that cached results are recomputed
-FLOW_MODEL_VERSION = 3
+FLOW_MODEL_VERSION = 4
 
 NON_VOTERS = "Nevoliči"
 OTHER_LISTS = "Ostatní kandidátky"
