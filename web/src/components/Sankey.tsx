@@ -11,6 +11,8 @@ interface Props {
   nonVoters: string;
   colorOf: (group: string) => string;
   showStayedHome: boolean;
+  /** Whether lists show their share of those who voted or of everyone on the electoral roll */
+  base: "voted" | "registered";
   /** Group whose flows stay highlighted, e.g. the one picked in the charts below */
   highlight?: { side: "source" | "target"; name: string } | null;
   onPick: (side: "source" | "target", name: string) => void;
@@ -36,7 +38,7 @@ type Link = SankeyLink<NodeDatum, LinkDatum>;
 /** Flows smaller than this share of the electorate would only add noise */
 const MIN_FLOW = 0.1;
 
-export function Sankey({ flows, previousYear, currentYear, nonVoters, colorOf, showStayedHome, highlight, onPick }: Props) {
+export function Sankey({ flows, previousYear, currentYear, nonVoters, colorOf, showStayedHome, base, highlight, onPick }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>(900);
   const tooltip = useTooltip();
   const [hover, setHover] = useState<{ node?: number; link?: number } | null>(null);
@@ -144,11 +146,16 @@ export function Sankey({ flows, previousYear, currentYear, nonVoters, colorOf, s
           const sizes = left ? flows.sourceSize : flows.targetSize;
           const names = left ? flows.sources : flows.targets;
           const size = sizes[left ? node.index! : node.index! - flows.sources.length];
-          // Lists show their share of those who voted, like the results elsewhere;
+          // Among those who voted the lists add up to 100, like the results elsewhere;
           // non-voters can only be a share of everyone on the electoral roll
           const voted = 100 - (sizes[names.indexOf(nonVoters)] ?? 0);
           const isNonVoters = node.name === nonVoters;
-          const share = isNonVoters ? `${fmtPct(size, 0)} zapsaných` : fmtPct(voted > 0 ? (size / voted) * 100 : 0, 0);
+          const share =
+            base === "registered"
+              ? fmtPct(size, 0)
+              : isNonVoters
+                ? `${fmtPct(size, 0)} zapsaných`
+                : fmtPct(voted > 0 ? (size / voted) * 100 : 0, 0);
           const tall = y1 - y0 >= 11;
           const picked = highlight?.side === node.side && highlight.name === node.name;
           return (

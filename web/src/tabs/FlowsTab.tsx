@@ -65,6 +65,8 @@ interface BodyProps {
 function FlowsBody({ comparison, colorByName, focusName }: BodyProps) {
   const { flows, previousYear, currentYear, matched, skipped, nonVoters, otherLists } = comparison;
   const [showStayedHome, setShowStayedHome] = useState(false);
+  const [baseParam, setBase] = useParam("zaklad");
+  const base = baseParam === "zapsani" ? "registered" : "voted";
   const [picked, setPicked] = useState<{ side: "source" | "target"; name: string } | null>(null);
 
   const preferred = (groups: string[]) =>
@@ -128,14 +130,24 @@ function FlowsBody({ comparison, colorByName, focusName }: BodyProps) {
               Kam se voliči přesunuli mezi roky {previousYear} a {currentYear}
             </h2>
             <div className="card-sub">
-              Šířka pruhu odpovídá počtu voličů, procento u kandidátky je její podíl mezi těmi, kdo přišli volit.
-              Kliknutím na kandidátku zvýrazníte její pruhy.
+              Šířka pruhu odpovídá počtu voličů. Kliknutím na kandidátku zvýrazníte její pruhy.
             </div>
           </div>
-          <label className="toggle">
-            <input type="checkbox" checked={showStayedHome} onChange={(event) => setShowStayedHome(event.target.checked)} />
-            I ti, kdo nevolili ani jednou
-          </label>
+          <div className="toolbar">
+            <span className="field-label">Procenta z</span>
+            <div className="segmented" role="group" aria-label="Z čeho se počítají procenta u kandidátek">
+              <button aria-pressed={base === "voted"} onClick={() => setBase(null)}>
+                těch, kdo volili
+              </button>
+              <button aria-pressed={base === "registered"} onClick={() => setBase("zapsani")}>
+                všech zapsaných
+              </button>
+            </div>
+            <label className="toggle">
+              <input type="checkbox" checked={showStayedHome} onChange={(event) => setShowStayedHome(event.target.checked)} />
+              I ti, kdo nevolili ani jednou
+            </label>
+          </div>
         </div>
         <Sankey
           flows={flows}
@@ -144,9 +156,15 @@ function FlowsBody({ comparison, colorByName, focusName }: BodyProps) {
           nonVoters={nonVoters}
           colorOf={colorOf}
           showStayedHome={showStayedHome}
+          base={base}
           highlight={picked}
           onPick={pick}
         />
+        <p className="note" style={{ marginTop: 10 }}>
+          {base === "voted"
+            ? "Procenta u kandidátek jsou podíly mezi těmi, kdo přišli volit, takže dávají dohromady 100 a odpovídají výsledkům na kartě Přehled."
+            : "Procenta jsou podíly ze všech zapsaných voličů. Kandidátky proto dávají dohromady jen volební účast a do 100 je doplňují nevoliči."}
+        </p>
       </section>
 
       <section className="card">
