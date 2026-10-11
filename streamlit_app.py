@@ -8,6 +8,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 from plotly.subplots import make_subplots
 import folium
 from streamlit_folium import st_folium
@@ -41,11 +42,64 @@ logger = logging.getLogger(__name__)
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Volební analýza obcí",
-    page_icon="🏛️",
+    page_title="Volební analýza",
+    page_icon="🗳️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# Czech number format in charts: decimal comma, space between thousands
+pio.templates["czech_numbers"] = go.layout.Template(layout=dict(separators=", "))
+pio.templates.default = "plotly+czech_numbers"
+
+
+def fmt_int(value) -> str:
+    """1234567 -> '1 234 567' (non-breaking spaces)"""
+    if value is None or pd.isna(value):
+        return "–"
+    return f"{int(round(float(value))):,}".replace(",", "\u00a0")
+
+
+def fmt_signed_int(value) -> str:
+    """Change of a count for st.metric, e.g. '+1 234'"""
+    return f"{int(round(float(value))):+,}".replace(",", "\u00a0")
+
+
+def fmt_pct(value, decimals: int = 1) -> str:
+    """45.96 -> '46,0 %'"""
+    return f"{float(value):.{decimals}f}".replace(".", ",") + "\u00a0%"
+
+
+def czech_table(df: pd.DataFrame, decimals: Optional[Dict[str, int]] = None, signed=()):
+    """Show numbers in a table the Czech way; sorting still uses the raw values.
+
+    Whole-number columns get a space between thousands, columns listed in
+    `decimals` a decimal comma, and columns in `signed` an explicit plus sign.
+    """
+    decimals = decimals or {}
+
+    def number_format(places: int, show_sign: bool):
+        def format_value(value):
+            if pd.isna(value):
+                return "–"
+            text = f"{value:+,.{places}f}" if show_sign else f"{value:,.{places}f}"
+            return text.replace(",", "\u00a0").replace(".", ",")
+
+        return format_value
+
+    formats = {}
+    for column in df.columns:
+        if column in decimals:
+            formats[column] = number_format(decimals[column], column in signed)
+        elif pd.api.types.is_integer_dtype(df[column]):
+            formats[column] = number_format(0, column in signed)
+    return df.style.format(formats)
+
+
+def fmt_pp(value, signed: bool = True) -> str:
+    """Difference of two percentages in percentage points, e.g. '+2,1 p. b.'"""
+    number = f"{float(value):+.1f}" if signed else f"{float(value):.1f}"
+    return number.replace(".", ",") + "\u00a0p.\u00a0b."
 
 # UI labels (internal keys remain English for logic)
 VIZ_LABELS = {
@@ -62,6 +116,10 @@ MAP_TYPE_LABELS = {
     "Cartogram": "Kartogram",
     "Dot Density": "Bodová hustota",
 }
+
+
+# Above this number of precincts the map shows values on hover only
+MAX_LABELLED_PRECINCTS = 150
 
 
 def viz_label(viz_type: str) -> str:
@@ -168,6 +226,18 @@ def run_data_collection(election_id="kv2022"):
         return False
 
 
+@st.cache_resource(show_spinner="Načítám výsledky voleb…")
+def _read_results_files(index_file: str, comprehensive_file: str, data_version: float):
+    """Parse the result files once per data version; they are tens of MB."""
+    with open(index_file, "r", encoding="utf-8") as f:
+        index_data = json.load(f)
+
+    with open(comprehensive_file, "r", encoding="utf-8") as f:
+        comprehensive_data = json.load(f)
+
+    return index_data, comprehensive_data
+
+
 def load_all_municipality_data(election_id="kv2022"):
     """Load municipality/district index and comprehensive data for a specific election"""
     try:
@@ -188,21 +258,12 @@ def load_all_municipality_data(election_id="kv2022"):
                 election_config.results_dir / "all_municipalities_comprehensive.json"
             )
 
-        # Load index
-        if not index_file.exists():
+        if not index_file.exists() or not comprehensive_file.exists():
             return None, None
 
-        with open(index_file, "r", encoding="utf-8") as f:
-            index_data = json.load(f)
-
-        # Load comprehensive data
-        if not comprehensive_file.exists():
-            return None, None
-
-        with open(comprehensive_file, "r", encoding="utf-8") as f:
-            comprehensive_data = json.load(f)
-
-        return index_data, comprehensive_data
+        return _read_results_files(
+            str(index_file), str(comprehensive_file), comprehensive_file.stat().st_mtime
+        )
 
     except Exception as e:
         logger.error(f"Error loading data for {election_id}: {e}")
@@ -262,79 +323,37 @@ def get_results_data_version(election_id="kv2022"):
 
 
 def create_municipality_selector(
-    municipality_index, comprehensive_data, default_code: Optional[str] = None
+    municipality_index,
+    election_id: str,
+    is_parliamentary: bool,
+    default_code: Optional[str] = None,
 ):
-    """Create municipality/district selection interface"""
-    # Determine if this is parliamentary or municipal data
-    is_parliamentary = (
-        "electoral_districts" in comprehensive_data if comprehensive_data else False
-    )
+    """Sidebar select box for the municipality (or region); returns its code or None"""
+    names = {str(code): info.get("name", str(code)) for code, info in municipality_index.items()}
 
     if is_parliamentary:
-        st.sidebar.header("🗳️ Výběr volebního obvodu")
-        label = "Vyberte volební obvod:"
-        help_text = f"Vyberte z {len(municipality_index)} obvodů"
-        search_label = "Hledat obvod"
+        label = "Kraj"
+        codes = sorted(names, key=lambda code: int(code) if code.isdigit() else 0)
+        format_option = lambda code: names[code]
     else:
-        st.sidebar.header("🏛️ Výběr obce")
-        label = "Vyberte obec:"
-        help_text = f"Vyberte z {len(municipality_index)} obcí"
-        search_label = "Hledat obec nebo kód"
+        label = "Obec nebo městská část"
+        codes = sorted(names, key=lambda code: (names[code].lower(), code))
+        # Many municipalities share a name, the code tells them apart
+        format_option = lambda code: f"{names[code]} ({code})"
 
-    # Convert to DataFrame and sort alphabetically by name
-    df = pd.DataFrame.from_dict(municipality_index, orient="index")
-    df["code"] = df.index
-    df = df.reset_index(drop=True)
-    df = df.sort_values("name", ascending=True)
+    # One widget per election: codes of regions and municipalities differ
+    widget_key = f"municipality_select_{election_id}"
+    if widget_key not in st.session_state and default_code in names:
+        st.session_state[widget_key] = str(default_code)
 
-    search_query = (
-        st.sidebar.text_input(
-            search_label,
-            value="",
-            help="Filtrovat podle názvu nebo kódu.",
-            key="municipality_search",
-        )
-        .strip()
-        .lower()
+    return st.sidebar.selectbox(
+        label,
+        codes,
+        format_func=format_option,
+        index=None,
+        placeholder="Začněte psát název…",
+        key=widget_key,
     )
-
-    df_filtered = df
-    if search_query:
-        df_filtered = df[
-            df["name"].str.lower().str.contains(search_query, na=False)
-            | df["code"].astype(str).str.contains(search_query)
-        ]
-
-    # Create simple dropdown with all items
-    options = []
-    for _, row in df_filtered.iterrows():
-        option_text = f"{row['name']} ({row['code']})"
-        options.append((option_text, row["code"]))
-
-    if options:
-        default_index = 0
-        if default_code:
-            for i, option in enumerate(options):
-                if str(option[1]) == str(default_code):
-                    default_index = i
-                    break
-
-        selected_option = st.sidebar.selectbox(
-            label,
-            options,
-            format_func=lambda x: x[0],
-            index=default_index,
-            help=help_text,
-        )
-
-        if selected_option:
-            selected_code = selected_option[1]
-            display_municipality_sidebar_info(selected_code, comprehensive_data)
-            return selected_code
-    else:
-        st.sidebar.warning("Žádné výsledky pro daný filtr.")
-
-    return None
 
 
 def get_data_by_code(code: str, comprehensive_data) -> Optional[Dict]:
@@ -368,54 +387,6 @@ def get_data_by_code(code: str, comprehensive_data) -> Optional[Dict]:
         return comprehensive_data["municipalities"].get(code)
 
     return None
-
-
-def display_municipality_sidebar_info(municipality_code, comprehensive_data):
-    """Display detailed information about selected municipality/district in sidebar"""
-    if not comprehensive_data:
-        return
-
-    municipality_data = get_data_by_code(municipality_code, comprehensive_data)
-    if not municipality_data:
-        st.sidebar.error("Data pro tento kód nebyla nalezena.")
-        return
-
-    metadata = municipality_data["metadata"]
-    stats = municipality_data["summary_statistics"]
-
-    # Check if this is parliamentary or municipal data
-    is_parliamentary = "district_number" in metadata
-
-    if is_parliamentary:
-        st.sidebar.subheader("Volební obvod")
-        st.sidebar.write(f"**Obvod:** {metadata.get('district_name', 'Neznámé')}")
-        st.sidebar.write(f"**Číslo:** {metadata.get('district_number', 'N/A')}")
-        st.sidebar.write(f"**Mandáty celkem:** {stats.get('total_mandates', 0)}")
-
-        st.sidebar.subheader("Statistiky")
-        st.sidebar.write(f"**Kandidáti:** {stats.get('total_candidates', 0)}")
-        st.sidebar.write(f"**Strany:** {stats.get('parties_participating', 0)}")
-    else:
-        st.sidebar.subheader("Obec")
-        st.sidebar.write(f"**Název:** {metadata.get('municipality_name', 'Neznámé')}")
-        st.sidebar.write(f"**Kód:** {metadata.get('municipality_code', 'N/A')}")
-        st.sidebar.write(f"**Počet mandátů:** {metadata.get('total_mandates', 0)}")
-        st.sidebar.write(f"**Mandáty obsazeny:** {metadata.get('mandates_won', 0)}")
-
-        st.sidebar.subheader("Statistiky")
-        if "electoral_districts" in stats:
-            st.sidebar.write(f"**Okrsky:** {stats['electoral_districts']}")
-        if "registered_voters" in stats:
-            st.sidebar.write(f"**Registrovaní voliči:** {stats['registered_voters']:,}")
-        if "turnout_percentage" in stats:
-            st.sidebar.write(f"**Účast:** {stats['turnout_percentage']:.2f}%")
-        if "valid_votes" in stats:
-            st.sidebar.write(f"**Platné hlasy:** {stats['valid_votes']:,}")
-        st.sidebar.write(f"**Strany:** {stats.get('parties_participating', 0)}")
-        if "parties_with_mandates" in stats:
-            st.sidebar.write(
-                f"**Strany s mandáty:** {stats['parties_with_mandates']}"
-            )
 
 
 def get_municipality_data(municipality_code: str, comprehensive_data) -> Optional[Dict]:
@@ -583,7 +554,7 @@ def load_geojson_data(election_id: str = "kv2022"):
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(geojson_data, f, ensure_ascii=False)
 
-        st.success(f"✅ Staženo a uloženo {len(features):,} okrsků")
+        st.success(f"✅ Staženo a uloženo {fmt_int(len(features))} okrsků")
         return geojson_data
 
     except requests.exceptions.Timeout:
@@ -1125,6 +1096,11 @@ def create_folium_map(
     # Create map with initial center and proper tile handling
     m = create_map_with_tiles(map_center, zoom_start, base_map_style)
 
+    # A label on every precinct covers the whole map in a big city
+    show_labels = (
+        len((geojson_data or {}).get("features", [])) <= MAX_LABELLED_PRECINCTS
+    )
+
     # Calculate bounds for auto-fitting after we add all features - but don't use fit_bounds in tabs
     bounds = None
     if geojson_data and "features" in geojson_data and lats and lons:
@@ -1305,16 +1281,16 @@ def create_folium_map(
                 value = viz_data[district_code]
 
                 if viz_type == "Turnout":
-                    popup_html += f"<p><strong>Účast:</strong> {value:.1f}%</p>"
+                    popup_html += f"<p><strong>Účast:</strong> {fmt_pct(value, 1)}</p>"
                 elif viz_type == "Estimated Voters":
                     popup_html += (
-                        f"<p><strong>Registrovaní voliči:</strong> {int(value):,}</p>"
+                        f"<p><strong>Registrovaní voliči:</strong> {fmt_int(int(value))}</p>"
                     )
                 elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
-                    popup_html += f"<p><strong>Platné hlasy:</strong> {int(value):,}</p>"
+                    popup_html += f"<p><strong>Platné hlasy:</strong> {fmt_int(int(value))}</p>"
                 elif viz_type == "Party Results" and selected_party:
                     popup_html += (
-                        f"<p><strong>{selected_party}:</strong> {value:.1f}%</p>"
+                        f"<p><strong>{selected_party}:</strong> {fmt_pct(value, 1)}</p>"
                     )
 
             # Always add voter estimate and vote share if available
@@ -1329,10 +1305,10 @@ def create_folium_map(
 
                     if num_seats > 0:
                         voter_estimate = round(valid_votes / num_seats)
-                        popup_html += f"<p><strong>Odhad voličů:</strong> {voter_estimate:,}</p>"
+                        popup_html += f"<p><strong>Odhad voličů:</strong> {fmt_int(voter_estimate)}</p>"
 
                     popup_html += (
-                        f"<p><strong>Platné hlasy:</strong> {valid_votes:,}</p>"
+                        f"<p><strong>Platné hlasy:</strong> {fmt_int(valid_votes)}</p>"
                     )
 
                 if "registered_voters" in district_row and pd.notna(
@@ -1342,7 +1318,7 @@ def create_folium_map(
                     if registered_voters > 0 and "valid_votes" in locals():
                         vote_share = (valid_votes / registered_voters) * 100
                         popup_html += (
-                            f"<p><strong>Podíl hlasů:</strong> {vote_share:.1f}% registrovaných voličů</p>"
+                            f"<p><strong>Podíl hlasů:</strong> {fmt_pct(vote_share, 1)} registrovaných voličů</p>"
                         )
 
                 # Add other context data if not already shown
@@ -1352,7 +1328,7 @@ def create_folium_map(
                     and pd.notna(district_row["turnout_percentage"])
                 ):
                     popup_html += (
-                        f"<p><strong>Účast:</strong> {district_row['turnout_percentage']:.1f}%</p>"
+                        f"<p><strong>Účast:</strong> {fmt_pct(district_row['turnout_percentage'], 1)}</p>"
                     )
 
                 if (
@@ -1361,7 +1337,7 @@ def create_folium_map(
                     and pd.notna(district_row["registered_voters"])
                 ):
                     popup_html += (
-                        f"<p><strong>Registrovaní voliči:</strong> {int(district_row['registered_voters']):,}</p>"
+                        f"<p><strong>Registrovaní voliči:</strong> {fmt_int(int(district_row['registered_voters']))}</p>"
                     )
             else:
                 popup_html += (
@@ -1391,18 +1367,18 @@ def create_folium_map(
                 value = viz_data[district_code]
 
                 if viz_type == "Turnout":
-                    tooltip_text = f"Okrsek {district_code}: {value:.1f}% účast"
+                    tooltip_text = f"Okrsek {district_code}: {fmt_pct(value, 1)} účast"
                 elif viz_type == "Estimated Voters":
                     tooltip_text = (
-                        f"Okrsek {district_code}: {int(value):,} registrovaných voličů"
+                        f"Okrsek {district_code}: {fmt_int(int(value))} registrovaných voličů"
                     )
                 elif viz_type == "Valid Votes" or viz_type == "Valid Votes (dots)":
                     tooltip_text = (
-                        f"Okrsek {district_code}: {int(value):,} platných hlasů"
+                        f"Okrsek {district_code}: {fmt_int(int(value))} platných hlasů"
                     )
                 elif viz_type == "Party Results" and selected_party:
                     tooltip_text = (
-                        f"Okrsek {district_code}: {value:.1f}% {selected_party}"
+                        f"Okrsek {district_code}: {fmt_pct(value, 1)} {selected_party}"
                     )
 
             # Add voter estimate if available in district data
@@ -1421,11 +1397,11 @@ def create_folium_map(
                             voter_estimate = round(valid_votes / num_seats)
                             # Add voter estimate to tooltip based on visualization type
                             if viz_type == "Party Results":
-                                tooltip_text += f" | ~{voter_estimate:,} voličů"
+                                tooltip_text += f" | ~{fmt_int(voter_estimate)} voličů"
                             elif viz_type not in [
                                 "Estimated Voters"
                             ]:  # Don't duplicate for estimated voters viz
-                                tooltip_text += f" | ~{voter_estimate:,} voličů"
+                                tooltip_text += f" | ~{fmt_int(voter_estimate)} voličů"
 
             folium.GeoJson(
                 feature,
@@ -1458,7 +1434,7 @@ def create_folium_map(
                         value = viz_data[district_code]
 
                         if viz_type == "Turnout":
-                            label_text = f"{value:.0f}%"
+                            label_text = f"{fmt_pct(value, 0)}"
                         elif viz_type == "Estimated Voters":
                             # Show abbreviated form for large numbers
                             if value >= 1000:
@@ -1475,7 +1451,7 @@ def create_folium_map(
                             else:
                                 label_text = f"{int(value)}"
                         elif viz_type == "Party Results" and selected_party:
-                            label_text = f"{value:.0f}%"
+                            label_text = f"{fmt_pct(value, 0)}"
 
                     # Add vote count for non-percentage visualizations
                     if district_data is not None and isinstance(
@@ -1498,7 +1474,7 @@ def create_folium_map(
                                         label_text = f"{valid_votes}"
 
                     # Add the label marker with larger font
-                    if label_text:  # Only add label if we have data
+                    if label_text and show_labels:
                         folium.Marker(
                             location=[center_lat, center_lon],
                             icon=folium.DivIcon(
@@ -1731,360 +1707,383 @@ def create_pydeck_map(
     )
 
 
-def display_electoral_overview(data):
-    """Display overview statistics using CSV data"""
-    st.subheader("📊 Souhrn")
+def _mandates_column(party_df: pd.DataFrame) -> Optional[str]:
+    for col in ("mandates_won", "mandates"):
+        if col in party_df.columns:
+            return col
+    return None
 
-    # Create columns for metrics
+
+def _party_key(name) -> str:
+    return re.sub(r"\s+", " ", str(name or "")).strip().lower()
+
+
+def _with_vote_share(party_df: pd.DataFrame) -> pd.DataFrame:
+    """Add `share`: the party's votes as a percentage of all valid votes.
+
+    In municipal elections ČSÚ's own percentage is recalculated for lists with
+    fewer candidates than seats, so it does not add up to 100 and can rank a
+    list above one with more votes.
+    """
+    party_df = party_df.copy()
+    total_votes = party_df["votes_absolute"].sum() if "votes_absolute" in party_df else 0
+    if total_votes > 0:
+        party_df["share"] = party_df["votes_absolute"] / total_votes * 100
+    else:
+        party_df["share"] = party_df["votes_percentage"]
+    return party_df
+
+
+def _previous_party_lookup(previous_data) -> Dict[str, Dict]:
+    """Results of the previous election keyed by party name (short and full)."""
+    previous_df = (previous_data or {}).get("party_results")
+    if not isinstance(previous_df, pd.DataFrame) or previous_df.empty:
+        return {}
+
+    previous_df = _with_vote_share(previous_df)
+    mandates_col = _mandates_column(previous_df)
+    lookup = {}
+    for _, row in previous_df.iterrows():
+        entry = {
+            "share": float(row.get("share", 0) or 0),
+            "mandates": int(row.get(mandates_col, 0) or 0) if mandates_col else None,
+        }
+        for name_col in ("party_name_full", "party_name"):
+            key = _party_key(row.get(name_col))
+            if key:
+                lookup.setdefault(key, entry)
+    return lookup
+
+
+def display_electoral_overview(data, previous_data=None, previous_name=""):
+    """Headline numbers and party results, compared with the previous election"""
+    stats = data.get("summary_statistics") or {}
+    previous_stats = (previous_data or {}).get("summary_statistics") or {}
+    party_df = data.get("party_results")
+    has_parties = isinstance(party_df, pd.DataFrame) and not party_df.empty
+
+    turnout = float(stats.get("turnout_percentage") or 0)
+    registered = int(stats.get("registered_voters") or 0)
+    previous_turnout = float(previous_stats.get("turnout_percentage") or 0)
+    previous_registered = int(previous_stats.get("registered_voters") or 0)
+
+    if has_parties:
+        party_df = _with_vote_share(party_df)
+    mandates_col = _mandates_column(party_df) if has_parties else None
+    total_mandates = int(party_df[mandates_col].sum()) if mandates_col else 0
+    if total_mandates == 0:
+        # The data set has no seat allocation (e.g. regions in parliamentary elections)
+        mandates_col = None
+
     col1, col2, col3, col4 = st.columns(4)
+    col1.metric(
+        "Volební účast",
+        fmt_pct(turnout) if turnout > 0 else "–",
+        delta=fmt_pp(turnout - previous_turnout)
+        if turnout > 0 and previous_turnout > 0
+        else None,
+    )
+    col2.metric(
+        "Zapsaní voliči",
+        fmt_int(registered) if registered > 0 else "–",
+        delta=fmt_signed_int(registered - previous_registered)
+        if registered > 0 and previous_registered > 0
+        else None,
+        delta_color="off",
+    )
+    col3.metric("Kandidující strany", fmt_int(len(party_df)) if has_parties else "–")
+    col4.metric("Rozdělené mandáty", fmt_int(total_mandates) if total_mandates else "–")
 
-    # Extract statistics from CSV data
-    total_districts = 0
-    avg_turnout = 0
-    total_voters = 0
-    total_parties = 0
+    if previous_data:
+        st.caption(f"Změny jsou oproti volbám {previous_name}.")
 
-    # Get summary statistics
-    if "summary_statistics" in data:
-        stats = data["summary_statistics"]
-        total_voters = (
-            int(stats.get("registered_voters", 0))
-            if stats.get("registered_voters")
-            else 0
+    if not has_parties:
+        st.warning("Pro tento výběr nejsou dostupné výsledky stran.")
+        return
+
+    party_sorted = party_df.sort_values("share", ascending=False).reset_index(drop=True)
+    previous_lookup = _previous_party_lookup(previous_data)
+
+    def previous_for(row):
+        for name_col in ("party_name_full", "party_name"):
+            entry = previous_lookup.get(_party_key(row.get(name_col)))
+            if entry:
+                return entry
+        return None
+
+    winner = party_sorted.iloc[0]
+    winner_text = (
+        f"Nejvíc hlasů získala kandidátka **{winner['party_name']}** "
+        f"({fmt_pct(winner['share'])})"
+    )
+    if len(party_sorted) > 1:
+        runner_up = party_sorted.iloc[1]
+        margin = float(winner["share"]) - float(runner_up["share"])
+        winner_text += (
+            f", s náskokem {fmt_pp(margin, signed=False)} "
+            f"před **{runner_up['party_name']}**"
         )
-        avg_turnout = (
-            float(stats.get("turnout_percentage", 0))
-            if stats.get("turnout_percentage")
-            else 0
+    st.markdown(winner_text + ".")
+
+    st.subheader("Výsledky stran")
+
+    max_bars = 12
+    chart_df = party_sorted.head(max_bars).copy()
+    chart_df["label"] = chart_df["party_name"].apply(
+        lambda name: name if len(str(name)) <= 42 else str(name)[:40].rstrip() + "…"
+    )
+    # Two parties can share a shortened name; the axis needs unique labels
+    duplicated = chart_df["label"].duplicated(keep=False)
+    chart_df.loc[duplicated, "label"] = (
+        chart_df.loc[duplicated, "label"]
+        + " ("
+        + chart_df.loc[duplicated, "list_number"].astype(str)
+        + ")"
+    )
+
+    def bar_text(row):
+        text = fmt_pct(row["share"])
+        if mandates_col and row[mandates_col] > 0:
+            text += f" · {int(row[mandates_col])} mand."
+        return text
+
+    chart_df["text"] = chart_df.apply(bar_text, axis=1)
+    has_seat = (
+        chart_df[mandates_col] > 0
+        if mandates_col
+        else pd.Series(True, index=chart_df.index)
+    )
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            y=chart_df["label"],
+            x=chart_df["share"],
+            orientation="h",
+            text=chart_df["text"],
+            textposition="outside",
+            cliponaxis=False,
+            marker_color=["#2563eb" if seat else "#b6bfcc" for seat in has_seat],
+            customdata=chart_df["party_name"],
+            hovertemplate="%{customdata}<br>%{x:.2f} % hlasů<extra></extra>",
+            showlegend=False,
         )
-        total_districts = (
-            int(stats.get("electoral_districts", 0))
-            if stats.get("electoral_districts")
-            else 0
+    )
+
+    previous_points = [
+        (row["label"], previous_for(row)["share"])
+        for _, row in chart_df.iterrows()
+        if previous_for(row)
+    ]
+    if previous_points:
+        fig.add_trace(
+            go.Scatter(
+                y=[label for label, _ in previous_points],
+                x=[share for _, share in previous_points],
+                mode="markers",
+                marker=dict(symbol="line-ns", size=18, line=dict(width=3, color="#111827")),
+                name=f"Výsledek {previous_name}",
+                hovertemplate=f"{previous_name}: %{{x:.2f}} %<extra></extra>",
+            )
         )
 
-    # Get party count from party results
-    if "party_results" in data and isinstance(data["party_results"], pd.DataFrame):
-        total_parties = len(data["party_results"])
+    fig.update_layout(
+        height=70 + 34 * len(chart_df),
+        margin=dict(l=0, r=90, t=10, b=30),
+        xaxis=dict(title="Podíl hlasů (%)", rangemode="tozero"),
+        yaxis=dict(autorange="reversed", title=None),
+        legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0),
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Get district count from district data
-    if "district_data" in data and isinstance(data["district_data"], pd.DataFrame):
-        district_count = len(data["district_data"])
-        if district_count > total_districts:
-            total_districts = district_count
-
-    # Display metrics
-    with col1:
-        st.metric(
-            "Okrsky",
-            f"{total_districts:,}" if total_districts > 0 else "N/A",
+    notes = []
+    if mandates_col and not has_seat.all():
+        notes.append("Šedě jsou kandidátky, které nezískaly žádný mandát.")
+    if len(party_sorted) > max_bars:
+        notes.append(
+            f"Graf ukazuje {max_bars} nejsilnějších kandidátek z {len(party_sorted)}, "
+            "všechny jsou v tabulce níže."
         )
+    if notes:
+        st.caption(" ".join(notes))
 
-    with col2:
-        st.metric(
-            "Průměrná účast", f"{avg_turnout:.1f}%" if avg_turnout > 0 else "N/A"
+    table = pd.DataFrame(
+        {
+            "Č.": party_sorted["list_number"],
+            "Kandidátka": party_sorted["party_name"],
+            "Hlasy": party_sorted["votes_absolute"],
+            "Podíl (%)": party_sorted["share"].round(2),
+        }
+    )
+    # Shown only where it differs, i.e. when some list is shorter than the council
+    official_share = party_sorted["votes_percentage"].round(2)
+    has_recalculated = bool(((official_share - table["Podíl (%)"]).abs() > 0.05).any())
+    decimals = {"Podíl (%)": 2}
+    if has_recalculated:
+        table["Přepočtený podíl (%)"] = official_share
+        decimals["Přepočtený podíl (%)"] = 2
+    if mandates_col:
+        table["Mandáty"] = party_sorted[mandates_col].astype(int)
+
+    previous_rows = [previous_for(row) for _, row in party_sorted.iterrows()]
+    has_comparison = any(previous_rows)
+    if has_comparison:
+        previous_share = pd.Series(
+            [entry["share"] if entry else None for entry in previous_rows], dtype="float"
         )
-
-    with col3:
-        st.metric(
-            "Registrovaní voliči", f"{total_voters:,}" if total_voters > 0 else "N/A"
-        )
-
-    with col4:
-        st.metric(
-            "Strany", f"{total_parties:,}" if total_parties > 0 else "N/A"
-        )
-
-    # Display party results if available
-    if "party_results" in data and isinstance(data["party_results"], pd.DataFrame):
-        party_df = data["party_results"].copy()
-
-        if not party_df.empty:
-            st.subheader("🏛️ Přehled výsledků stran")
-
-            # Create visualization - single percentage chart
-            percentage_col = None
-            if "votes_percentage" in party_df.columns:
-                percentage_col = "votes_percentage"
-            elif "percentage" in party_df.columns:
-                percentage_col = "percentage"
-
-            votes_col = None
-            if "votes_absolute" in party_df.columns:
-                votes_col = "votes_absolute"
-            elif "votes" in party_df.columns:
-                votes_col = "votes"
-
-            sort_col = percentage_col or votes_col
-            party_sorted = (
-                party_df.sort_values(sort_col, ascending=False)
-                if sort_col
-                else party_df.copy()
+        table[f"Podíl {previous_name} (%)"] = previous_share.round(2)
+        table["Změna (p. b.)"] = (table["Podíl (%)"] - previous_share).round(2)
+        decimals[f"Podíl {previous_name} (%)"] = 2
+        decimals["Změna (p. b.)"] = 2
+        if mandates_col:
+            table[f"Mandáty {previous_name}"] = pd.Series(
+                [entry["mandates"] if entry else None for entry in previous_rows],
+                dtype="Int64",
             )
 
-            top_parties = party_sorted.head(10)
+    st.dataframe(
+        czech_table(table, decimals, signed=("Změna (p. b.)",)),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Č.": st.column_config.Column(
+                width="small", help="Číslo kandidátky na hlasovacím lístku"
+            )
+        },
+        height=min(38 + 35 * len(table), 600),
+    )
 
-            st.subheader("⚡ Rychlé zjištění")
-            insight_cols = st.columns(3)
-            top_party = party_sorted.iloc[0]
-            winner_name = top_party.get("party_name", "Neznámá strana")
-            insight_cols[0].metric("Vítězná strana", winner_name)
-
-            if percentage_col:
-                top_pct = float(top_party.get(percentage_col, 0) or 0)
-                insight_cols[1].metric("Podíl vítěze", f"{top_pct:.1f}%")
-                if len(party_sorted) > 1:
-                    second_pct = float(
-                        party_sorted.iloc[1].get(percentage_col, 0) or 0
-                    )
-                    margin_pct = max(top_pct - second_pct, 0)
-                    insight_cols[2].metric("Náskok", f"{margin_pct:.1f} p. b.")
-            elif votes_col:
-                top_votes = int(top_party.get(votes_col, 0) or 0)
-                insight_cols[1].metric("Hlasy vítěze", f"{top_votes:,}")
-                if len(party_sorted) > 1:
-                    second_votes = int(
-                        party_sorted.iloc[1].get(votes_col, 0) or 0
-                    )
-                    margin_votes = max(top_votes - second_votes, 0)
-                    insight_cols[2].metric("Náskok", f"{margin_votes:,} hlasů")
-
-            if len(top_parties) > 0:
-                if percentage_col:
-                    fig_pct = px.bar(
-                        top_parties,
-                        x="party_name",
-                        y=percentage_col,
-                        title="Podíl hlasů podle strany (%)",
-                        labels={
-                            percentage_col: "Podíl hlasů (%)",
-                            "party_name": "Strana",
-                        },
-                        text=percentage_col,
-                        color_discrete_sequence=["#1f77b4"],
-                    )
-                    fig_pct.update_xaxes(tickangle=45)
-                    fig_pct.update_traces(
-                        texttemplate="%{text:.1f}%", textposition="outside"
-                    )
-                    st.plotly_chart(fig_pct, use_container_width=True)
-
-                # Display results table
-                st.subheader("📊 Podrobná tabulka")
-
-                # Prepare display dataframe
-                display_df = party_sorted.copy()
-
-                with st.expander("Filtry tabulky", expanded=False):
-                    filter_text = st.text_input(
-                        "Hledat stranu",
-                        value="",
-                        help="Filtruje podle názvu strany.",
-                        key="party_filter",
-                    ).strip()
-                    max_rows_limit = max(5, min(50, len(display_df)))
-                    max_rows = st.slider(
-                        "Počet řádků",
-                        min_value=5,
-                        max_value=max_rows_limit,
-                        value=min(20, max_rows_limit),
-                        step=1,
-                        key="party_rows",
-                    )
-
-                if filter_text:
-                    display_df = display_df[
-                        display_df["party_name"]
-                        .astype(str)
-                        .str.contains(filter_text, case=False, na=False)
-                    ]
-                display_df = display_df.head(max_rows)
-
-                # Format percentage column
-                if percentage_col and percentage_col in display_df.columns:
-                    display_df[percentage_col] = display_df[percentage_col].apply(
-                        lambda x: f"{x:.2f}%"
-                    )
-
-                if votes_col:
-                    display_df[votes_col] = display_df[votes_col].apply(
-                        lambda x: f"{x:,}"
-                    )
-
-                # Format estimated voters if available
-                if "estimated_voters" in display_df.columns:
-                    display_df["estimated_voters"] = display_df[
-                        "estimated_voters"
-                    ].apply(lambda x: f"{x:,}" if pd.notna(x) else "N/A")
-
-                # Rename columns for display
-                column_renames = {
-                    "party_name": "Strana",
-                    "list_number": "Číslo listiny",
-                }
-
-                if votes_col:
-                    column_renames[votes_col] = "Hlasy"
-                if percentage_col:
-                    column_renames[percentage_col] = "Podíl"
-                if "estimated_voters" in display_df.columns:
-                    column_renames["estimated_voters"] = "Odhad voličů"
-
-                display_df = display_df.rename(columns=column_renames)
-
-                # Select and reorder columns
-                display_cols = []
-                if "Číslo listiny" in display_df.columns:
-                    display_cols.append("Číslo listiny")
-                if "Strana" in display_df.columns:
-                    display_cols.append("Strana")
-                if "Hlasy" in display_df.columns:
-                    display_cols.append("Hlasy")
-                if "Odhad voličů" in display_df.columns:
-                    display_cols.append("Odhad voličů")
-                if "Podíl" in display_df.columns:
-                    display_cols.append("Podíl")
-
-                # Use available columns
-                available_cols = [
-                    col for col in display_cols if col in display_df.columns
-                ]
-
-                if available_cols:
-                    st.dataframe(
-                        display_df[available_cols],
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-
-                # Add explanation
-                if "estimated_voters" in party_df.columns:
-                    seats_used = (
-                        party_df["num_seats_used"].iloc[0]
-                        if "num_seats_used" in party_df.columns
-                        else 41
-                    )
-                    st.info(
-                        f"💡 **Odhad voličů** = Hlasy celkem ÷ {seats_used} mandátů "
-                        f"(volič může volit až {seats_used} kandidátů)"
-                    )
-
-        else:
-            st.warning("Nejsou dostupná data o výsledcích stran.")
-
-    # Show data source information
-    with st.expander("📁 Pokročilé: Zdroje dat"):
-        for i, (key, dataset) in enumerate(data.items(), 1):
-            if isinstance(dataset, pd.DataFrame):
-                st.write(
-                    f"{i}. **{key}** - CSV ({dataset.shape[0]} řádků, {dataset.shape[1]} sloupců)"
-                )
-            elif isinstance(dataset, dict):
-                st.write(f"{i}. **{key}** - Slovník ({len(dataset)} klíčů)")
-            else:
-                st.write(f"{i}. **{key}** - {type(dataset).__name__}")
+    table_notes = []
+    if has_recalculated:
+        table_notes.append(
+            "Přepočtený podíl uvádí ČSÚ: bere ohled na kandidátky, které mají méně "
+            "kandidátů, než kolik se volí zastupitelů, a rozhoduje o překročení "
+            "pětiprocentní hranice."
+        )
+    if has_comparison:
+        table_notes.append(
+            f"Srovnání s rokem {previous_name} je vyplněné jen u kandidátek, "
+            "které tehdy kandidovaly pod stejným názvem."
+        )
+    elif previous_data:
+        table_notes.append(
+            f"Žádná z kandidátek nekandidovala v roce {previous_name} pod stejným "
+            "názvem, proto tabulka neobsahuje srovnání."
+        )
+    if registered > 0 and party_sorted["votes_absolute"].sum() > registered:
+        table_notes.append(
+            "Hlasů je víc než voličů, protože každý volič může dát tolik hlasů, "
+            "kolik se volí zastupitelů."
+        )
+    if table_notes:
+        st.caption(" ".join(table_notes))
 
 
-def display_turnout_analysis(data):
-    """Display turnout analysis visualizations using CSV data"""
-    st.subheader("📈 Účast")
+def display_turnout_analysis(data, previous_data=None, previous_name=""):
+    """Turnout in the whole municipality and how it differs between precincts"""
+    stats = data.get("summary_statistics") or {}
+    previous_stats = (previous_data or {}).get("summary_statistics") or {}
 
-    # Check for district-level turnout data
-    if "district_data" in data and isinstance(data["district_data"], pd.DataFrame):
-        district_df = data["district_data"]
-
-        # Filter out summary rows and check for meaningful district data
-        district_df_filtered = district_df[
+    district_df = data.get("district_data")
+    if isinstance(district_df, pd.DataFrame) and not district_df.empty:
+        district_df = district_df[
             (district_df["district_code"] != "TOTAL")
-            & (district_df["turnout_percentage"].notna())
-            & (district_df["turnout_percentage"] > 0)
-        ]
+            & (district_df["registered_voters"] > 0)
+        ].copy()
+    else:
+        district_df = pd.DataFrame()
 
-        if not district_df_filtered.empty:
-            # Create turnout visualization
-            fig = px.bar(
-                district_df_filtered.head(20),  # Show top 20 for readability
-                x="district_code",
-                y="turnout_percentage",
-                title="Účast podle okrsku",
-                labels={
-                    "turnout_percentage": "Účast (%)",
-                    "district_code": "Okrsek",
-                },
-            )
-            fig.update_xaxes(tickangle=45)
-            st.plotly_chart(fig, use_container_width=True)
+    turnout = float(stats.get("turnout_percentage") or 0)
+    registered = int(stats.get("registered_voters") or 0)
+    previous_turnout = float(previous_stats.get("turnout_percentage") or 0)
 
-            # Summary statistics
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(
-                    "Nejvyšší účast",
-                    f"{district_df_filtered['turnout_percentage'].max():.1f}%",
-                )
-            with col2:
-                st.metric(
-                    "Nejnižší účast",
-                    f"{district_df_filtered['turnout_percentage'].min():.1f}%",
-                )
+    if turnout <= 0 and district_df.empty:
+        st.info("Pro tento výběr nejsou dostupná data o účasti.")
+        return
 
-            # Show district count
-            st.metric("Okrsky s daty", len(district_df_filtered))
+    returned = int(district_df["returned_ballots"].sum()) if not district_df.empty else 0
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric(
+        "Volební účast",
+        fmt_pct(turnout) if turnout > 0 else "–",
+        delta=fmt_pp(turnout - previous_turnout)
+        if turnout > 0 and previous_turnout > 0
+        else None,
+    )
+    col2.metric("Zapsaní voliči", fmt_int(registered) if registered else "–")
+    col3.metric("Odevzdané obálky", fmt_int(returned) if returned else "–")
+    col4.metric("Okrsky", fmt_int(len(district_df)) if not district_df.empty else "–")
+
+    if previous_turnout > 0:
+        st.caption(f"Změna účasti je oproti volbám {previous_name}.")
+
+    if len(district_df) < 2:
+        return
+
+    district_df["Okrsek"] = district_df["district_code"].astype(str)
+    lowest = district_df.loc[district_df["turnout_percentage"].idxmin()]
+    highest = district_df.loc[district_df["turnout_percentage"].idxmax()]
+    st.markdown(
+        f"Účast v okrscích se pohybuje od **{fmt_pct(lowest['turnout_percentage'])}** "
+        f"(okrsek {lowest['Okrsek']}) po **{fmt_pct(highest['turnout_percentage'])}** "
+        f"(okrsek {highest['Okrsek']})."
+    )
+
+    st.subheader("Účast v okrscích")
+    if len(district_df) > 25:
+        fig = px.histogram(
+            district_df,
+            x="turnout_percentage",
+            nbins=30,
+            labels={"turnout_percentage": "Účast (%)"},
+            color_discrete_sequence=["#2563eb"],
+        )
+        fig.update_traces(
+            hovertemplate="Účast %{x} %<br>%{y} okrsků<extra></extra>",
+            marker_line_width=1,
+            marker_line_color="white",
+        )
+        fig.update_layout(yaxis_title="Počet okrsků")
+    else:
+        ordered = district_df.sort_values("turnout_percentage", ascending=False)
+        fig = px.bar(
+            ordered,
+            x="Okrsek",
+            y="turnout_percentage",
+            labels={"turnout_percentage": "Účast (%)"},
+            color_discrete_sequence=["#2563eb"],
+        )
+        fig.update_xaxes(type="category")
+        fig.update_traces(hovertemplate="Okrsek %{x}<br>Účast %{y:.1f} %<extra></extra>")
+
+    if turnout > 0:
+        line = dict(line_dash="dash", line_color="#111827", annotation_text="Celkem")
+        if len(district_df) > 25:
+            fig.add_vline(x=turnout, **line)
         else:
-            # Show summary turnout data if available
-            summary_row = district_df[district_df["district_code"] == "TOTAL"]
-            if not summary_row.empty and summary_row.iloc[0]["turnout_percentage"] > 0:
-                turnout_pct = summary_row.iloc[0]["turnout_percentage"]
-                st.info(f"Celková účast: {turnout_pct:.1f}%")
+            fig.add_hline(y=turnout, **line)
+    fig.update_layout(height=360, margin=dict(l=0, r=0, t=30, b=0))
+    st.plotly_chart(fig, use_container_width=True)
 
-                # Create a simple single-bar chart
-                fig = px.bar(
-                    x=["Obec"],
-                    y=[turnout_pct],
-                    title="Celková volební účast",
-                    labels={"y": "Účast (%)", "x": "Jednotka"},
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Nejsou dostupná okrsková data o účasti.")
-
-    # Show summary statistics from summary_statistics if available
-    if "summary_statistics" in data:
-        stats = data["summary_statistics"]
-        st.subheader("📊 Souhrn")
-
-        col1, col2, col3 = st.columns(3)
-
-        if "turnout_percentage" in stats:
-            with col1:
-                try:
-                    turnout_val = float(stats["turnout_percentage"])
-                    st.metric("Účast", f"{turnout_val:.1f}%")
-                except (ValueError, TypeError):
-                    st.metric("Účast", f"{stats['turnout_percentage']}%")
-
-        if "registered_voters" in stats:
-            with col2:
-                try:
-                    voters_val = int(float(stats["registered_voters"]))
-                    st.metric("Registrovaní voliči", f"{voters_val:,}")
-                except (ValueError, TypeError):
-                    st.metric("Registrovaní voliči", f"{stats['registered_voters']}")
-
-        if "valid_votes" in stats:
-            with col3:
-                try:
-                    votes_val = int(float(stats["valid_votes"]))
-                    st.metric("Platné hlasy", f"{votes_val:,}")
-                except (ValueError, TypeError):
-                    st.metric("Platné hlasy", f"{stats['valid_votes']}")
-
-    # If no meaningful data is found, suggest running the analysis pipeline
-    if ("district_data" not in data or data["district_data"].empty) and (
-        "summary_statistics" not in data or not data["summary_statistics"]
-    ):
-        st.warning("Nejprve spusťte analýzu pro výpočet účasti.")
-        st.code("uv run python run_analysis.py")
+    table = pd.DataFrame(
+        {
+            "Okrsek": district_df["Okrsek"],
+            "Účast (%)": district_df["turnout_percentage"].round(2),
+            "Zapsaní voliči": district_df["registered_voters"],
+            "Odevzdané obálky": district_df["returned_ballots"],
+        }
+    ).sort_values("Účast (%)", ascending=False)
+    st.dataframe(
+        czech_table(table, {"Účast (%)": 2}),
+        use_container_width=True,
+        hide_index=True,
+        height=min(38 + 35 * len(table), 420),
+    )
+    st.caption(
+        "Účast je počet odevzdaných obálek vydělený počtem zapsaných voličů. "
+        "Kliknutím na záhlaví sloupce tabulku seřadíte."
+    )
 
 
 def display_geographic_analysis(
@@ -2143,7 +2142,20 @@ def display_geographic_analysis(
     # Use the already filtered GeoJSON data (filtered by main function)
     municipality_features = geojson_data.get("features", [])
 
-    st.info(f"Nalezeno {len(municipality_features)} okrsků pro tuto obec")
+    map_notes = []
+    if len(municipality_features) > MAX_LABELLED_PRECINCTS:
+        map_notes.append(
+            "Okrsků je tolik, že by se popisky překrývaly. "
+            "Hodnotu okrsku uvidíte po najetí myší, podrobnosti po kliknutí."
+        )
+    boundaries_file = get_election_config(election_id).boundaries_file
+    if boundaries_file and (Path("input/raw") / boundaries_file).exists():
+        map_notes.append(
+            "Hranice okrsků jsou z roku 2025, novější ČSÚ zatím nezveřejnil. "
+            "Okrsek, který od té doby vznikl nebo změnil číslo, v mapě chybí."
+        )
+    if map_notes:
+        st.caption(" ".join(map_notes))
 
     if not municipality_features:
         st.warning("V geografických datech nebyly nalezeny žádné okrsky.")
@@ -2153,7 +2165,7 @@ def display_geographic_analysis(
     filtered_geojson = geojson_data
 
     # Map visualization controls
-    st.subheader("🗺️ Nastavení mapy")
+    st.subheader("Nastavení mapy")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -2261,7 +2273,7 @@ def display_geographic_analysis(
 
     # Create and display the map based on type
     if map_type == "Pydeck (fast)":
-        st.subheader("🚀 Rychlá mapa (Pydeck)")
+        st.subheader("Rychlá mapa (Pydeck)")
         st.info(
             "⚡ Pydeck renderuje polygony rychleji než Folium. Podklad je vypnutý kvůli tokenům Mapbox."
         )
@@ -2275,7 +2287,7 @@ def display_geographic_analysis(
             st.error("Nepodařilo se vytvořit Pydeck mapu.")
 
     elif map_type == "Cartogram":
-        st.subheader("🗺️ Kartogram")
+        st.subheader("Kartogram")
         st.info(
             "📐 **Kartogram**: Plochy jsou škálované podle **počtu hlasů** "
             "(větší plocha = více hlasů). Barvy odpovídají zvolené metrice. "
@@ -2346,7 +2358,7 @@ def display_geographic_analysis(
         else:
             st.error("Nepodařilo se vytvořit data pro kartogram.")
     elif map_type == "Dot Density":
-        st.subheader("🔵 Bodová hustota")
+        st.subheader("Bodová hustota")
         st.info(
             "🔵 **Bodová hustota**: Každá tečka představuje pevný počet hlasů "
             "(např. 1 tečka = 100 hlasů). Tečky jsou rozmístěny uvnitř okrsků. "
@@ -2615,7 +2627,7 @@ def display_geographic_analysis(
             st.warning("Pro bodovou mapu nejsou dostupná okrsková data.")
             map_data = None
     else:
-        st.subheader("🗺️ Geografická mapa")
+        st.subheader("Geografická mapa")
         # Create and display the regular map
         map_obj = create_folium_map(
             filtered_geojson,
@@ -2655,13 +2667,13 @@ def display_geographic_analysis(
             if not okrsek_data.empty:
                 st.write("**Volební data:**")
                 st.metric(
-                    "Účast", f"{okrsek_data['turnout_percentage'].iloc[0]:.1f}%"
+                    "Účast", f"{fmt_pct(okrsek_data['turnout_percentage'].iloc[0], 1)}"
                 )
                 st.metric(
                     "Registrovaní voliči",
-                    f"{okrsek_data['registered_voters'].iloc[0]:,}",
+                    f"{fmt_int(okrsek_data['registered_voters'].iloc[0])}",
                 )
-                st.metric("Platné hlasy", f"{okrsek_data['valid_votes'].iloc[0]:,}")
+                st.metric("Platné hlasy", f"{fmt_int(okrsek_data['valid_votes'].iloc[0])}")
             else:
                 st.write("*Pro tento okrsek nejsou dostupná data*")
 
@@ -2716,7 +2728,7 @@ def display_geographic_analysis(
 
 def display_data_explorer(data):
     """Allow users to explore the raw data"""
-    st.subheader("🔍 Datový průzkumník")
+    st.subheader("Datový průzkumník")
 
     if not data:
         st.warning("Žádná data nejsou dostupná. Nejprve spusťte analýzu.")
@@ -2769,7 +2781,7 @@ def display_district_analysis(data):
     has_district_data = "district_data" in data and "district_party_results" in data
 
     if has_candidates:
-        st.subheader("👥 Kandidáti")
+        st.subheader("Kandidáti")
         if not has_district_data:
             st.info(
                 "📊 **Parlamentní volby**\n\n"
@@ -2779,7 +2791,7 @@ def display_district_analysis(data):
         # Show candidate statistics if available
         if "candidates" in data and data["candidates"]:
             candidates = data["candidates"]
-            st.subheader("📋 Statistiky kandidátů")
+            st.subheader("Statistiky kandidátů")
 
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -2793,15 +2805,13 @@ def display_district_analysis(data):
                 total_pref_votes = sum(
                     c.get("preferential_votes", 0) for c in candidates
                 )
-                st.metric("Preferenční hlasy", f"{total_pref_votes:,}")
+                st.metric("Preferenční hlasy", f"{fmt_int(total_pref_votes)}")
 
             # Show top candidates by preferential votes
-            st.subheader("🏆 Top kandidáti podle preferenčních hlasů")
+            st.subheader("Top kandidáti podle preferenčních hlasů")
             candidates_sorted = sorted(
                 candidates, key=lambda x: x.get("preferential_votes", 0), reverse=True
             )[:20]
-
-            import pandas as pd
 
             candidates_df = pd.DataFrame(
                 [
@@ -2810,7 +2820,7 @@ def display_district_analysis(data):
                         "Jméno": f"{c.get('first_name', '')} {c.get('surname', '')}",
                         "Strana": c.get("party_name", "Neznámá"),
                         "Preferenční hlasy": c.get("preferential_votes", 0),
-                        "Podíl": f"{c.get('preferential_percentage', 0):.2f}%",
+                        "Podíl": f"{fmt_pct(c.get('preferential_percentage', 0), 2)}",
                         "Zvolen": "✅" if c.get("mandate_won", False) else "❌",
                     }
                     for i, c in enumerate(candidates_sorted)
@@ -2828,8 +2838,6 @@ def display_district_analysis(data):
     if not has_district_data:
         st.warning("Okrsková data nejsou dostupná. Ověřte, že proběhla analýza.")
         return
-
-    st.subheader("🏘️ Okrsky")
 
     district_df = data["district_data"]
     district_party_df = data["district_party_results"]
@@ -2866,7 +2874,7 @@ def display_district_analysis(data):
     )
 
     # Okrsek detail view
-    st.subheader("🔎 Detail okrsku")
+    st.subheader("Detail okrsku")
 
     polling_stations = data.get("polling_stations", [])
     station_lookup = {}
@@ -2925,10 +2933,10 @@ def display_district_analysis(data):
 
     if not okrsek_row.empty:
         row = okrsek_row.iloc[0]
-        col1.metric("Registrovaní voliči", f"{row.get('registered_voters', 0):,}")
-        col2.metric("Odevzdané obálky", f"{row.get('returned_ballots', 0):,}")
-        col3.metric("Platné hlasy", f"{row.get('valid_votes', 0):,}")
-        col4.metric("Účast", f"{row.get('turnout_percentage', 0):.1f}%")
+        col1.metric("Registrovaní voliči", f"{fmt_int(row.get('registered_voters', 0))}")
+        col2.metric("Odevzdané obálky", f"{fmt_int(row.get('returned_ballots', 0))}")
+        col3.metric("Platné hlasy", f"{fmt_int(row.get('valid_votes', 0))}")
+        col4.metric("Účast", f"{fmt_pct(row.get('turnout_percentage', 0), 1)}")
     else:
         col1.metric("Registrovaní voliči", "N/A")
         col2.metric("Odevzdané obálky", "N/A")
@@ -2961,9 +2969,9 @@ def display_district_analysis(data):
             display_rows = okrsek_party_rows[
                 ["party_name", "votes", "percentage"]
             ].copy()
-            display_rows["votes"] = display_rows["votes"].apply(lambda x: f"{int(x):,}")
+            display_rows["votes"] = display_rows["votes"].apply(lambda x: f"{fmt_int(int(x))}")
             display_rows["percentage"] = display_rows["percentage"].apply(
-                lambda x: f"{x:.2f}%"
+                lambda x: f"{fmt_pct(x, 2)}"
             )
             display_rows.columns = ["Strana", "Hlasy", "Podíl"]
             st.dataframe(display_rows, use_container_width=True)
@@ -2971,7 +2979,7 @@ def display_district_analysis(data):
         st.info("Pro tento okrsek nejsou výsledky stran dostupné.")
 
     # District turnout comparison
-    st.subheader("📊 Účast podle okrsku")
+    st.subheader("Účast podle okrsku")
 
     if "turnout_percentage" in unique_okrseks.columns:
         # Sort by turnout
@@ -2984,13 +2992,13 @@ def display_district_analysis(data):
         with col1:
             st.metric(
                 "Nejvyšší účast",
-                f"Okrsek {unique_okrseks.iloc[0]['district_code']}: {unique_okrseks.iloc[0]['turnout_percentage']:.1f}%",
+                f"Okrsek {unique_okrseks.iloc[0]['district_code']}: {fmt_pct(unique_okrseks.iloc[0]['turnout_percentage'], 1)}",
             )
 
         with col2:
             st.metric(
                 "Nejnižší účast",
-                f"Okrsek {unique_okrseks.iloc[-1]['district_code']}: {unique_okrseks.iloc[-1]['turnout_percentage']:.1f}%",
+                f"Okrsek {unique_okrseks.iloc[-1]['district_code']}: {fmt_pct(unique_okrseks.iloc[-1]['turnout_percentage'], 1)}",
             )
 
         # Turnout distribution chart
@@ -3008,11 +3016,13 @@ def display_district_analysis(data):
         st.plotly_chart(fig_turnout, use_container_width=True)
 
     # Party performance by okrsek
-    st.subheader("🎯 Výkon strany podle okrsku")
+    st.subheader("Výkon strany podle okrsku")
 
-    # Get available parties
-    available_parties = district_party_df["party_name"].unique()
-    available_parties = [p for p in available_parties if len(p.strip()) > 0]
+    # Available parties, strongest first, so the selectors start with the main ones
+    party_totals = (
+        district_party_df.groupby("party_name")["votes"].sum().sort_values(ascending=False)
+    )
+    available_parties = [p for p in party_totals.index if len(str(p).strip()) > 0]
 
     if len(available_parties) > 0:
         # Party selector
@@ -3057,13 +3067,13 @@ def display_district_analysis(data):
                 with col1:
                     st.metric(
                         f"Nejlepší okrsek pro {selected_party}",
-                        f"Okrsek {okrsek_party_data.iloc[0]['district_code']}: {okrsek_party_data.iloc[0]['percentage']:.1f}%",
+                        f"Okrsek {okrsek_party_data.iloc[0]['district_code']}: {fmt_pct(okrsek_party_data.iloc[0]['percentage'], 1)}",
                     )
 
                 with col2:
                     st.metric(
                         f"Nejslabší okrsek pro {selected_party}",
-                        f"Okrsek {okrsek_party_data.iloc[-1]['district_code']}: {okrsek_party_data.iloc[-1]['percentage']:.1f}%",
+                        f"Okrsek {okrsek_party_data.iloc[-1]['district_code']}: {fmt_pct(okrsek_party_data.iloc[-1]['percentage'], 1)}",
                     )
 
                 # Chart showing party performance across okrseks
@@ -3086,14 +3096,14 @@ def display_district_analysis(data):
                         ["okrsek_name", "votes", "percentage", "total_district_votes"]
                     ].copy()
                     display_party_data["votes"] = display_party_data["votes"].apply(
-                        lambda x: f"{x:,}"
+                        lambda x: f"{fmt_int(x)}"
                     )
                     display_party_data["percentage"] = display_party_data[
                         "percentage"
-                    ].apply(lambda x: f"{x:.2f}%")
+                    ].apply(lambda x: f"{fmt_pct(x, 2)}")
                     display_party_data["total_district_votes"] = display_party_data[
                         "total_district_votes"
-                    ].apply(lambda x: f"{x:,}")
+                    ].apply(lambda x: f"{fmt_int(x)}")
                     display_party_data.columns = [
                         "Okrsek",
                         "Hlasy",
@@ -3103,7 +3113,7 @@ def display_district_analysis(data):
                     st.dataframe(display_party_data, use_container_width=True)
 
     # Okrsek comparison
-    st.subheader("🔍 Porovnání okrsků")
+    st.subheader("Porovnání okrsků")
 
     if len(available_parties) >= 2:
         # Multi-party comparison
@@ -3172,7 +3182,7 @@ def display_district_analysis(data):
 
     # Summary statistics
     if not unique_okrseks.empty:
-        st.subheader("📈 Souhrn okrsků")
+        st.subheader("Souhrn okrsků")
 
         col1, col2, col3, col4 = st.columns(4)
 
@@ -3181,15 +3191,15 @@ def display_district_analysis(data):
 
         with col2:
             avg_turnout = unique_okrseks["turnout_percentage"].mean()
-            st.metric("Průměrná účast", f"{avg_turnout:.1f}%")
+            st.metric("Průměrná účast", f"{fmt_pct(avg_turnout, 1)}")
 
         with col3:
             total_voters = unique_okrseks["registered_voters"].sum()
-            st.metric("Registrovaní voliči", f"{total_voters:,}")
+            st.metric("Registrovaní voliči", f"{fmt_int(total_voters)}")
 
         with col4:
             total_valid_votes = unique_okrseks["valid_votes"].sum()
-            st.metric("Platné hlasy", f"{total_valid_votes:,}")
+            st.metric("Platné hlasy", f"{fmt_int(total_valid_votes)}")
 
         # Additional info about data structure
         st.info(
@@ -3567,14 +3577,14 @@ def create_cartogram_map(
         <div style="font-family: Arial; width: 270px;">
             <h4 style="color: #1f77b4;">Okrsek {district_code}</h4>
             <hr>
-            <p><strong>Počet hlasů:</strong> {vote_count:,} hlasů</p>
+            <p><strong>Počet hlasů:</strong> {fmt_int(vote_count)} hlasů</p>
             <p><strong>Plocha kruhu:</strong> {area_km2:.2f} km² (proporčně)</p>
             <p><strong>Posun:</strong> {moved_distance * 111:.0f} m od původní polohy</p>
             <hr>
         """
 
         if viz_type == "Turnout":
-            popup_html += f"<p><strong>Účast:</strong> {display_value:.1f}%</p>"
+            popup_html += f"<p><strong>Účast:</strong> {fmt_pct(display_value, 1)}</p>"
         elif viz_type == "Estimated Voters":
             popup_html += (
                 f"<p><strong>Registrovaní voliči:</strong> {display_value:,.0f}</p>"
@@ -3583,7 +3593,7 @@ def create_cartogram_map(
             popup_html += f"<p><strong>Platné hlasy:</strong> {display_value:,.0f}</p>"
         elif viz_type == "Party Results" and selected_party:
             popup_html += (
-                f"<p><strong>{selected_party}:</strong> {display_value:.1f}%</p>"
+                f"<p><strong>{selected_party}:</strong> {fmt_pct(display_value, 1)}</p>"
             )
 
         popup_html += """
@@ -3600,24 +3610,24 @@ def create_cartogram_map(
         color = get_color_for_value(display_value, viz_type)
 
         # Create circle marker with informative tooltip
-        tooltip_text = f"Okrsek {district_code}: {vote_count:,} hlasů"
+        tooltip_text = f"Okrsek {district_code}: {fmt_int(vote_count)} hlasů"
 
         # Add display value to tooltip based on visualization type
         if viz_type == "Turnout":
             tooltip_text = (
-                f"Okrsek {district_code}: {display_value:.1f}% účast | {vote_count:,} hlasů"
+                f"Okrsek {district_code}: {fmt_pct(display_value, 1)} účast | {fmt_int(vote_count)} hlasů"
             )
         elif viz_type == "Estimated Voters":
             tooltip_text = (
-                f"Okrsek {district_code}: {int(display_value):,} voličů | {vote_count:,} hlasů"
+                f"Okrsek {district_code}: {fmt_int(int(display_value))} voličů | {fmt_int(vote_count)} hlasů"
             )
         elif viz_type == "Valid Votes":
             tooltip_text = (
-                f"Okrsek {district_code}: {int(display_value):,} platných hlasů"
+                f"Okrsek {district_code}: {fmt_int(int(display_value))} platných hlasů"
             )
         elif viz_type == "Party Results" and selected_party:
             tooltip_text = (
-                f"Okrsek {district_code}: {display_value:.1f}% {selected_party} | {vote_count:,} hlasů"
+                f"Okrsek {district_code}: {fmt_pct(display_value, 1)} {selected_party} | {fmt_int(vote_count)} hlasů"
             )
 
         # Add voter estimate to tooltip if we have electoral data
@@ -3629,11 +3639,11 @@ def create_cartogram_map(
                 voter_estimate = round(vote_count / num_seats)
                 # Add voter estimate to tooltip based on visualization type
                 if viz_type == "Party Results":
-                    tooltip_text += f" | ~{voter_estimate:,} voličů"
+                    tooltip_text += f" | ~{fmt_int(voter_estimate)} voličů"
                 elif viz_type not in [
                     "Estimated Voters"
                 ]:  # Don't duplicate for estimated voters viz
-                    tooltip_text += f" | ~{voter_estimate:,} voličů"
+                    tooltip_text += f" | ~{fmt_int(voter_estimate)} voličů"
 
         folium.Circle(
             location=[row.geometry.centroid.y, row.geometry.centroid.x],
@@ -3651,7 +3661,7 @@ def create_cartogram_map(
 
         # Show only key metric in label based on visualization type
         if viz_type == "Turnout":
-            label_text = f"{display_value:.0f}%"
+            label_text = f"{fmt_pct(display_value, 0)}"
         elif viz_type == "Estimated Voters":
             if display_value >= 1000:
                 label_text = f"{display_value / 1000:.1f}k"
@@ -3663,7 +3673,7 @@ def create_cartogram_map(
             else:
                 label_text = f"{int(display_value)}"
         elif viz_type == "Party Results" and selected_party:
-            label_text = f"{display_value:.0f}%"
+            label_text = f"{fmt_pct(display_value, 0)}"
 
         if label_text:  # Only add label if we have data
             folium.Marker(
@@ -3822,7 +3832,7 @@ def icon_fill_layer(
         if use_color_scale and color_scale_data is not None:
             percentage = color_scale_data.get(code, 0)
             dot_color_final = get_color_from_percentage(percentage)
-            tooltip_suffix = f" | {percentage:.1f}% podíl hlasů"
+            tooltip_suffix = f" | {fmt_pct(percentage, 1)} podíl hlasů"
         else:
             dot_color_final = dot_color
             tooltip_suffix = ""
@@ -3836,7 +3846,7 @@ def icon_fill_layer(
                 fill_opacity=0.9,
                 stroke=False,
                 tooltip=(
-                    f"Okrsek {code}: {votes:,} hlasů "
+                    f"Okrsek {code}: {fmt_int(votes)} hlasů "
                     f"(1 tečka = {k_votes_per_dot} hlasů){tooltip_suffix}"
                 ),
             )
@@ -4105,7 +4115,105 @@ def display_flow_sankey(selected_election_id: str, selected_zastupitelstvo_code:
 
     fig = build_sankey_figure(sankey_df)
     st.plotly_chart(fig, use_container_width=True)
-    st.caption(f"Zobrazeno {total_share * 100:.1f}% magistrátních hlasů.")
+    st.caption(f"Zobrazeno {fmt_pct(total_share * 100, 1)} magistrátních hlasů.")
+
+
+def get_previous_election_id(election_id: str) -> Optional[str]:
+    """Closest earlier election of the same type that has data on disk."""
+    elections = get_election_info()
+    current = elections[election_id]
+    earlier = sorted(
+        (
+            (info["date"], other_id)
+            for other_id, info in elections.items()
+            if info["type"] == current["type"] and info["date"] < current["date"]
+        ),
+        reverse=True,
+    )
+    for _, other_id in earlier:
+        if get_results_data_version(other_id) > 0:
+            return other_id
+    return None
+
+
+@st.cache_data(show_spinner=False)
+def get_largest_municipalities(election_id: str, data_version: float, count: int = 10):
+    """Largest city councils (without city districts) with turnout and winner."""
+    _, comprehensive_data = load_all_municipality_data(election_id)
+    rows = []
+    for code, municipality in (comprehensive_data or {}).get("municipalities", {}).items():
+        districts = municipality.get("district_data") or []
+        parties = municipality.get("party_results") or []
+        if not districts or not parties or districts[0].get("type") != "OBEC":
+            continue
+        stats = municipality.get("summary_statistics", {})
+        winner = max(parties, key=lambda party: party.get("votes_absolute", 0))
+        total_votes = sum(party.get("votes_absolute", 0) for party in parties)
+        rows.append(
+            {
+                "code": code,
+                "Město": municipality.get("metadata", {}).get("municipality_name", code),
+                "Zapsaní voliči": stats.get("registered_voters", 0),
+                "Účast (%)": stats.get("turnout_percentage", 0),
+                "Vítěz": winner.get("party_name", ""),
+                "Podíl vítěze (%)": winner.get("votes_absolute", 0) / total_votes * 100
+                if total_votes
+                else 0,
+            }
+        )
+    rows.sort(key=lambda row: row["Zapsaní voliči"], reverse=True)
+    return rows[:count]
+
+
+def display_landing(election_id: str, election_name: str, is_parliamentary: bool, count: int):
+    """Shown until a municipality (or region) is selected."""
+    st.title(election_name)
+
+    if is_parliamentary:
+        st.markdown(
+            "Vyberte v levém panelu kraj. Zobrazí se výsledky stran, kandidáti, "
+            "účast a mapa okrsků."
+        )
+        return
+
+    st.markdown(
+        f"Výsledky {fmt_int(count)} zastupitelstev obcí, měst a městských částí. "
+        "Vyberte obec v levém panelu – stačí začít psát její název – "
+        "nebo otevřete některé z největších měst."
+    )
+
+    largest = get_largest_municipalities(
+        election_id, get_results_data_version(election_id)
+    )
+    if not largest:
+        return
+
+    def open_municipality(code):
+        st.session_state[f"municipality_select_{election_id}"] = code
+
+    columns = st.columns(5)
+    for position, row in enumerate(largest):
+        columns[position % 5].button(
+            row["Město"],
+            key=f"open_{row['code']}",
+            on_click=open_municipality,
+            args=(row["code"],),
+            use_container_width=True,
+        )
+
+    st.subheader("Největší města")
+    st.dataframe(
+        czech_table(
+            pd.DataFrame(largest).drop(columns="code"),
+            {"Účast (%)": 1, "Podíl vítěze (%)": 1},
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.caption(
+        "Po výběru obce uvidíte výsledky kandidátek a srovnání s minulými volbami, "
+        "účast, mapu okrsků a podrobná data za jednotlivé okrsky."
+    )
 
 
 def main():
@@ -4114,35 +4222,32 @@ def main():
     # Get URL parameters early
     url_params = get_url_params()
 
-    # Header
-    st.markdown(
-        '<h1 class="main-header">🏛️ Volební analýza obcí</h1>',
-        unsafe_allow_html=True,
-    )
-
-    # Sidebar - Election Selection
-    st.sidebar.title("⚙️ Nastavení")
+    st.sidebar.title("Volební analýza")
 
     # Election selector
-    st.sidebar.subheader("🗳️ Volby")
-
-    # Get available elections
     available_elections = get_election_info()
-    election_labels = {
-        election_id: f"{info['name']} ({info['date'][:4]})"
-        for election_id, info in available_elections.items()
-    }
+    election_ids = list(available_elections.keys())
+    elections_with_data = [
+        election_id
+        for election_id in election_ids
+        if get_results_data_version(election_id) > 0
+    ]
 
-    # Create selectbox for elections (URL-aware)
-    election_ids = list(election_labels.keys())
-    default_election = get_param_value(url_params, "election", election_ids[0])
+    def election_label(election_id):
+        name = available_elections[election_id]["name"]
+        if election_id not in elections_with_data:
+            return f"{name} (data nejsou stažená)"
+        return name
+
+    fallback_election = elections_with_data[0] if elections_with_data else election_ids[0]
+    default_election = get_param_value(url_params, "election", fallback_election)
     if default_election not in election_ids:
-        default_election = election_ids[0]
+        default_election = fallback_election
 
     selected_election_id = st.sidebar.selectbox(
-        "Volby:",
+        "Volby",
         options=election_ids,
-        format_func=lambda x: election_labels[x],
+        format_func=election_label,
         index=election_ids.index(default_election),
         key="election_selector",
     )
@@ -4150,12 +4255,8 @@ def main():
     if get_param_value(url_params, "election") != selected_election_id:
         update_url_params(election=selected_election_id)
 
-    # Show election info
-    election_info = available_elections[selected_election_id]
-    st.sidebar.caption(f"📅 {election_info['name']}")
-    st.sidebar.caption(f"📆 Datum: {election_info['date']}")
-
-    st.sidebar.markdown("---")
+    election_config = get_election_config(selected_election_id)
+    is_parliamentary = election_config.election_type == "parliamentary"
 
     # Load municipality data and create selector
     municipality_index, comprehensive_data = ensure_data_exists(selected_election_id)
@@ -4163,36 +4264,20 @@ def main():
     if not municipality_index or not comprehensive_data:
         return
 
-    # Get default municipality from URL params (we'll handle this via session state if needed)
     default_municipality = get_param_value(url_params, "municipality")
     selected_zastupitelstvo_code = create_municipality_selector(
-        municipality_index, comprehensive_data, default_municipality
+        municipality_index, selected_election_id, is_parliamentary, default_municipality
     )
 
     # Update URL parameter for municipality selection
     update_url_params(municipality=selected_zastupitelstvo_code)
 
     if not selected_zastupitelstvo_code:
-        st.info("👈 Vyberte obec nebo obvod v postranním panelu.")
-        st.markdown("---")
-
-        # Show overall municipalities overview
-        st.subheader("📊 Co tady najdete")
-        st.markdown(
-            """
-        **Po výběru obce získáte:**
-        
-        • **Souhrn** – klíčové statistiky a výsledky stran  
-        • **Účast** – účast voličů v okrscích  
-        • **Mapa** – interaktivní mapy a vrstvy  
-        • **Přelivy** – Sankey diagram OBEC → MČ (Praha 5)  
-        • **Okrsky** – detailní rozpad podle okrsků  
-        • **Data (pokročilé)** – surová data a tabulky  
-        
-        **Poznámka:** některé obce (např. Praha) mají více voleb:
-        - **Zastupitelstvo obce (OBEC)** – hlavní volby
-        - **Zastupitelstvo městské části (MCMO)** – lokální volby
-        """
+        display_landing(
+            selected_election_id,
+            election_config.election_name,
+            is_parliamentary,
+            len(municipality_index),
         )
         return
 
@@ -4203,40 +4288,33 @@ def main():
     municipality_name = "Neznámé"
     election_type = "Volby"
 
-    # Get election config to determine type
-    election_config = get_election_config(selected_election_id)
-
     if municipality_data:
         metadata = municipality_data.get("metadata", {})
 
         # Check if parliamentary or municipal
-        if election_config.election_type == "parliamentary":
+        if is_parliamentary:
             municipality_name = metadata.get(
                 "district_name", f"Obvod {selected_zastupitelstvo_code}"
             )
-            election_type = "Parlamentní volby"
+            election_type = "Volební kraj"
         else:
-            municipality_name = metadata.get(
-                "municipality_name", "Neznámá obec"
-            )
+            municipality_name = metadata.get("municipality_name", "Neznámá obec")
 
             # Determine specific election type for municipal
             districts = municipality_data.get("district_data", [])
+            election_type = "Zastupitelstvo"
             if districts:
-                first_district = districts[0]
-                oznac_typu = first_district.get("type", "")
-
+                oznac_typu = districts[0].get("type", "")
                 if oznac_typu == "OBEC":
-                    election_type = "Volby do zastupitelstva obce"
+                    election_type = "Zastupitelstvo obce"
                 elif oznac_typu == "MCMO":
-                    election_type = "Volby do zastupitelstva městské části"
-            else:
-                election_type = "Volby do zastupitelstva"
+                    election_type = "Zastupitelstvo městské části nebo obvodu"
 
-    st.subheader(f"📍 Analýza: **{municipality_name}** – {election_type}")
+    st.title(municipality_name)
+    st.caption(f"{election_type} · {election_config.election_name}")
 
     # Load data for selected municipality/zastupitelstvo
-    with st.spinner(f"Načítám data pro {municipality_name} ({election_type})..."):
+    with st.spinner(f"Načítám data: {municipality_name}…"):
         geojson_data = None
         geojson_kod_mco_set = set()
         obec_mapping = {}
@@ -4245,8 +4323,30 @@ def main():
             selected_zastupitelstvo_code, selected_election_id, data_version
         )
 
-    # Analysis Views as prominent tabs with URL parameter support
-    tab_options = ["Souhrn", "Účast", "Mapa", "Přelivy", "Okrsky", "Data (pokročilé)"]
+        # The same council in the previous election, for comparisons
+        previous_data = None
+        previous_name = ""
+        previous_election_id = get_previous_election_id(selected_election_id)
+        if previous_election_id and not is_parliamentary:
+            _, previous_comprehensive = load_all_municipality_data(previous_election_id)
+            if get_municipality_data(selected_zastupitelstvo_code, previous_comprehensive):
+                previous_data = load_municipality_data(
+                    selected_zastupitelstvo_code,
+                    previous_election_id,
+                    get_results_data_version(previous_election_id),
+                )
+                previous_name = available_elections[previous_election_id]["date"][:4]
+
+    # Views, with URL parameter support
+    tab_options = ["Souhrn", "Účast", "Mapa", "Okrsky"]
+    flows_ready = (
+        not is_parliamentary
+        and selected_zastupitelstvo_code in {"500143", "554782"}
+        and (election_config.reports_dir / "ei_prague5_all_parties_ballots.csv").exists()
+    )
+    if flows_ready:
+        tab_options.append("Přelivy")
+    tab_options.append("Data")
 
     # Get default tab from URL params
     default_tab = get_param_value(url_params, "tab", tab_options[0])
@@ -4254,54 +4354,33 @@ def main():
         "Overview": "Souhrn",
         "Turnout Analysis": "Účast",
         "Geographic Analysis": "Mapa",
-        "Data Explorer": "Data (pokročilé)",
+        "Data Explorer": "Data",
+        "Data (pokročilé)": "Data",
         "District Analysis": "Okrsky",
     }
-    if default_tab in legacy_tab_map:
-        default_tab = legacy_tab_map[default_tab]
+    default_tab = legacy_tab_map.get(default_tab, default_tab)
     if default_tab not in tab_options:
         default_tab = tab_options[0]
+    if st.session_state.get("main_tab_selector") not in tab_options:
+        st.session_state.pop("main_tab_selector", None)
 
-    # Create a selectbox for tab selection that updates URL immediately
-    st.subheader("📊 Výběr pohledu")
-    selected_tab = st.selectbox(
-        "Zvolte pohled:",
-        tab_options,
-        index=tab_options.index(default_tab),
-        key="main_tab_selector",
-        help="URL se aktualizuje pro sdílení nastavení.",
+    selected_tab = (
+        st.segmented_control(
+            "Pohled",
+            tab_options,
+            default=default_tab,
+            key="main_tab_selector",
+            label_visibility="collapsed",
+        )
+        or default_tab
     )
 
     # Update URL parameter for tab selection immediately when selection changes
     update_url_params(tab=selected_tab)
 
-    # Add some visual separation
-    st.markdown("---")
-
-    # Sidebar info - simplified
-    st.sidebar.markdown("---")
-
-    # Quick stats in sidebar
-    if electoral_data:
-        st.sidebar.subheader("📈 Rychlé statistiky")
-        if "summary_statistics" in electoral_data:
-            stats = electoral_data["summary_statistics"]
-            st.sidebar.metric(
-                "Okrsky", stats.get("electoral_districts", "N/A")
-            )
-            st.sidebar.metric(
-                "Registrovaní voliči", f"{stats.get('registered_voters', 0):,}"
-            )
-            st.sidebar.metric("Účast", f"{stats.get('turnout_percentage', 0):.1f}%")
-
-        with st.sidebar.expander("Pokročilé", expanded=False):
-            st.sidebar.metric("Zdroje dat", len(electoral_data))
-
-    # Add URL sharing info in sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🔗 Sdílení")
-    st.sidebar.info(
-        "💡 URL se automaticky aktualizuje podle filtrů. Sdílejte odkaz pro stejný pohled."
+    st.sidebar.caption(
+        "Adresa stránky se mění podle toho, co si zobrazíte. "
+        "Když ji zkopírujete, otevře se komukoli stejný pohled."
     )
 
     # For geographic analysis, we need to map zastupitelstvo_code to geographic municipality code
@@ -4312,66 +4391,22 @@ def main():
 
     # For city-wide elections (like Praha), we need to collect ALL municipality codes from districts
     if municipality_data:
-        metadata = municipality_data.get("metadata", {})
         districts = municipality_data.get("district_data", [])
-
-        # If we have district data, collect ALL unique CIS_OBEC codes from the districts
-        if districts:
-            # Get all unique CIS_OBEC codes from all districts
-            unique_cis_obec_codes = set()
-            for district in districts:
-                cis_obec = district.get("municipality_code")
-                if cis_obec:
-                    unique_cis_obec_codes.add(cis_obec)
-
-            # Add all unique codes to our search list
-            geographic_municipality_codes.extend(list(unique_cis_obec_codes))
-
-    if geojson_data and "features" in geojson_data:
-        # Filter geojson for this municipality using MOMC field (electoral municipality code)
-        municipality_districts = []
-        for feature in geojson_data["features"]:
-            props = feature.get("properties", {})
-            # Try matching against any of our geographic codes
-            if props.get("MOMC") in geographic_municipality_codes:
-                municipality_districts.append(feature)
-
-        if municipality_districts:
-            st.sidebar.metric("Okrsky v mapě", len(municipality_districts))
-        else:
-            # Try a different approach - look for matching district codes in the electoral data
-            if electoral_data and "district_data" in electoral_data:
-                electoral_districts = electoral_data["district_data"]
-                if hasattr(electoral_districts, "index"):  # It's a DataFrame
-                    district_codes = electoral_districts["district_code"].tolist()
-                else:  # It's a list of dicts
-                    district_codes = [
-                        d.get("district_code", "") for d in electoral_districts
-                    ]
-
-                # Try to find matching districts by district code
-                for feature in geojson_data["features"]:
-                    props = feature.get("properties", {})
-                    if props.get("CISLO_OKRS") in district_codes:
-                        municipality_districts.append(feature)
-
-                if municipality_districts:
-                    st.sidebar.metric(
-                        "Okrsky v mapě (párování podle kódu)",
-                        len(municipality_districts),
-                    )
+        unique_cis_obec_codes = {
+            district.get("municipality_code")
+            for district in districts
+            if district.get("municipality_code")
+        }
+        geographic_municipality_codes.extend(list(unique_cis_obec_codes))
 
     # Display content based on selected tab
     if selected_tab == "Souhrn":
-        st.header("📊 Souhrn")
-        display_electoral_overview(electoral_data)
+        display_electoral_overview(electoral_data, previous_data, previous_name)
 
     elif selected_tab == "Účast":
-        st.header("📈 Účast")
-        display_turnout_analysis(electoral_data)
+        display_turnout_analysis(electoral_data, previous_data, previous_name)
 
     elif selected_tab == "Mapa":
-        st.header("🗺️ Mapa")
         geojson_data = None
         geojson_kod_mco_set = load_geojson_kod_mco_set(selected_election_id)
         obec_mapping = load_obec_mapping(selected_election_id)
@@ -4614,7 +4649,7 @@ def main():
                     }
             else:
                 # Enhanced debugging for municipality matching
-                st.subheader("🗺️ Mapa – ladění párování obce")
+                st.subheader("Mapa – ladění párování obce")
                 st.warning(
                     f"📍 **Nenalezeny hranice** pro {municipality_name}"
                 )
@@ -4685,27 +4720,18 @@ def main():
         )
 
     elif selected_tab == "Přelivy":
-        st.header("🔀 Přelivy (Sankey)")
         display_flow_sankey(
             selected_election_id, selected_zastupitelstvo_code
         )
 
-    elif selected_tab == "Data (pokročilé)":
-        st.header("🔍 Data (pokročilé)")
+    elif selected_tab == "Data":
         display_data_explorer(electoral_data)
 
     elif selected_tab == "Okrsky":
-        st.header("🏘️ Okrsky")
         display_district_analysis(electoral_data)
 
     # Footer
-    st.markdown("---")
-    st.markdown(
-        f"**Volební analýza obcí** | "
-        f"**{municipality_name}** | "
-        "Postaveno na Streamlit | "
-        f"Zdroje dat: {len(electoral_data)}"
-    )
+    st.caption("Zdroj dat: Český statistický úřad, volby.cz")
 
 
 if __name__ == "__main__":
