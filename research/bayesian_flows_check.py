@@ -65,6 +65,13 @@ def main() -> None:
     parser.add_argument("--tune", type=int, default=700)
     parser.add_argument("--chains", type=int, default=4)
     parser.add_argument(
+        "--model",
+        choices=["hierarchical", "simple"],
+        default="hierarchical",
+        help="hierarchical: every precinct has its own rates (slow, needs many precincts); "
+        "simple: one set of rates plus noise (minutes, for district councils)",
+    )
+    parser.add_argument(
         "--progress-seconds", type=int, default=60, help="how often to report progress"
     )
     parser.add_argument(
@@ -94,19 +101,29 @@ def main() -> None:
 
     with pm.Model() as model:  # noqa: F841 - used below
         mean_rates = pm.Dirichlet("mean_rates", a=np.ones((rows, cols)), shape=(rows, cols))
-        concentration = pm.Gamma("concentration", alpha=2.0, beta=0.05, shape=rows)
-        precinct_rates = pm.Dirichlet(
-            "precinct_rates",
-            a=(mean_rates * concentration[:, None])[None, :, :],
-            shape=(n, rows, cols),
-        )
-        expected = (x[:, :, None] * precinct_rates).sum(axis=1)
-        pm.Multinomial("observed", n=totals, p=expected, observed=counts)
+        if args.model == "simple":
+            # One set of rates for the whole council. Precincts differ from it
+            # only by noise, whose size is estimated (Dirichlet-multinomial).
+            # rows x cols + 1 parameters instead of precincts x rows x cols.
+            concentration = pm.LogNormal("concentration", mu=np.log(500.0), sigma=1.5)
+            pm.DirichletMultinomial(
+                "observed", n=totals, a=concentration * (x @ mean_rates), observed=counts
+            )
+        else:
+            concentration = pm.Gamma("concentration", alpha=2.0, beta=0.05, shape=rows)
+            precinct_rates = pm.Dirichlet(
+                "precinct_rates",
+                a=(mean_rates * concentration[:, None])[None, :, :],
+                shape=(n, rows, cols),
+            )
+            expected = (x[:, :, None] * precinct_rates).sum(axis=1)
+            pm.Multinomial("observed", n=totals, p=expected, observed=counts)
 
         started = time.time()
         out_dir = Path(f"output/{args.election}/reports")
         out_dir.mkdir(parents=True, exist_ok=True)
-        progress_file = out_dir / f"bayesian_flows_{args.code}_progress.txt"
+        stem = f"bayesian_flows_{args.code}" + ("_simple" if args.model == "simple" else "")
+        progress_file = out_dir / f"{stem}_progress.txt"
 
         def report_progress(chains):
             """One status line per call, on stdout and in the progress file.
@@ -145,17 +162,20 @@ def main() -> None:
         )
     print(f"sampled in {(time.time() - started) / 60:.1f} min")
 
-    # City-wide rate of a group = precinct rates weighted by the group's voters there
-    weights = previous[sources].to_numpy()
-    weights = weights / weights.sum(axis=0, keepdims=True)
-    per_chain = np.einsum(
-        "ir,kdirc->kdrc", weights, posterior["precinct_rates"].to_numpy()
-    )
+    if args.model == "simple":
+        per_chain = posterior["mean_rates"].to_numpy()
+    else:
+        # City-wide rate of a group = precinct rates weighted by the group's voters there
+        weights = previous[sources].to_numpy()
+        weights = weights / weights.sum(axis=0, keepdims=True)
+        per_chain = np.einsum(
+            "ir,kdirc->kdrc", weights, posterior["precinct_rates"].to_numpy()
+        )
     citywide = per_chain.reshape(-1, rows, cols).transpose(1, 2, 0)
 
     # The hyperparameters often mix poorly even when the city-wide rates, which
     # are what we report, agree between chains. Check those directly.
-    np.save(out_dir / f"bayesian_flows_{args.code}_citywide_draws.npy", per_chain)
+    np.save(out_dir / f"{stem}_citywide_draws.npy", per_chain)
     chain_means = per_chain.mean(axis=1)
     chain_spread = chain_means.max(axis=0) - chain_means.min(axis=0)
     citywide_rhat = az.rhat(az.convert_to_dataset({"rate": per_chain}))["rate"].to_numpy()
@@ -177,6 +197,7 @@ def main() -> None:
     hyper_rhat = max(float(v.max()) for v in az.rhat(hyperparameters).data_vars.values())
     hyper_ess = min(float(v.min()) for v in az.ess(hyperparameters).data_vars.values())
     diagnostics = {
+        "model": args.model,
         "precincts": n,
         "divergences": int(sample_stats["diverging"].sum()),
         "max_rhat_hyperparameters": hyper_rhat,
@@ -188,8 +209,8 @@ def main() -> None:
     }
     print(diagnostics)
 
-    table.to_csv(out_dir / f"bayesian_flows_{args.code}.csv", index=False)
-    (out_dir / f"bayesian_flows_{args.code}_diagnostics.json").write_text(
+    table.to_csv(out_dir / f"{stem}.csv", index=False)
+    (out_dir / f"{stem}_diagnostics.json").write_text(
         json.dumps(diagnostics, indent=2), encoding="utf-8"
     )
 

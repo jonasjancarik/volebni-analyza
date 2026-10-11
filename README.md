@@ -355,6 +355,17 @@ PYTENSOR_FLAGS='cxx=' uv run --with pymc --with nutpie python research/bayesian_
 
 (`PYTENSOR_FLAGS='cxx='` avoids a C compiler failure seen on macOS 27.)
 
+That hierarchical model did not converge in our runs (Prague: 137 min, R-hat 1.85;
+Prague 5: 86 min, R-hat 1.20). For district councils use `--model simple`: one set of
+rates for the council plus estimated noise. It converges in under a minute:
+
+```bash
+PYTENSOR_FLAGS='cxx=' uv run --with pymc --with nutpie python research/bayesian_flows_check.py --code 500143 --model simple --draws 2000 --tune 2000
+```
+
+`python3 research/bayesian_progress.py` shows how far running fits are.
+
+
 ```bash
 uv run --with pytest pytest tests/
 ```
