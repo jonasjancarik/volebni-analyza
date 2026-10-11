@@ -304,7 +304,8 @@ you pick a municipality (type its name in the sidebar), the views are:
 
 - **Souhrn**: turnout, seats and party results, with the change since the previous election
 - **Srovnání**: estimated voter flows between this and the previous election (including
-  non-voters) and precinct-by-precinct change of turnout or of a list that ran in both
+  non-voters) and precinct-by-precinct change of turnout or of a list that ran in both.
+  A city-wide election (e.g. the Prague city council) can be narrowed to one city district.
 - **Účast**: turnout across precincts
 - **Mapa**: interactive precinct maps
 - **Okrsky**: precinct detail and party comparison between precincts

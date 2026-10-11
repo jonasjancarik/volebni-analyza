@@ -4125,6 +4125,17 @@ GROUP_PALETTE = [
 ]
 
 
+@st.cache_data(show_spinner=False)
+def get_precinct_areas(code: str, election_id: str, data_version: float) -> Dict[str, str]:
+    """City district (its municipality code) of every precinct of a council."""
+    _, comprehensive_data = load_all_municipality_data(election_id)
+    municipality = get_municipality_data(code, comprehensive_data) or {}
+    return {
+        str(district.get("district_code")): str(district.get("municipality_code"))
+        for district in municipality.get("district_data", [])
+    }
+
+
 @st.cache_data(show_spinner="Porovnávám volby…")
 def compute_election_comparison(
     code: str,
@@ -4132,11 +4143,23 @@ def compute_election_comparison(
     previous_election_id: str,
     data_version: float,
     previous_data_version: float,
+    area_code: Optional[str] = None,
     model_version: int = FLOW_MODEL_VERSION,
 ):
-    """Matched precinct tables of both elections and, if possible, voter flows."""
+    """Matched precinct tables of both elections and, if possible, voter flows.
+
+    `area_code` limits a city-wide election to the precincts of one city district.
+    """
     current = load_municipality_data(code, election_id, data_version)
     previous = load_municipality_data(code, previous_election_id, previous_data_version)
+
+    area_precincts = None
+    if area_code:
+        area_precincts = {
+            precinct
+            for precinct, area in get_precinct_areas(code, election_id, data_version).items()
+            if area == area_code
+        }
 
     tables = []
     for data in (previous, current):
@@ -4146,6 +4169,13 @@ def compute_election_comparison(
             party_df, pd.DataFrame
         ):
             return None
+        if area_precincts is not None:
+            district_df = district_df[
+                district_df["district_code"].astype(str).isin(area_precincts)
+            ]
+            party_df = party_df[party_df["district_code"].astype(str).isin(area_precincts)]
+            if district_df.empty or party_df.empty:
+                return None
         tables.append(precinct_table(district_df, party_df))
 
     all_current_precincts = len(tables[1])
@@ -4856,6 +4886,36 @@ def main():
         display_electoral_overview(electoral_data, previous_data, previous_name)
 
     elif selected_tab == "Srovnání":
+        # A city-wide election can be narrowed to the precincts of one city district
+        precinct_areas = get_precinct_areas(
+            selected_zastupitelstvo_code, selected_election_id, data_version
+        )
+        area_sizes = pd.Series(list(precinct_areas.values())).value_counts()
+        area_code = None
+        if len(area_sizes) > 1:
+            whole_city = "Celé město"
+
+            def area_name(code):
+                return (municipality_index.get(code) or {}).get("name", code)
+
+            area_codes = sorted(area_sizes.index, key=lambda code: (-area_sizes[code], code))
+            default_area = get_param_value(url_params, "area", whole_city)
+            area_choice = st.selectbox(
+                "Území",
+                [whole_city] + area_codes,
+                index=area_codes.index(default_area) + 1 if default_area in area_codes else 0,
+                format_func=lambda code: code
+                if code == whole_city
+                else f"{area_name(code)} ({fmt_int(area_sizes[code])} okrsků)",
+                key=f"comparison_area_{selected_zastupitelstvo_code}",
+                help=(
+                    "Ukáže, jak se ve volbách do zastupitelstva celého města přesouvali "
+                    "voliči, kteří bydlí ve vybrané městské části."
+                ),
+            )
+            area_code = None if area_choice == whole_city else area_choice
+            update_url_params(area=area_code)
+
         display_election_comparison(
             compute_election_comparison(
                 selected_zastupitelstvo_code,
@@ -4863,6 +4923,7 @@ def main():
                 previous_election_id,
                 data_version,
                 get_results_data_version(previous_election_id),
+                area_code,
             ),
             previous_name,
             available_elections[selected_election_id]["date"][:4],
