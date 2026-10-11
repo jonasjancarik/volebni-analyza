@@ -83,8 +83,11 @@ class AllMunicipalitiesScraper:
         if election_date is None:
             election_date = self.election_config.election_date
 
-        url = self.election_config.get_districts_api_url()
-        params = {"datumvoleb": election_date, "davka": batch_number}
+        url = self.election_config.get_districts_batch_url(batch_number)
+        params = None
+        if url is None:
+            url = self.election_config.get_districts_api_url()
+            params = {"datumvoleb": election_date, "davka": batch_number}
 
         try:
             response = self.session.get(url, params=params, timeout=30)
@@ -103,6 +106,23 @@ class AllMunicipalitiesScraper:
 
         except Exception as e:
             logger.error(f"Error downloading batch {batch_number}: {e}")
+            return None
+
+    def get_last_batch_number(self) -> Optional[int]:
+        """Number of the last published batch (static batch files only)"""
+        url = self.election_config.get_districts_batch_url()
+        if url is None:
+            return None
+
+        try:
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            davka = ET.fromstring(response.content).find(
+                "kv:DAVKA", {"kv": "http://www.volby.cz/kv/"}
+            )
+            return int(davka.get("PORADI_DAVKY"))
+        except Exception as e:
+            logger.error(f"Error reading the last batch number: {e}")
             return None
 
     def parse_xml_batch(self, xml_file):
@@ -315,7 +335,10 @@ class AllMunicipalitiesScraper:
                 "Downloading additional batch files to ensure complete coverage..."
             )
 
-            for batch_num in range(1, max_batches + 1):
+            last_batch = self.get_last_batch_number() or max_batches
+            logger.info(f"Last batch to download: {last_batch}")
+
+            for batch_num in range(1, last_batch + 1):
                 batch_file_name = f"electoral_districts_batch_{batch_num}.xml"
                 if batch_file_name not in processed_batches:
                     xml_file = self.download_batch_xml(batch_num)
@@ -330,6 +353,8 @@ class AllMunicipalitiesScraper:
                                         district["zastupitelstvo_code"]
                                     )
                             processed_batches.append(xml_file.name)
+
+        all_districts = self._drop_superseded_districts(all_districts)
 
         logger.info(f"Collected data from {len(processed_batches)} batch files")
         logger.info(f"Found {len(all_districts)} total electoral districts")
@@ -352,6 +377,33 @@ class AllMunicipalitiesScraper:
             "municipalities": municipalities_data,
             "raw_districts": all_districts,
         }
+
+    @staticmethod
+    def _drop_superseded_districts(districts: List[Dict]) -> List[Dict]:
+        """Keep only the latest record of each precinct.
+
+        ČSÚ re-sends a precinct in a later batch when its result is corrected,
+        so counting every record would count those precincts twice.
+        """
+        latest = {}
+        for district in districts:
+            key = (
+                district["zastupitelstvo_code"],
+                district["municipality_code"],
+                district["district_code"],
+                district["obvod_number"],
+            )
+            current = latest.get(key)
+            if current is None or (
+                district["processing_time"] or "",
+                district["processing_order"],
+            ) >= (current["processing_time"] or "", current["processing_order"]):
+                latest[key] = district
+
+        dropped = len(districts) - len(latest)
+        if dropped:
+            logger.info(f"Dropped {dropped} superseded precinct records")
+        return list(latest.values())
 
     def _group_districts_by_municipality(
         self, all_districts: List[Dict]

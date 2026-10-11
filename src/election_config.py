@@ -29,6 +29,10 @@ class ElectionConfig:
     # API endpoints (relative to base_url)
     districts_endpoint: str = "vysledky_okrsky"
 
+    # Since 2026 ČSÚ publishes precinct batches as static files instead of the
+    # vysledky_okrsky endpoint. "{batch}" is replaced by the batch number.
+    districts_batch_url_template: Optional[str] = None
+
     # XML file names
     municipality_registry_file: str = "kvcoco.xml"
     party_registry_file: str = "kvros.xml"
@@ -116,6 +120,13 @@ class ElectionConfig:
         """Get URL for electoral districts API"""
         return f"{self.base_url}/{self.districts_endpoint}"
 
+    def get_districts_batch_url(self, batch_number: Optional[int] = None) -> Optional[str]:
+        """Get URL of a static precinct batch file (None = latest batch)"""
+        if not self.districts_batch_url_template:
+            return None
+        suffix = "" if batch_number is None else f"_{batch_number:05d}"
+        return self.districts_batch_url_template.format(batch=suffix)
+
     def to_dict(self) -> dict:
         """Convert to dictionary"""
         return {
@@ -126,6 +137,7 @@ class ElectionConfig:
             "base_url": self.base_url,
             "opendata_url": self.opendata_url,
             "districts_endpoint": self.districts_endpoint,
+            "districts_batch_url_template": self.districts_batch_url_template,
             "municipality_registry_file": self.municipality_registry_file,
             "party_registry_file": self.party_registry_file,
         }
@@ -141,6 +153,7 @@ class ElectionConfig:
             base_url=data["base_url"],
             opendata_url=data["opendata_url"],
             districts_endpoint=data.get("districts_endpoint", "vysledky_okrsky"),
+            districts_batch_url_template=data.get("districts_batch_url_template"),
             municipality_registry_file=data.get(
                 "municipality_registry_file", "kvcoco.xml"
             ),
@@ -173,7 +186,19 @@ class ElectionConfig:
 
 # Predefined election configurations
 ELECTIONS = {
-    # Municipal Elections
+    # Municipal Elections (newest first - the app opens the first one)
+    "kv2026": ElectionConfig(
+        election_id="kv2026",
+        election_name="Komunální volby 2026",
+        election_type="municipal",
+        election_date="20261009",
+        base_url="https://www.volby.cz/pls/kv2026",
+        opendata_url="https://www.volby.cz/opendata/kv2026/xml",
+        districts_batch_url_template=(
+            "https://www.volby.cz/appdata/kv2026/20261009/odata/okrsky/"
+            "vysledky_okrsky{batch}.xml"
+        ),
+    ),
     "kv2022": ElectionConfig(
         election_id="kv2022",
         election_name="Komunální volby 2022",
