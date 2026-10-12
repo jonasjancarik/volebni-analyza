@@ -17,22 +17,56 @@ interface Indexed extends CouncilRef {
   folded: string;
 }
 
-/** Councils whose name starts with the query come first, larger ones before smaller. */
+const NUMBERED = /^(.*\D)\s*(\d+)$/;
+
+/**
+ * Keeps the larger-first order, except that numbered districts of one city
+ * (Praha 1, Praha 2, ...) are listed by number, at the place of the largest of them.
+ */
+function numberedInOrder(councils: Indexed[]): Indexed[] {
+  const groups = new Map<string, Indexed[]>();
+  const slots: (Indexed | string)[] = [];
+  for (const council of councils) {
+    const match = NUMBERED.exec(council.name);
+    if (!match) {
+      slots.push(council);
+      continue;
+    }
+    const stem = match[1].trim();
+    const group = groups.get(stem);
+    if (group) group.push(council);
+    else {
+      groups.set(stem, [council]);
+      slots.push(stem);
+    }
+  }
+  return slots.flatMap((slot) => {
+    if (typeof slot !== "string") return [slot];
+    const number = (council: Indexed) => Number(NUMBERED.exec(council.name)?.[2]);
+    return groups.get(slot)!.sort((a, b) => number(a) - number(b));
+  });
+}
+
+/**
+ * An exact name comes first, then names starting with the query, then names with a word
+ * starting with it. Within each group the larger councils come first.
+ */
 function search(index: Indexed[], query: string, limit = 8): Indexed[] {
   const needle = fold(query.trim());
   if (!needle) return [];
+  const exact: Indexed[] = [];
   const starts: Indexed[] = [];
   const wordStarts: Indexed[] = [];
   const contains: Indexed[] = [];
   for (const council of index) {
     const position = council.folded.indexOf(needle);
     if (position === -1) continue;
-    if (position === 0) starts.push(council);
+    if (council.folded === needle) exact.push(council);
+    else if (position === 0) starts.push(council);
     else if (/[\s-]/.test(council.folded[position - 1])) wordStarts.push(council);
     else contains.push(council);
-    if (starts.length >= limit) break;
   }
-  return [...starts, ...wordStarts, ...contains].slice(0, limit);
+  return [...exact, ...numberedInOrder(starts), ...wordStarts, ...contains].slice(0, limit);
 }
 
 export function Search({ electionId, large, shortcut, autoFocus, parliamentary }: Props) {
