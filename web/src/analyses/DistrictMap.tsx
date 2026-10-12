@@ -1,35 +1,30 @@
 import { fmtInt, fmtPct, fmtPp } from "../format";
 import { label } from "./blocks";
 import { kindColor } from "./centreShared";
+import { change, type DistrictAnalysis, KIND_NAMES, localOverCity, type Precinct, winner } from "./districtShared";
 import { type MapLayer, PrecinctMap } from "./PrecinctMap";
-import {
-  blocShare,
-  change,
-  GROUP_COLORS,
-  KIND_NAMES,
-  localOverCity,
-  type Prague5Analysis,
-  type Precinct,
-  winner,
-} from "./prague5Shared";
-
-const SHARES = ["praha5Sobe", "ods", "stan", "sen", "ano", "pirati"];
 
 interface Props {
-  data: Prague5Analysis;
+  data: DistrictAnalysis;
   colorOf: (key: string) => string;
+  /** Lists whose share the map offers */
+  shares: string[];
+  /** Colour of each group of neighbourhoods */
+  groupColors: Record<string, string>;
+  /** Comparisons only this district has */
+  more?: MapLayer<Precinct>[];
 }
 
-/** The precincts of Praha 5 coloured by a list's share, by who leads or by how the two ballots differ. */
-export default function Prague5Map({ data, colorOf }: Props) {
+/** The precincts of a city district coloured by a list's share, by who leads or by how the two ballots differ. */
+export default function DistrictMap({ data, colorOf, shares, groupColors, more = [] }: Props) {
   const { years } = data;
   const groupName = new Map(data.groups.map((group) => [group.key, group.name]));
 
-  const shares: MapLayer<Precinct>[] = [
-    ...SHARES.map((key) => ({
+  const shareLayers: MapLayer<Precinct>[] = [
+    ...shares.map((key) => ({
       key,
       label: label(key),
-      legend: `${label(key)}, % hlasů do zastupitelstva Prahy 5`,
+      legend: `${label(key)}, % hlasů do zastupitelstva městské části`,
       value: (precinct: Precinct) => precinct.local[key],
     })),
     {
@@ -47,13 +42,7 @@ export default function Prague5Map({ data, colorOf }: Props) {
       legend: "Kandidátka s nejvíce hlasy",
       kind: (precinct) => ({ name: label(winner(precinct)), color: colorOf(winner(precinct)) }),
     },
-    {
-      key: "blocs",
-      label: "Oba tábory",
-      legend: "Praha 5 Sobě, Piráti a SEN proti ODS, TOP 09, STAN a ANO; rozdíl v bodech",
-      scale: "change",
-      value: (precinct) => blocShare(precinct, "coalition2022") - blocShare(precinct, "townHall"),
-    },
+    ...more,
     {
       key: "pirati-change",
       label: `Piráti proti roku ${years.previous}`,
@@ -64,7 +53,7 @@ export default function Prague5Map({ data, colorOf }: Props) {
     {
       key: "pirati-ballots",
       label: "Piráti na dvou lístcích",
-      legend: "Piráti do zastupitelstva Prahy 5 proti pražskému; rozdíl v bodech",
+      legend: "Piráti do zastupitelstva městské části proti pražskému; rozdíl v bodech",
       scale: "change",
       value: (precinct) => localOverCity(precinct, "pirati"),
     },
@@ -74,10 +63,11 @@ export default function Prague5Map({ data, colorOf }: Props) {
       legend: "Čtvrti, jak je dělí tabulka níže",
       kind: (precinct) =>
         precinct.group
-          ? { name: groupName.get(precinct.group) ?? precinct.group, color: GROUP_COLORS[precinct.group] }
+          ? { name: groupName.get(precinct.group) ?? precinct.group, color: groupColors[precinct.group] }
           : null,
     },
-    ...(data.kinds.length
+    // One kind of housing everywhere would be a map of a single colour
+    ...(data.kinds.length > 1
       ? [
           {
             key: "kind",
@@ -97,7 +87,7 @@ export default function Prague5Map({ data, colorOf }: Props) {
       rows={data.precincts}
       initial="winner"
       layers={[
-        { title: "Podíl hlasů", items: shares },
+        { title: "Podíl hlasů", items: shareLayers },
         { title: "Srovnání", items: comparisons },
       ]}
       tooltip={(precinct) => (

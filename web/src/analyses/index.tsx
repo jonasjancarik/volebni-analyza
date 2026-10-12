@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useAnalysis } from "../api";
 import { Loading, Problem } from "../components/State";
 import { Prague2026 } from "./Prague2026";
+import { Prague1, type Prague1Analysis } from "./Prague1";
 import { Prague5 } from "./Prague5";
 import type { Prague5Analysis } from "./prague5Shared";
 import type { CentreAnalysis } from "./centreShared";
@@ -67,6 +68,15 @@ export const ANALYSES: AnalysisEntry[] = [
     lede: "Jak se změnilo zastupitelstvo páté městské části, kde Piráti ztráceli a jak titíž voliči hlasovali o radnici a o magistrátu.",
     updated: "12. října 2026",
     body: (data) => <Prague5 data={data as Prague5Analysis} />,
+  },
+  {
+    slug: "praha-1-2026-okrsky",
+    election: "kv2026",
+    kicker: "Komunální volby 2026 · Praha 1",
+    title: "Praha 1 po okrscích",
+    lede: "Roztříštěné zastupitelstvo, ve kterém o posledním mandátu rozhodlo třináct voličů, a centrum města na dvou hlasovacích lístcích.",
+    updated: "12. října 2026",
+    body: (data) => <Prague1 data={data as Prague1Analysis} />,
   },
 ];
 

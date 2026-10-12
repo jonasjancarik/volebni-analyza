@@ -1,7 +1,7 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import { Loading } from "../components/State";
-import { downloadCsv, fmtInt, fmtNum, fmtPct, plural } from "../format";
+import { fmtInt, fmtNum, fmtPct } from "../format";
 import {
   bare,
   CampSeats,
@@ -15,43 +15,51 @@ import {
   ResultsTable,
 } from "./blocks";
 import {
+  type BallotPair,
+  ballotRows,
+  inCount,
+  ordinal,
+  pct,
+  PrecinctList,
+  seatsWord,
+  tens,
+  TwoBallots,
+} from "./districtBlocks";
+import type { MapLayer } from "./PrecinctMap";
+import {
   type Area,
   BLOCS,
   type BlocScenario,
+  blocShare,
   change,
+  GROUP_COLORS,
   KIND_NAMES,
-  localOverCity,
   type Prague5Analysis,
   type Precinct,
   right,
   winner,
 } from "./prague5Shared";
-import "./prague5.css";
+import "./district.css";
 
 // The map library is large; it loads only when the article is opened
-const Prague5Map = lazy(() => import("./Prague5Map"));
+const DistrictMap = lazy(() => import("./DistrictMap"));
+
+/** The lead of one camp over the other, a layer of the map only this district has */
+const BLOC_LAYER: MapLayer<Precinct> = {
+  key: "blocs",
+  label: "Oba tábory",
+  legend: "Praha 5 Sobě, Piráti a SEN proti ODS, TOP 09, STAN a ANO; rozdíl v bodech",
+  scale: "change",
+  value: (precinct) => blocShare(precinct, "coalition2022") - blocShare(precinct, "townHall"),
+};
 
 /** Lists that have no colour of their own in Praha 5 take that of their closest relative */
 const SAME_COLOR: Record<string, string> = { prahaSobe: "praha5Sobe", spolu: "ods", odsTop: "ods", odsTopKdu: "ods" };
 
-const ORDINALS = ["první", "druhý", "třetí", "čtvrtý", "pátý", "šestý", "sedmý", "osmý", "devátý", "desátý", "jedenáctý", "dvanáctý"];
-const ordinal = (count: number) => ORDINALS[count - 1] ?? `${count}.`;
-
 const FIFTHS = ["nejslabší pětina", "druhá pětina", "prostřední pětina", "čtvrtá pětina", "nejsilnější pětina"];
 
-/** 959 → "960" */
-const tens = (people: number) => fmtInt(Math.round(people / 10) * 10);
-const pct = (value: number) => fmtNum(value);
-const seatsWord = (count: number) => plural(count, "mandát", "mandáty", "mandátů");
-
-/** "v 73", "ve 14": the preposition follows how the number is read */
-function inCount(count: number): string {
-  const first = count < 20 ? count : Math.floor(count / 10) * 10;
-  return `${[2, 3, 4, 12, 13, 14, 20, 30, 40].includes(first) ? "ve" : "v"} ${fmtInt(count)}`;
-}
-
 /** The same list, or its closest counterpart, on the ballot of the district and on that of the city */
-const PAIRS: { key: string; name: string; cityName?: string; local: string[]; city: string[]; previous?: [string, string] }[] = [
+const PAIRS: BallotPair[] = [
   { key: "praha5Sobe", name: "Praha 5 Sobě", cityName: "Praha Sobě", local: ["praha5Sobe"], city: ["prahaSobe"], previous: ["praha5Sobe", "prahaSobe"] },
   { key: "ods", name: "ODS a TOP 09 s lidovci", cityName: "Spolu (ODS a TOP 09)", local: ["ods", "top"], city: ["spolu"] },
   { key: "stan", name: "STAN", local: ["stan"], city: ["stan"], previous: ["stan", "stan"] },
@@ -62,106 +70,6 @@ const PAIRS: { key: string; name: string; cityName?: string; local: string[]; ci
   { key: "motoriste", name: "Motoristé a Svobodní", cityName: "Motoristé", local: ["motoriste"], city: ["motoriste"] },
   { key: "nasePraha5", name: "Naše Praha 5", local: ["nasePraha5"], city: [] },
 ];
-
-interface BallotRow {
-  key: string;
-  name: string;
-  cityName?: string;
-  local: number;
-  city: number | null;
-  previousGap: number | null;
-}
-
-function ballotRows(district: Area): BallotRow[] {
-  const total = (shares: Record<string, number | null>, keys: string[]) =>
-    keys.reduce((sum, key) => sum + (shares[key] ?? 0), 0);
-  return PAIRS.map((pair) => ({
-    key: pair.key,
-    name: pair.name,
-    cityName: pair.cityName,
-    local: total(district.local, pair.local),
-    city: pair.city.length ? total(district.city, pair.city) : null,
-    previousGap: pair.previous ? localOverCity(district, pair.previous[0], pair.previous[1], true) : null,
-  }));
-}
-
-interface TwoBallotsProps {
-  rows: BallotRow[];
-  ballots: number;
-  years: { current: string; previous: string };
-  colorOf: (key: string) => string;
-}
-
-/** Each list on the two ballots the same voters filled in: for the council of the district and of the city. */
-function TwoBallots({ rows, ballots, years, colorOf }: TwoBallotsProps) {
-  const top = Math.max(...rows.flatMap((row) => [row.local, row.city ?? 0])) * 1.04;
-  const at = (value: number) => `${(value / top) * 100}%`;
-  return (
-    <>
-      <div className="ballot-key">
-        <span>
-          <span className="mark" /> do zastupitelstva Prahy 5
-        </span>
-        <span>
-          <span className="mark city" /> do zastupitelstva hlavního města
-        </span>
-      </div>
-      <div className="table-wrap">
-        <table className="data matrix">
-          <thead>
-            <tr>
-              <th>Kandidátka</th>
-              <th aria-label="Graf obou výsledků" />
-              <th className="col">Do Prahy 5</th>
-              <th className="col">Do hlavního města</th>
-              <th className="col">Rozdíl v bodech</th>
-              <th className="col">Rozdíl ve voličích</th>
-              <th className="col">Rozdíl v roce {years.previous}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const gap = row.city != null ? row.local - row.city : null;
-              const color = colorOf(row.key);
-              return (
-                <tr key={row.key}>
-                  <td>
-                    <span className="split-name">
-                      <span className="swatch" style={{ background: color }} />
-                      {row.name}
-                    </span>
-                    {row.cityName && <div className="small muted">do hlavního města {row.cityName}</div>}
-                  </td>
-                  <td>
-                    <div className="ballot-track" aria-hidden>
-                      {row.city != null && (
-                        <span
-                          className="between"
-                          style={{ left: at(Math.min(row.local, row.city)), width: at(Math.abs(row.local - row.city)) }}
-                        />
-                      )}
-                      {row.city != null && <span className="mark city" style={{ left: at(row.city), color }} />}
-                      <span className="mark" style={{ left: at(row.local), background: color }} />
-                    </div>
-                  </td>
-                  <td className="heat plain">
-                    <span className="share">{fmtPct(row.local)}</span>
-                  </td>
-                  <td className="heat plain">{row.city != null ? fmtPct(row.city) : "nekandidovala"}</td>
-                  <td className="heat plain">{gap != null ? bare(gap) : "–"}</td>
-                  <td className="heat plain">
-                    {gap != null ? `${gap < 0 ? "−" : "+"}${tens((Math.abs(gap) / 100) * ballots)}` : "–"}
-                  </td>
-                  <td className="heat plain muted">{row.previousGap != null ? bare(row.previousGap) : "–"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
-  );
-}
 
 interface BlocScenariosProps {
   scenarios: BlocScenario[];
@@ -232,97 +140,6 @@ function BlocScenarios({ scenarios, majority, describe }: BlocScenariosProps) {
   );
 }
 
-interface Column {
-  key: string;
-  head: string;
-  value: (precinct: Precinct) => number | string | null;
-  format?: (value: number) => string;
-}
-
-/** Every precinct with the numbers the article works with; a click on a heading sorts by it. */
-function PrecinctList({ precincts, years, mapPath }: { precincts: Precinct[]; years: Prague5Analysis["years"]; mapPath: string }) {
-  const [sort, setSort] = useState<{ key: string; down: boolean }>({ key: "id", down: false });
-  const share = (key: string) => (precinct: Precinct) => precinct.local[key];
-  const columns: Column[] = [
-    { key: "id", head: "Okrsek", value: (precinct) => precinct.id },
-    { key: "part", head: "Čtvrť", value: (precinct) => precinct.part ?? "" },
-    { key: "registered", head: "Voliči", value: (precinct) => precinct.registered, format: fmtInt },
-    { key: "turnout", head: "Účast", value: (precinct) => precinct.turnout.now, format: pct },
-    { key: "before", head: `Piráti ${years.previous}`, value: (precinct) => precinct.previousLocal.pirati, format: pct },
-    { key: "pirati", head: `Piráti ${years.current}`, value: share("pirati"), format: pct },
-    { key: "change", head: "Změna", value: (precinct) => change(precinct, "pirati"), format: bare },
-    { key: "city", head: "Piráti, magistrát", value: (precinct) => precinct.city.pirati, format: pct },
-    ...["praha5Sobe", "sen", "stan", "ods", "ano"].map((key) => ({ key, head: label(key), value: share(key), format: pct })),
-  ];
-  const sorted = columns.find((column) => column.key === sort.key)!;
-  const rows = [...precincts].sort((a, b) => {
-    const [first, second] = [sorted.value(a), sorted.value(b)];
-    const order =
-      typeof first === "string" || typeof second === "string"
-        ? String(first).localeCompare(String(second), "cs")
-        : (first ?? -Infinity) - (second ?? -Infinity);
-    return sort.down ? -order : order;
-  });
-  const cell = (column: Column, precinct: Precinct) => {
-    const value = column.value(precinct);
-    return typeof value === "number" && column.format ? column.format(value) : (value ?? "–");
-  };
-
-  return (
-    <>
-      <div className="table-wrap">
-        <table className="data precinct-list">
-          <thead>
-            <tr>
-              {columns.map((column, index) => (
-                <th
-                  key={column.key}
-                  className={`sortable ${index > 1 ? "r" : ""} ${sort.key === column.key ? "sorted" : ""}`}
-                  aria-sort={sort.key === column.key ? (sort.down ? "descending" : "ascending") : undefined}
-                  // Numbers are first sorted from the largest, names from the start of the alphabet
-                  onClick={() => setSort({ key: column.key, down: sort.key === column.key ? !sort.down : index > 1 })}
-                >
-                  {column.head}
-                  {sort.key === column.key && (sort.down ? " ↓" : " ↑")}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((precinct) => (
-              <tr key={precinct.id}>
-                {columns.map((column, index) => (
-                  <td key={column.key} className={index > 1 ? "r" : undefined}>
-                    {index === 0 ? (
-                      <Link className="inline-link" to={`${mapPath}?okrsek=${precinct.id}`}>
-                        {precinct.id}
-                      </Link>
-                    ) : (
-                      cell(column, precinct)
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <button
-        className="text-button"
-        style={{ marginTop: 12 }}
-        onClick={() =>
-          downloadCsv("praha-5-okrsky-2026.csv", [
-            columns.map((column) => column.head),
-            ...rows.map((precinct) => columns.map((column) => column.value(precinct))),
-          ])
-        }
-      >
-        Stáhnout tabulku jako CSV
-      </button>
-    </>
-  );
-}
-
 export function Prague5({ data }: { data: Prague5Analysis }) {
   const { years, seats, majority, district, precincts, groups } = data;
   const ownColor = groupColors(data.lists);
@@ -342,7 +159,7 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
   const ofVoters = (item: BlocScenario) => ((item.voters ?? 0) / data.summary.ballots) * 100;
 
   // The two ballots of the same voters
-  const ballots = ballotRows(district).sort((a, b) => b.local - a.local);
+  const ballots = ballotRows(district, PAIRS).sort((a, b) => b.local - a.local);
   const ballot = (key: string) => ballots.find((row) => row.key === key)!;
   const gap = (key: string) => ballot(key).local - (ballot(key).city ?? 0);
   const inVoters = (pointsOfShare: number) => (Math.abs(pointsOfShare) / 100) * data.summary.ballots;
@@ -694,7 +511,13 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
         sub="Vyberte, co má mapa ukazovat. Najetím na okrsek uvidíte jeho údaje, kliknutím ho otevřete v mapě výsledků."
       >
         <Suspense fallback={<Loading text="Načítám mapu…" />}>
-          <Prague5Map data={data} colorOf={colorOf} />
+          <DistrictMap
+            data={data}
+            colorOf={colorOf}
+            shares={["praha5Sobe", "ods", "stan", "sen", "ano", "pirati"]}
+            groupColors={GROUP_COLORS}
+            more={[BLOC_LAYER]}
+          />
         </Suspense>
       </Figure>
 
@@ -803,7 +626,13 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
             <p className="note" style={{ marginBottom: 12 }}>
               Kliknutím na záhlaví sloupce tabulku seřadíte, číslo okrsku ho otevře v mapě výsledků.
             </p>
-            <PrecinctList precincts={precincts} years={years} mapPath={`${councilPath}/mapa`} />
+            <PrecinctList
+              precincts={precincts}
+              years={years}
+              mapPath={`${councilPath}/mapa`}
+              lists={["praha5Sobe", "sen", "stan", "ods", "ano"]}
+              fileName="praha-5-okrsky-2026.csv"
+            />
           </div>
         </details>
       </section>

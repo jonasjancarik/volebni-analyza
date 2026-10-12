@@ -126,15 +126,28 @@ district and for the council of the city), and goes through the precincts: a
 map the reader can recolour, the Pirates' losses by how strong they were
 before, neighbourhoods, kinds of housing, a table of all precincts, and whether
 turnout goes with the result (precincts by how much it rose and how high it is).
-Neighbourhoods come from a list in `src/web_analyses.py` (`PRAGUE_5_PARTS`)
-that `research/praha5_neighbourhoods.py` helps to rebuild from the address
-register. Kinds of housing need the buildings file; without it the article
-leaves that part out.
+Kinds of housing need the buildings file; without it the article leaves that
+part out.
+
+The sixth one does the same for Praha 1, which has 27 seats and only 21
+precincts. Its council is split among seven lists, so in place of two blocs it
+shows how many votes each list was short of one more seat (one list missed the
+five-percent threshold, and a seat, by about 13 voters) and lists every
+precinct in a table instead of grouping them.
+
+The figures of both districts come from `src/web_districts.py`: `_District`
+holds what any district's analysis shows, and each district adds its lists,
+its groups of lists and its neighbourhoods. Neighbourhoods are lists of
+precinct numbers (`PRAGUE_5_PARTS`, `PRAGUE_1_PARTS`) that
+`research/praha5_neighbourhoods.py` helps to rebuild from the address
+register. On the page, `districtBlocks.tsx` and `DistrictMap.tsx` hold what
+the two articles share.
 
 An analysis has two halves that are kept apart on purpose:
 
 - `src/web_analyses.py` computes every number (`ANALYSES` maps the address of
-  an analysis to the function that builds its figures) and serves them at
+  an analysis to the function that builds its figures; those of city districts
+  are in `src/web_districts.py`) and serves them at
   `/api/analyses/<slug>`. Bump `ANALYSIS_VERSION` when the figures change, so
   that stored ones are recomputed.
 - `web/src/analyses/` holds the text and the page: `index.tsx` lists the

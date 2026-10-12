@@ -19,6 +19,13 @@ const LABELS: Record<string, string> = {
   odsTopKdu: "ODS, TOP 09 a KDU-ČSL",
   kduZeleni: "KDU-ČSL a Zelení",
   nasePraha5: "Naše Praha 5",
+  praha1Sobe: "Praha 1 Sobě",
+  stanKdu: "STAN a KDU-ČSL",
+  top09: "TOP 09",
+  nasePraha1: "Naše Praha 1 (ANO)",
+  nezavisli: "Nezávislí z Jedničky",
+  modra: "Modrá pro jedničku",
+  rezidenti: "Rezidenti 1",
   ostatni: "Ostatní kandidátky",
   nevolici: "Nevolili",
 };
