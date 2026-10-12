@@ -2407,3 +2407,8 @@ table.levers td.out {
     font-size: 12px;
   }
 }
+
+.github-link {
+  display: inline-flex;
+  align-items: center;
+}
