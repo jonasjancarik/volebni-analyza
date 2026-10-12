@@ -1,5 +1,6 @@
 import type { ComparedPrecinct, Council, Precinct } from "../api";
 import { fmtInt, fmtPct, fmtPp } from "../format";
+import { MapLink } from "./MapLink";
 import { ResultRows } from "./ResultRows";
 
 interface Props {
@@ -9,11 +10,13 @@ interface Props {
   focus: number;
   compared?: ComparedPrecinct;
   previousYear?: string;
+  /** Offer the precinct on the map; off where the map is already showing it */
+  mapLink?: boolean;
   onClose: () => void;
 }
 
 /** Everything about one precinct: turnout and how its lists did against the whole council. */
-export function PrecinctDetail({ council, precinct, colors, focus, compared, previousYear, onClose }: Props) {
+export function PrecinctDetail({ council, precinct, colors, focus, compared, previousYear, mapLink, onClose }: Props) {
   const total = precinct.votes.reduce((sum, votes) => sum + votes, 0) || 1;
   const area = council.areas.find((item) => item.code === precinct.area);
   const wholeName = council.election.type === "parliamentary" ? "celý kraj" : council.areas.length ? "celé město" : "celá obec";
@@ -37,6 +40,7 @@ export function PrecinctDetail({ council, precinct, colors, focus, compared, pre
         <div>
           <h3>Okrsek {precinct.number}</h3>
           {area && <div className="small muted">{area.name}</div>}
+          {mapLink && <MapLink precinct={precinct.id} />}
         </div>
         <button className="icon-button" onClick={onClose} aria-label="Zavřít detail okrsku">
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>

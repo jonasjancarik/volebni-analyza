@@ -4,6 +4,7 @@ import type { TabProps } from "../Council";
 import { PrecinctDetail } from "../components/PrecinctDetail";
 import { Scatter } from "../components/Scatter";
 import { fmtInt, fmtPct, fmtPp, listName, plural, truncate } from "../format";
+import { MapLink } from "../components/MapLink";
 import { useParam } from "../hooks";
 
 const TURNOUT = "__turnout";
@@ -204,6 +205,7 @@ export function PrecinctsTab({ council, colors, focus }: TabProps) {
                 {header("share", truncate(listName(focusList.name), 26), false)}
                 {data && focusInBoth !== -1 && header("shareChange", `Proti ${data.previousYear}`)}
                 <th>Vítěz v okrsku</th>
+                <th aria-label="Mapa" />
               </tr>
             </thead>
             <tbody>
@@ -235,6 +237,9 @@ export function PrecinctsTab({ council, colors, focus }: TabProps) {
                       </span>
                     )}
                   </td>
+                  <td className="r">
+                    <MapLink precinct={row.id} short />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -259,6 +264,7 @@ export function PrecinctsTab({ council, colors, focus }: TabProps) {
               focus={focus}
               compared={data?.precincts.find((item) => item.id === selectedPrecinct.id)}
               previousYear={previous?.year}
+              mapLink
               onClose={() => setSelected(null)}
             />
           </aside>

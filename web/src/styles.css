@@ -219,6 +219,31 @@ button {
   color: var(--ink);
 }
 
+.map-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.map-link:hover {
+  text-decoration: underline;
+}
+
+.detail-head .map-link {
+  margin-top: 6px;
+}
+
+.method-precinct {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
 /* ---------- Search ---------- */
 
 .search {

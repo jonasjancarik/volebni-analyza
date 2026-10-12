@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MapLink } from "../components/MapLink";
 import { fmtInt, fmtPct, truncate } from "../format";
 import { useWidth } from "../hooks";
 import type { StepProps } from "./Step";
@@ -113,7 +114,10 @@ export function OnePrecinct(props: Props) {
 
       <div className="method-panel">
         <div className="method-panel-head">
-          <span className="field-label">Okrsek {data.id}</span>
+          <span className="method-precinct">
+            <span className="field-label">Okrsek {data.id}</span>
+            <MapLink precinct={data.id} />
+          </span>
           <button className="text-button" onClick={onAnother}>
             Zkusit jiný okrsek
           </button>

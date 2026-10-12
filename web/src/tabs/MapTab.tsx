@@ -425,14 +425,25 @@ function PrecinctMap({ geojson, painted, selected, focusIds, onSelect, label }: 
     }
   }, [ready, ids, painted, focusIds]);
 
+  const opening = useRef(selected);
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
     const features = focusIds
       ? geojson.features.filter((feature) => focusIds.has(String(feature.properties?.id)))
       : geojson.features;
-    const box = bounds(features);
-    if (box) instance.fitBounds(box, { padding: 36, duration: 600 });
+    // A map opened for one precinct starts on it, with some of its surroundings
+    const asked = opening.current
+      ? geojson.features.filter((feature) => String(feature.properties?.id) === opening.current)
+      : [];
+    opening.current = null;
+    const box = bounds(asked.length ? asked : features);
+    if (!box) return;
+    if (asked.length) {
+      // On a wide map the precinct's results cover the right side
+      const right = instance.getContainer().clientWidth > 760 ? 400 : 60;
+      instance.fitBounds(box, { padding: { top: 60, bottom: 60, left: 60, right }, maxZoom: 15, duration: 0 });
+    } else instance.fitBounds(box, { padding: 36, duration: 600 });
   }, [ready, focusIds, geojson]);
 
   const previous = useRef<string | null>(null);
