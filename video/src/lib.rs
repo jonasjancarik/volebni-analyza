@@ -5,7 +5,7 @@
 //! Every scene is a struct that returns an SVG tree for each frame; `svgr!` is SVG
 //! with `{rust expressions}` in attributes and text. The numbers come from
 //! `data.rs` and the maps from `media/`, both made by `build_data.py`.
-use fframes::{AudioMap, Color, Duration, FFramesContext, Frame, Scene, Scenes, Svgr, Video, include_media_dir};
+use fframes::{AudioMap, AudioTimestamp::*, AudioTrack, Color, Duration, FFramesContext, Frame, Scene, Scenes, Svgr, Video, include_media_dir};
 
 mod charts;
 mod data;
@@ -13,7 +13,7 @@ mod maps;
 
 use data::*;
 
-// The fonts and the maps in `media/` are embedded into the binary.
+// The fonts, the maps and the music in `media/` are embedded into the binary.
 include_media_dir!(pub struct VideoMedia, "media");
 
 pub const WIDTH: usize = 1920;
@@ -162,7 +162,8 @@ impl Video for AnalysisVideo<'_> {
     }
 
     fn audio(&self) -> AudioMap<'_> {
-        AudioMap::none()
+        // One track, made by `soundtrack.py`; its beat falls on the starts of the scenes.
+        AudioMap::from([AudioTrack::new("soundtrack.wav", Second(0.)..Eof).fade_in(0.3).fade_out(1.0)])
     }
 
     fn define_scenes(&self) -> Scenes<'_> {

@@ -8,5 +8,6 @@ _frame_snapshots/*.actual.png
 _frame_snapshots/*.diff.png
 *.mp4
 
-# Made by build_data.py
+# Made by build_data.py and soundtrack.py
 media/map-*.png
+media/soundtrack.wav
