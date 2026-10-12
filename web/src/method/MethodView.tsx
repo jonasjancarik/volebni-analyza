@@ -126,9 +126,11 @@ export function MethodView({ election, code, area, placeName, comparison, colorO
 
       <Step number={2} title={`Okrsků je ale ${fmtInt(count)} a každý je jiný`}>
         <p className="method-text">
-          Každý bod je jeden okrsek. Čím víc vpravo, tím silnější v něm byla první skupina v roce {previousYear}. Čím
-          výš, tím silnější je v něm druhá skupina v roce {currentYear}. Když body směrem doprava stoupají, je to stopa
-          po lidech, kteří přešli z jedné do druhé.
+          Každý bod je jeden okrsek. Vpravo jsou okrsky, kde hodně lidí{" "}
+          {step.words.voted(5, data.sources[source], previousYear)}, vlevo ty, kde jich bylo málo. Čím je bod výš, tím
+          víc lidí v tomtéž okrsku {step.words.voted(5, data.targets[target], currentYear)}. Když body směrem doprava
+          stoupají, je těch druhých nejvíc tam, kde bylo hodně těch prvních. To napovídá, že jde z velké části o tytéž
+          lidi.
         </p>
         <PrecinctCloud {...step} precinct={precinct} onPick={setPickedPrecinct} />
       </Step>
