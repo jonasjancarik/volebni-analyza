@@ -1200,6 +1200,14 @@ table.data tbody tr.selected td {
   font-size: 12.5px;
 }
 
+.map-legend .dot-key {
+  color: var(--ink-2);
+}
+
+.map-legend > * + .dot-key {
+  margin-top: 8px;
+}
+
 .ramp {
   display: flex;
 }
