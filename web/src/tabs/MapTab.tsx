@@ -19,7 +19,7 @@ const METRICS: { id: Metric; label: string }[] = [
   { id: "podil", label: "Podíl kandidátky" },
   { id: "ucast", label: "Volební účast" },
   { id: "vitez", label: "Vítěz v okrsku" },
-  { id: "zmena", label: "Změna proti minulým volbám" },
+  { id: "zmena", label: "Změna účasti" },
 ];
 
 const TURNOUT = "__turnout";
@@ -325,7 +325,11 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
           <div className="segmented vertical" role="group" aria-label="Co mapa ukazuje">
             {METRICS.filter((item) => item.id !== "zmena" || previous).map((item) => (
               <button key={item.id} aria-pressed={metric === item.id} onClick={() => setMetric(item.id)}>
-                {item.id === "podil" ? `Podíl ${listWord}` : item.label}
+                {item.id === "podil"
+                  ? `Podíl ${listWord}`
+                  : item.id === "zmena" && metric === "zmena" && changeLists
+                    ? "Změna podílu hlasů"
+                    : item.label}
               </button>
             ))}
           </div>

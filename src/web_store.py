@@ -35,6 +35,12 @@ from election_config import ELECTIONS, ElectionConfig, get_election_config
 MIN_PRECINCTS_FOR_FLOWS = 50
 ROUGH_FLOWS_BELOW = 100
 
+# Lists that ran under another name in the previous election, matched by hand:
+# (election, council code) -> name now -> name before
+RENAMED_LISTS: Dict[Tuple[str, str], Dict[str, str]] = {
+    ("kv2026", "500054"): {"Piráti a nezávislí pro Prahu 1": "Piráti a občané z Prahy 1"},
+}
+
 RAW_INPUT_DIR = Path("input/raw")
 BOUNDARIES_2022 = "electoral_districts_boundaries.geojson"
 BOUNDARIES_2025 = "electoral_districts_boundaries_2025_municipal.geojson"
@@ -432,9 +438,12 @@ def _municipal_council(election_id: str, code: str) -> dict:
             for item in _lists(previous):
                 for name in (item["fullName"], item["name"]):
                     lookup.setdefault(_party_key(name), item)
+            renamed = RENAMED_LISTS.get((election_id, code), {})
             for item in lists:
-                match = lookup.get(_party_key(item["fullName"])) or lookup.get(
-                    _party_key(item["name"])
+                match = (
+                    lookup.get(_party_key(renamed.get(item["name"], "")))
+                    or lookup.get(_party_key(item["fullName"]))
+                    or lookup.get(_party_key(item["name"]))
                 )
                 item["previous"] = (
                     {"share": match["share"], "seats": match["seats"]} if match else None
@@ -806,9 +815,10 @@ def _stored_comparison_file(election_id: str, code: str, area: Optional[str]) ->
     return directory / f"comparison_{name}.json"
 
 
-def _stored_comparison_key(election_id: str, previous_id: str) -> dict:
+def _stored_comparison_key(election_id: str, previous_id: str, code: str) -> dict:
     """What a stored comparison was computed from; any change makes it stale."""
     return {
+        "renamed_lists": RENAMED_LISTS.get((election_id, code), {}),
         "flow_model_version": FLOW_MODEL_VERSION,
         "min_precincts": MIN_PRECINCTS_FOR_FLOWS,
         "rough_below": ROUGH_FLOWS_BELOW,
@@ -839,11 +849,13 @@ def _write_stored_comparison(path: Path, key: dict, result: dict) -> None:
 
 
 def _matched_tables(
-    current: dict, previous: dict, area: Optional[str]
+    current: dict, previous: dict, area: Optional[str], renamed: Optional[Dict[str, str]] = None
 ) -> Tuple[pd.DataFrame, pd.DataFrame, int]:
     """Precinct tables of both elections for the precincts that can be compared.
 
     Also returns how many precincts the current election has, matched or not.
+    `renamed` maps names of lists now to the names they had before, so that
+    they count as the same list.
     """
     area_precincts = None
     if area:
@@ -864,6 +876,9 @@ def _matched_tables(
 
     if tables[0].empty or tables[1].empty:
         return pd.DataFrame(), pd.DataFrame(), len(tables[1])
+    if renamed:
+        before = {old: new for new, old in renamed.items() if new not in tables[0].columns}
+        tables[0] = tables[0].rename(columns=before)
     return (*match_precincts(*tables), len(tables[1]))
 
 
@@ -892,14 +907,16 @@ def comparison(election_id: str, code: str, area: Optional[str] = None) -> dict:
 
     # The estimate takes seconds, so it is kept on disk across restarts
     stored_file = _stored_comparison_file(election_id, code, area)
-    stored_key = _stored_comparison_key(election_id, previous_id)
+    stored_key = _stored_comparison_key(election_id, previous_id, code)
     stored = _read_stored_comparison(stored_file, stored_key)
     if stored is not None:
         with _lock:
             _comparison_cache[key] = stored
         return stored
 
-    previous_table, current_table, all_precincts = _matched_tables(current, previous, area)
+    previous_table, current_table, all_precincts = _matched_tables(
+        current, previous, area, RENAMED_LISTS.get((election_id, code))
+    )
     matched = len(current_table)
 
     flows = None
@@ -964,7 +981,9 @@ def flow_inputs(election_id: str, code: str, area: Optional[str] = None) -> dict
 
     current = _municipality(election_id, code)
     previous = _results(previous_election_id(election_id))["municipalities"][code]
-    previous_table, current_table, _ = _matched_tables(current, previous, area)
+    previous_table, current_table, _ = _matched_tables(
+        current, previous, area, RENAMED_LISTS.get((election_id, code))
+    )
 
     sources, targets = flows["sources"], flows["targets"]
     x = previous_table[sources].div(previous_table["registered"], axis=0)
