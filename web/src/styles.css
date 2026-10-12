@@ -328,16 +328,6 @@ button {
   width: 100%;
 }
 
-.quiet-link {
-  font-size: 13px;
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-
-.quiet-link:hover {
-  color: var(--ink);
-}
-
 .map-link {
   display: inline-flex;
   align-items: center;
@@ -1890,9 +1880,6 @@ details.more > .more-body {
   }
   .topbar-right .select {
     width: 100%;
-  }
-  .topbar-right .quiet-link {
-    display: none;
   }
   .card {
     padding: 18px 16px;

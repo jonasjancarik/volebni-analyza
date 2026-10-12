@@ -76,8 +76,7 @@ npm --prefix web run dev
 ```
 
 For a single process, build the frontend once with `npm --prefix web run build`;
-the API then serves it from `web/dist` on port 8600. Set `VOLBY_LEGACY_URL` to
-the address of the Streamlit app to show a link to it in the header.
+the API then serves it from `web/dist` on port 8600.
 
 The map uses the free OpenFreeMap base map and needs no API key.
 
@@ -164,13 +163,10 @@ works and spreads the dots at random inside each precinct.
 ### Running in Docker
 
 `docker compose up -d --build` serves the new app on `127.0.0.1:3023` (change
-the port with `VOLBY_APP_PORT`) and the original Streamlit app on
-`127.0.0.1:3022` (`VOLBY_PORT`). The image holds only the code. Election
+the port with `VOLBY_APP_PORT`). The image holds only the code. Election
 results and precinct boundaries are not in Git, so copy `output/` and the files
-the apps read from `input/` (`input/raw/*.geojson`, `input/raw/*.gpkg`,
-`input/raw/address_points.npy` and `input/ps2025/processed/`) next to `docker-compose.yml` before starting it,
-together with `.streamlit/secrets.toml` (an empty file is enough if you have
-no CARTO key).
+the app reads from `input/` (`input/raw/*.geojson`, `input/raw/*.gpkg`,
+`input/raw/address_points.npy` and `input/ps2025/processed/`) next to `docker-compose.yml` before starting it.
 
 ### 3. Manual Data Collection (Optional)
 

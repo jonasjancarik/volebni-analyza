@@ -11,10 +11,6 @@ export interface Election {
   previousYear: string | null;
 }
 
-export interface AppConfig {
-  legacyUrl: string | null;
-}
-
 export interface CouncilRef {
   code: string;
   name: string;
@@ -199,9 +195,6 @@ async function get<T>(path: string): Promise<T> {
 
 // Results do not change while the page is open; a failed request is reported at once
 const forever = { staleTime: Infinity, retry: false } as const;
-
-export const useConfig = () =>
-  useQuery({ queryKey: ["config"], queryFn: () => get<AppConfig>("/config"), ...forever });
 
 export const useElections = () =>
   useQuery({ queryKey: ["elections"], queryFn: () => get<Election[]>("/elections"), ...forever });

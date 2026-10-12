@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
-import { useConfig, useElections } from "../api";
+import { useElections } from "../api";
 import { Search } from "./Search";
 
 export function TopBar() {
@@ -7,7 +7,6 @@ export function TopBar() {
   const location = useLocation();
   const navigate = useNavigate();
   const elections = useElections();
-  const config = useConfig();
   const available = (elections.data ?? []).filter((election) => election.hasData);
   const current = available.find((election) => election.id === electionId);
   // The landing page has its own, larger search field
@@ -35,11 +34,6 @@ export function TopBar() {
           <NavLink to="/analyzy" className="nav-link">
             Analýzy
           </NavLink>
-          {config.data?.legacyUrl && (
-            <a className="quiet-link" href={config.data.legacyUrl} target="_blank" rel="noreferrer">
-              Původní verze
-            </a>
-          )}
           {current && (
             <select
               className="select"

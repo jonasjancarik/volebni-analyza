@@ -53,12 +53,6 @@ async def not_found(_, error: store.NotFound):
     return JSONResponse(status_code=404, content={"detail": str(error)})
 
 
-@app.get("/api/config")
-def config():
-    # Address of the original Streamlit app, offered as a fallback when set
-    return {"legacyUrl": os.environ.get("VOLBY_LEGACY_URL") or None}
-
-
 @app.get("/api/elections")
 def elections():
     return store.list_elections()
