@@ -88,6 +88,8 @@ pub(crate) fn header<'a>(t: f32, label: &'static str, title: &'static str, sente
 
 pub struct AnalysisVideo<'a> {
     pub media: &'a VideoMedia,
+    /// File in `media/` that plays under the video
+    music: &'a str,
     opening: Opening,
     results: charts::Results,
     seats: charts::Seats,
@@ -101,9 +103,10 @@ pub struct AnalysisVideo<'a> {
 }
 
 impl<'a> AnalysisVideo<'a> {
-    pub fn new(media: &'a VideoMedia) -> Self {
+    pub fn new(media: &'a VideoMedia, music: &'a str) -> Self {
         Self {
             media,
+            music,
             opening: Opening,
             results: charts::Results,
             seats: charts::Seats,
@@ -162,8 +165,8 @@ impl Video for AnalysisVideo<'_> {
     }
 
     fn audio(&self) -> AudioMap<'_> {
-        // One track, made by `soundtrack.py`; its beat falls on the starts of the scenes.
-        AudioMap::from([AudioTrack::new("soundtrack.wav", Second(0.)..Eof).fade_in(0.3).fade_out(1.0)])
+        // One track. The one `soundtrack.py` makes has its beats on the starts of the scenes.
+        AudioMap::from([AudioTrack::new(self.music, Second(0.)..Eof).fade_in(0.3).fade_out(2.5)])
     }
 
     fn define_scenes(&self) -> Scenes<'_> {

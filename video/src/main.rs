@@ -1,14 +1,23 @@
+use fframes::cli::clap; // the derive below expands to `clap::...`
 use fframes::{EncoderOptions, RenderOptions, StaticMediaProvider, cli};
 use fframes_skia_renderer::{SkiaFFramesRenderer, SkiaPipelineConcurrencyPolicy, SkiaPipelineConfig, metal::SkiaMetalCtx};
 use std::process::ExitCode;
 use volby_video::{AnalysisVideo, HEIGHT, VideoMedia, WIDTH};
 
-/// The standard commands of `fframes::cli` (render, frame, strip, preview, ...).
-/// Run `cargo run --release -- --help`.
+/// Flags of this video next to the standard commands of `fframes::cli` (render, frame,
+/// strip, preview, ...). Run `cargo run --release -- --help`.
+#[derive(Debug, clap::Args)]
+struct VideoArgs {
+    /// The music: a file in `media/`
+    #[arg(long, default_value = "soundtrack.wav", global = true)]
+    music: String,
+}
+
 fn main() -> ExitCode {
-    let args = cli::parse::<cli::NoArgs>();
+    let args = cli::parse::<VideoArgs>();
     let media = VideoMedia::prepare().expect("media");
-    let video = AnalysisVideo::new(&media);
+    let music = args.app.music.clone();
+    let video = AnalysisVideo::new(&media, &music);
     let gpu = SkiaMetalCtx::new(WIDTH, HEIGHT).expect("GPU context");
 
     cli::new(

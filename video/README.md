@@ -30,6 +30,9 @@ cd video && touch src/lib.rs                 # so that changed maps and music ar
 cargo run --release -- render -o praha-2026.mp4
 ```
 
+Another track can play under the same picture: put the file in `media/`, build again and
+render with `--music <file name>`.
+
 To look at a part without rendering everything: `cargo run --release -- frame 33s`
 writes one frame, `strip Flows -n 8` a contact sheet of a scene, `inspect` reports text
 that runs off the picture, and `preview` plays the video.
