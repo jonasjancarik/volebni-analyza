@@ -292,7 +292,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
 
   const sameLists = comparison.data?.sameLists ?? [];
   const rampOptions = [
-    { id: "", label: "Od světle modré po tmavou", colors: SEQUENTIAL },
+    { id: "", label: "Světle až tmavě modrá", colors: SEQUENTIAL },
     ...Object.entries(RAMPS).map(([id, item]) => ({ id, ...item })),
   ];
   const ownColorLabel =
@@ -311,8 +311,8 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
   return (
     <div className="map-layout">
       <aside className="map-side">
-        <div>
-          <div className="field-label" style={{ marginBottom: 6 }}>
+        <div className="field">
+          <div className="field-label">
             Co mapa ukazuje
           </div>
           <div className="segmented vertical" role="group" aria-label="Co mapa ukazuje">
@@ -323,8 +323,8 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
             ))}
           </div>
         </div>
-        <div>
-          <div className="field-label" style={{ marginBottom: 6 }}>
+        <div className="field">
+          <div className="field-label">
             Jak to mapa ukazuje
           </div>
           <div className="segmented vertical" role="group" aria-label="Jak to mapa ukazuje">
@@ -340,7 +340,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
           </div>
         </div>
         {dots && (
-          <label style={{ display: "grid", gap: 4 }}>
+          <label className="field">
             <span className="field-label">Jedna tečka je</span>
             <select
               className="select block"
@@ -362,7 +362,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
           </label>
         )}
         {asCircles && (
-          <div style={{ display: "grid", gap: 8 }}>
+          <div className="field">
             <p className="note">
               Každý okrsek je kruh, jehož plocha odpovídá počtu hlasů. Velký okrsek s málo voliči tak na mapě nezabere víc
               místa než malý okrsek, kde jich je hodně.
@@ -379,7 +379,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
           </div>
         )}
         {scaled && (
-          <div style={{ display: "grid", gap: 4 }}>
+          <div className="field">
             <span className="field-label">Barvy</span>
             <Dropdown
               label="Barvy mapy"
@@ -452,7 +452,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
           </p>
         )}
         {metric === "zmena" && (
-          <label style={{ display: "grid", gap: 4 }}>
+          <label className="field">
             <span className="field-label">Co porovnat</span>
             <select className="select block" value={changeOf ?? TURNOUT} onChange={(event) => setChangeOf(event.target.value === TURNOUT ? null : event.target.value)}>
               <option value={TURNOUT}>Volební účast</option>
@@ -466,7 +466,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
           </label>
         )}
         {areas.length > 1 && (
-          <label style={{ display: "grid", gap: 4 }}>
+          <label className="field">
             <span className="field-label">{parliamentary ? "Obec" : "Městská část"}</span>
             <select className="select block" value={area ?? ""} onChange={(event) => setArea(event.target.value || null)}>
               <option value="">{parliamentary ? "Celý kraj" : "Celé město"}</option>

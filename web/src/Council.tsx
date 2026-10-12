@@ -4,7 +4,7 @@ import { type Council, useCouncil } from "./api";
 import { listColors } from "./colors";
 import { Dropdown } from "./components/Dropdown";
 import { Loading, Problem } from "./components/State";
-import { listName, plural, truncate } from "./format";
+import { listName, plural } from "./format";
 import { useParam } from "./hooks";
 import { CandidatesTab } from "./tabs/CandidatesTab";
 import { DataTab } from "./tabs/DataTab";
@@ -98,7 +98,7 @@ export function CouncilPage({ electionId }: { electionId: string }) {
         <div className="council-title">
           <h1>{data.name}</h1>
           {data.lists.length > 1 && (
-            <div className="focus-picker">
+            <div className={`focus-picker${several && combo.length > 1 ? " wide" : ""}`}>
               <span className="field-label">
                 {several
                   ? parliamentary
@@ -112,15 +112,23 @@ export function CouncilPage({ electionId }: { electionId: string }) {
                 align="right"
                 label={parliamentary ? "Výběr strany" : "Výběr kandidátky"}
                 button={
-                  <>
-                    <span className="swatch" style={{ background: colors[focus] }} />
-                    <span className="dropdown-text">{truncate(listName(data.lists[focus].name), 44)}</span>
-                    {several && combo.length > 1 && (
-                      <span className="dropdown-more">
-                        + {combo.length - 1} {plural(combo.length - 1, "další", "další", "dalších")}
+                  // Several picked lists share the room, each under a shorter name
+                  (several ? combo.slice(0, 3) : [focus])
+                    .map((index) => (
+                      <span className="dropdown-chip" key={index}>
+                        <span className="swatch" style={{ background: colors[index] }} />
+                        <span className="dropdown-text">{listName(data.lists[index].name)}</span>
                       </span>
-                    )}
-                  </>
+                    ))
+                    .concat(
+                      several && combo.length > 3
+                        ? [
+                            <span className="dropdown-more" key="more">
+                              + {combo.length - 3} {plural(combo.length - 3, "další", "další", "dalších")}
+                            </span>,
+                          ]
+                        : [],
+                    )
                 }
               >
                 {(close) => (

@@ -16,9 +16,9 @@ export const NON_VOTER = "var(--series-nonvoter)";
 export const SEQUENTIAL = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
 /** Low → high ramps the map can use in place of SEQUENTIAL */
 export const RAMPS: Record<string, { label: string; colors: string[] }> = {
-  zelena: { label: "Od červené po zelenou", colors: ["#d73027", "#fc8d59", "#fee08b", "#ffffbf", "#d9ef8b", "#91cf60", "#1a9850"] },
-  fialova: { label: "Od žluté po fialovou", colors: ["#fde725", "#90d743", "#35b779", "#21918c", "#31688e", "#443983", "#440154"] },
-  cervena: { label: "Od žluté po červenou", colors: ["#ffffb2", "#fed976", "#feb24c", "#fd8d3c", "#fc4e2a", "#e31a1c", "#b10026"] },
+  zelena: { label: "Červená až zelená", colors: ["#d73027", "#fc8d59", "#fee08b", "#ffffbf", "#d9ef8b", "#91cf60", "#1a9850"] },
+  fialova: { label: "Žlutá až fialová", colors: ["#fde725", "#90d743", "#35b779", "#21918c", "#31688e", "#443983", "#440154"] },
+  cervena: { label: "Žlutá až červená", colors: ["#ffffb2", "#fed976", "#feb24c", "#fd8d3c", "#fc4e2a", "#e31a1c", "#b10026"] },
 };
 /** Loss → no change → gain */
 export const DIVERGING = ["#a82a2a", "#e34948", "#f2a9a3", "#e9e8e3", "#86b6ef", "#2a78d6", "#184f95"];

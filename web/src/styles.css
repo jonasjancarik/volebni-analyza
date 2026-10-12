@@ -210,6 +210,8 @@ button {
 
 .dropdown-button {
   display: flex;
+  width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   text-align: left;
@@ -222,6 +224,18 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dropdown-chip {
+  flex: 0 1 auto;
+  min-width: 48px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dropdown-chip:only-child {
+  flex: 1;
 }
 
 .dropdown-more {
@@ -658,6 +672,10 @@ button {
   gap: 4px;
   min-width: 240px;
   max-width: 340px;
+}
+
+.focus-picker.wide {
+  max-width: min(560px, 100%);
 }
 
 .field-label {
@@ -1266,9 +1284,21 @@ table.data tbody tr.selected td {
 
 .map-side {
   display: grid;
-  gap: 18px;
+  /* Keeps a long choice from pushing the panel over the map */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
   position: sticky;
   top: 80px;
+}
+
+.map-side .field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.map-side > .note + .note {
+  margin-top: 0;
 }
 
 .map-frame {
@@ -1921,4 +1951,8 @@ details.more > .more-body {
 .map-detail .result-name .swatch,
 .drawer .result-name .swatch {
   margin-top: 4px;
+}
+
+.dropdown-chip + .dropdown-chip {
+  margin-left: 6px;
 }
