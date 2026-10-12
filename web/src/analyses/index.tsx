@@ -74,7 +74,7 @@ export const ANALYSES: AnalysisEntry[] = [
     election: "kv2026",
     kicker: "Komunální volby 2026 · Praha 1",
     title: "Praha 1 po okrscích",
-    lede: "Roztříštěné zastupitelstvo, ve kterém o posledním mandátu rozhodlo třináct voličů, a centrum města na dvou hlasovacích lístcích.",
+    lede: "Roztříštěné zastupitelstvo, ve kterém o posledním mandátu rozhodlo třináct voličů, a centrum města, které volí radnici jinak než magistrát.",
     updated: "12. října 2026",
     body: (data) => <Prague1 data={data as Prague1Analysis} />,
   },

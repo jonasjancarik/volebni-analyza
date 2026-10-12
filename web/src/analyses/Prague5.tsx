@@ -470,7 +470,7 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       )}
 
       <section className="prose">
-        <h2>Dva lístky, stejní voliči</h2>
+        <h2>Dvoje volby, stejní voliči</h2>
         <p>
           Každý volič dostal dva hlasovací lístky: do zastupitelstva Prahy 5 a do zastupitelstva hlavního města.
           Jde tak srovnat, jak titíž lidé hlasovali o radnici a o magistrátu.
@@ -478,7 +478,7 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       </section>
 
       <Figure
-        title="Podíl hlasů na obou lístcích"
+        title="Podíl hlasů v obojích volbách"
         sub={`Podíl hlasů v Praze 5 v roce ${years.current}. Rozdíl říká, o kolik víc dostala kandidátka do zastupitelstva Prahy 5 než do pražského.`}
         note={`Rozdíl ve voličích je rozdíl podílů krát počet odevzdaných obálek. V roce ${years.previous} SEN do pražského zastupitelstva nekandidoval a ODS s TOP 09 a KDU-ČSL šly do obou voleb v jiných sestavách, proto u nich srovnání chybí.`}
       >
@@ -493,8 +493,8 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
         </p>
         <p>
           Piráti dostali do zastupitelstva Prahy 5 o {fmtNum(Math.abs(gap("pirati")))} bodu méně než do pražského.
-          Před čtyřmi lety byl rozdíl {fmtNum(Math.abs(ballot("pirati").previousGap ?? 0))} bodu; tehdy na pražském
-          lístku chyběl SEN, který letos kandidoval do obou zastupitelstev a v Praze 5 na něm dostal{" "}
+          Před čtyřmi lety byl rozdíl {fmtNum(Math.abs(ballot("pirati").previousGap ?? 0))} bodu; tehdy do pražského
+          zastupitelstva nekandidoval SEN, který letos šel do obojích voleb a v Praze 5 v těch pražských dostal{" "}
           {fmtPct(district.city.sen ?? 0)}, v celé Praze {fmtPct(data.cityWide.now.sen ?? 0)}.
         </p>
         <p>Jsou to rozdíly součtů; neříkají, kdo komu hlas dal.</p>
@@ -730,7 +730,7 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       <section className="prose">
         <h2>Co z toho plyne</h2>
         <p>
-          Místně Piráti ztratili méně než na pražském lístku: do zastupitelstva Prahy 5 klesli z{" "}
+          Do místního zastupitelstva Piráti ztratili méně než do pražského: v Praze 5 klesli z{" "}
           {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}, do pražského v týchž okrscích z{" "}
           {fmtNum(district.previousCity.pirati ?? 0)} na {fmtPct(district.city.pirati ?? 0)}.
         </p>
@@ -741,10 +741,10 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
           </p>
         )}
         <p>
-          STAN má na místním lístku o {fmtPct((1 - ballot("stan").local / (ballot("stan").city ?? 1)) * 100, 0)} méně
-          hlasů než na pražském. Nejméně tolik jeho pražských voličů volí do zastupitelstva Prahy 5 někoho jiného.
+          STAN má do místního zastupitelstva o {fmtPct((1 - ballot("stan").local / (ballot("stan").city ?? 1)) * 100, 0)} méně
+          hlasů než do pražského. Nejméně tolik jeho pražských voličů volí do zastupitelstva Prahy 5 někoho jiného.
         </p>
-        <p>Proč voliči hlasovali na obou lístcích různě a proč Piráty opouštěli, z výsledků vyčíst nejde.</p>
+        <p>Proč voliči hlasovali v obojích volbách různě a proč Piráty opouštěli, z výsledků vyčíst nejde.</p>
       </section>
 
       <section className="card method-notes">

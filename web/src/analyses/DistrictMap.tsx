@@ -63,7 +63,7 @@ export default function DistrictMap({ data, colorOf, shares, groupColors, more =
     },
     {
       key: "pirati-ballots",
-      label: "Piráti na dvou lístcích",
+      label: "Piráti místně a do Prahy",
       legend: "Piráti do zastupitelstva městské části proti pražskému; rozdíl v bodech",
       scale: "change",
       value: (precinct) => localOverCity(precinct, "pirati"),

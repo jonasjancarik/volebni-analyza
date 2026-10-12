@@ -209,7 +209,7 @@ export function Prague1({ data }: { data: Prague1Analysis }) {
         <p>
           STAN s KDU-ČSL dostal do místního zastupitelstva {fmtPct(ballot("stanKdu").local)}, STAN do pražského od
           stejných voličů {fmtPct(ballot("stanKdu").city ?? 0)}. Praha 1 Sobě má místně{" "}
-          {fmtPct(ballot("praha1Sobe").local)}, Praha Sobě na pražském lístku {fmtPct(ballot("praha1Sobe").city ?? 0)}.
+          {fmtPct(ballot("praha1Sobe").local)}, Praha Sobě do pražského {fmtPct(ballot("praha1Sobe").city ?? 0)}.
         </p>
       </section>
 
@@ -280,7 +280,7 @@ export function Prague1({ data }: { data: Prague1Analysis }) {
       </section>
 
       <section className="prose">
-        <h2>Dva lístky, stejní voliči</h2>
+        <h2>Dvoje volby, stejní voliči</h2>
         <p>
           Každý volič dostal dva hlasovací lístky: do zastupitelstva Prahy 1 a do zastupitelstva hlavního města.
           Jde tak srovnat, jak titíž lidé hlasovali o radnici a o magistrátu.
@@ -288,7 +288,7 @@ export function Prague1({ data }: { data: Prague1Analysis }) {
       </section>
 
       <Figure
-        title="Podíl hlasů na obou lístcích"
+        title="Podíl hlasů v obojích volbách"
         sub={`Podíl hlasů v Praze 1 v roce ${years.current}. Rozdíl říká, o kolik víc dostala kandidátka do zastupitelstva Prahy 1 než do pražského.`}
         note={`Rozdíl ve voličích je rozdíl podílů krát počet odevzdaných obálek. ODS a TOP 09 šly v roce ${years.previous} do pražských voleb společně s KDU-ČSL, proto u nich srovnání chybí.`}
       >
@@ -304,13 +304,13 @@ export function Prague1({ data }: { data: Prague1Analysis }) {
           {fmtNum(ballot("stanKdu").previousGap ?? 0)}.
         </p>
         <p>
-          Praha 1 Sobě má místně méně než Praha Sobě na pražském lístku {inCount(lowerLocally("praha1Sobe", "prahaSobe"))}{" "}
+          Praha 1 Sobě má místně méně než Praha Sobě do pražského zastupitelstva {inCount(lowerLocally("praha1Sobe", "prahaSobe"))}{" "}
           z {precincts.length} okrsků; v roce {years.previous} měla místně víc{" "}
           {inCount(precincts.length - lowerLocally("praha1Sobe", "prahaSobe", true))}. Místně naopak získávají ODS
           s TOP 09 ({points(gap("ods"))} proti Spolu) a kandidátky, které do pražského zastupitelstva nešly.
         </p>
         <p>
-          Piráti mají na obou lístcích skoro stejně, letos i před čtyřmi lety. Jsou to rozdíly součtů; neříkají, kdo
+          Piráti mají v obojích volbách skoro stejně, letos i před čtyřmi lety. Jsou to rozdíly součtů; neříkají, kdo
           komu hlas dal.
         </p>
       </section>
@@ -428,7 +428,7 @@ export function Prague1({ data }: { data: Prague1Analysis }) {
       <section className="prose">
         <h2>Co z toho plyne</h2>
         <p>
-          Piráti ztratili v Praze 1 na místním i na pražském lístku stejně. Jejich místní výsledek tedy odpovídá
+          Piráti ztratili v Praze 1 do místního i do pražského zastupitelstva stejně. Jejich místní výsledek tedy odpovídá
           tomu, jak strana v centru dopadla celkově.
         </p>
         <p>
@@ -442,7 +442,7 @@ export function Prague1({ data }: { data: Prague1Analysis }) {
           {fmtInt(margin("praha1Sobe")?.voters ?? 0)}.
         </p>
         <p>
-          Praha Sobě i STAN mají v centru na pražském lístku výrazně víc voličů, než kolik jich volí jejich místní
+          Prahu Sobě i STAN volí v centru do pražského zastupitelstva výrazně víc lidí než jejich místní
           kandidátky. Proč, z výsledků vyčíst nejde.
         </p>
       </section>
