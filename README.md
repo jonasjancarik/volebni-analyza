@@ -112,10 +112,11 @@ that would end the two lists' majority. The third one weighs what would have
 changed the result: how many seats the voters of SEN would bring on another
 list depending on how many of them follow, what more voters or voters coming
 back from STAN would take, and the combinations of these. The fourth one looks at
-geography: support by distance from the centre (as the crow flies, from the
-middle of a precinct's addresses) and, in the outer city, by voters per
-address as a rough sign of family houses or housing estates. It needs
-`input/raw/address_points.npy` for the second part.
+geography: support by travel time to the centre by public transport and by
+what people live in (older apartment buildings, panel housing estates, newer
+apartment buildings, family houses), with a map of the precincts the reader
+can recolour, radar charts and a chart of all precincts. It needs the two
+files described under "Travel times and buildings" below.
 
 An analysis has two halves that are kept apart on purpose:
 
@@ -171,13 +172,43 @@ uv run python src/address_points.py
 This writes `input/raw/address_points.npy`. Without the file the map still
 works and spreads the dots at random inside each precinct.
 
+### Travel times and buildings
+
+One analysis places every precinct by how long it takes to the centre of
+Prague and by the buildings its people live in. Both come from open data that
+two scripts download and reduce to small files:
+
+```bash
+# Timetable of Prague Integrated Transport (GTFS, about 50 MB), under a minute
+uv run python src/transit_times.py
+
+# Buildings of Prague from the address register (RÚIAN, about 48 MB), a few minutes
+uv run python src/buildings.py --municipality 554782
+```
+
+`transit_times.py` writes `input/raw/transit_minutes.npy`: for every stop, the
+minutes to Můstek on a working morning. It scans the timetable backwards from
+the arrival time, so the number is how long before a deadline one has to be at
+the stop, averaged over deadlines between 7:30 and 9:00; waiting and changes
+are in it. `buildings.py` writes `input/raw/buildings_554782.npy`: position,
+flats, floors, use, construction and year of every building.
+
+`src/places.py` puts the two together with the outlines of the precincts. A
+precinct's travel time is that of its middle flat: on foot to the stop that
+gets to the centre soonest, then by public transport. Its kind of housing is
+the kind of building that holds at least half of its flats, otherwise it is
+mixed. Apartment buildings built of panels are housing estates; the others
+are split at 1990. Without the two files the analysis says what is missing.
+
 ### Running in Docker
 
 `docker compose up -d --build` serves the new app on `127.0.0.1:3023` (change
 the port with `VOLBY_APP_PORT`). The image holds only the code. Election
 results and precinct boundaries are not in Git, so copy `output/` and the files
 the app reads from `input/` (`input/raw/*.geojson`, `input/raw/*.gpkg`,
-`input/raw/address_points.npy` and `input/ps2025/processed/`) next to `docker-compose.yml` before starting it.
+`input/raw/address_points.npy`, `input/raw/transit_minutes.npy`,
+`input/raw/buildings_554782.npy` and `input/ps2025/processed/`) next to
+`docker-compose.yml` before starting it.
 
 ### 3. Manual Data Collection (Optional)
 

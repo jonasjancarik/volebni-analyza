@@ -1,39 +1,35 @@
-import { Link } from "react-router-dom";
-import type { Summary } from "../api";
-import { fmtNum, fmtPct } from "../format";
-import { useWidth } from "../hooks";
+import { lazy, Suspense, useState } from "react";
+import { Loading } from "../components/State";
+import { fmtInt, fmtNum, fmtPct } from "../format";
+import { useTooltip, useWidth } from "../hooks";
 import { Figure, groupColors, type HeatColumn, HeatTable, label, thousands } from "./blocks";
-import type { FollowedList, VoterGroup } from "./types";
+import {
+  bandName,
+  type CentreAnalysis,
+  kindColor,
+  type KindGroup,
+  kindName,
+  KINDS,
+  type Metric,
+  type Place,
+  type PrecinctPoint,
+  SHARES,
+  type TimeBand,
+  type When,
+} from "./centreShared";
+import type { VoterGroup } from "./types";
+import "./centre.css";
 
-type When = "then" | "mid" | "now";
-type Place = VoterGroup & { turnout: Partial<Record<When, number>> };
-type Band = Place & { from: number; to: number | null };
-type Housing = Place & { perAddress: [number, number] };
-
-export interface CentreAnalysis {
-  council: { election: string; code: string; name: string };
-  years: { current: string; previous: string; parliamentary: string };
-  summary: Summary;
-  lists: FollowedList[];
-  city: Place;
-  /** Precincts by kilometres from the centre, from the nearest */
-  bands: Band[];
-  /** From how many kilometres a precinct counts as the outer city */
-  outerFrom: number;
-  /** Thirds of the outer and the inner precincts by voters per address, from family houses to housing estates */
-  outer: Housing[];
-  inner: Housing[];
-}
-
-const HOUSING = ["Rodinné domy", "Smíšená zástavba", "Sídliště"];
+// The map library is large; it loads only when the article is opened
+const CentreMap = lazy(() => import("./CentreMap"));
 
 const voters = (group: VoterGroup, key: string, when: When) => group.voters[key]?.[when] ?? 0;
 const share = (group: VoterGroup, key: string, when: When = "now") =>
   (voters(group, key, when) / group.voted[when]) * 100;
 const camp = (group: VoterGroup) => voters(group, "pirati", "now") + voters(group, "prahaSobe", "now");
+const campShare = (group: VoterGroup) => (camp(group) / group.voted.now) * 100;
 /** Both lists' voters now against the Pirates' votes in the parliamentary election, in percent */
 const campOverPirati = (group: VoterGroup) => (camp(group) / voters(group, "pirati", "mid")) * 100;
-const bandName = (band: Band) => (band.to == null ? `${band.from} a víc` : `${band.from}–${band.to}`);
 const pct = (value: number) => fmtNum(value);
 const inThousands = (value: number) => fmtNum(value / 1000, 0);
 
@@ -58,17 +54,12 @@ function BandLines({ labels, series, axis }: { labels: string[]; series: Series[
       <div className="legend" style={{ marginBottom: 10 }}>
         {series.map((item) => (
           <span className="legend-item" key={item.name}>
-            <span
-              style={{
-                width: 18,
-                borderTop: `3px ${item.dashed ? "dashed" : "solid"} ${item.color}`,
-              }}
-            />
+            <span style={{ width: 18, borderTop: `3px ${item.dashed ? "dashed" : "solid"} ${item.color}` }} />
             {item.name}
           </span>
         ))}
       </div>
-      <svg className="chart" width={width} height={height} role="img" aria-label="Podíl hlasů podle vzdálenosti od centra">
+      <svg className="chart" width={width} height={height} role="img" aria-label="Podíl hlasů podle doby cesty do centra">
         {ticks.map((tick) => (
           <g key={tick}>
             <line className={tick === 0 ? "axis-line" : "grid-line"} x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} />
@@ -97,7 +88,7 @@ function BandLines({ labels, series, axis }: { labels: string[]; series: Series[
             />
             {item.values.map((value, index) => (
               <circle key={index} cx={x(index)} cy={y(value)} r={3.5} fill={item.color}>
-                <title>{`${item.name}, ${labels[index]} km: ${fmtPct(value)}`}</title>
+                <title>{`${item.name}, ${labels[index]} minut: ${fmtPct(value)}`}</title>
               </circle>
             ))}
           </g>
@@ -107,32 +98,183 @@ function BandLines({ labels, series, axis }: { labels: string[]; series: Series[
   );
 }
 
+interface Spoke {
+  name: string;
+  /** Percent of the city's value; 100 is the same as the whole city */
+  value: number;
+  text: string;
+}
+
+/** One kind of place against the whole city: the further a corner reaches past the ring, the more it has of that. */
+function Radar({ spokes, color }: { spokes: Spoke[]; color: string }) {
+  // Wider than tall, so that the names beside it have room
+  const [width, height] = [290, 210];
+  const reach = 70;
+  // The middle of the chart is half the city's value and the edge one and a half
+  const radius = (value: number) => (Math.max(50, Math.min(150, value)) - 50) / 100 * reach;
+  const point = (index: number, distance: number) => {
+    const angle = (index / spokes.length) * 2 * Math.PI - Math.PI / 2;
+    return [width / 2 + Math.cos(angle) * distance, height / 2 + Math.sin(angle) * distance];
+  };
+  const ring = (value: number) => spokes.map((_, index) => point(index, radius(value)).join(",")).join(" ");
+  return (
+    <svg className="chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Srovnání s celým městem">
+      <polygon points={ring(150)} fill="none" className="grid-line" />
+      <polygon points={ring(50 + 100 / 3)} fill="none" className="grid-line" />
+      {spokes.map((spoke, index) => {
+        const [x, y] = point(index, reach);
+        const [labelX, labelY] = point(index, reach + 14);
+        return (
+          <g key={spoke.name}>
+            <line className="grid-line" x1={width / 2} y1={height / 2} x2={x} y2={y} />
+            <text
+              className="label"
+              x={labelX}
+              y={labelY}
+              dy="0.35em"
+              textAnchor={Math.abs(labelX - width / 2) < 8 ? "middle" : labelX > width / 2 ? "start" : "end"}
+            >
+              {spoke.name}
+              <title>{spoke.text}</title>
+            </text>
+          </g>
+        );
+      })}
+      <polygon points={ring(100)} fill="none" stroke="var(--ink-3)" strokeWidth={1.2} strokeDasharray="4 3" />
+      <polygon
+        points={spokes.map((spoke, index) => point(index, radius(spoke.value)).join(",")).join(" ")}
+        fill={color}
+        fillOpacity={0.28}
+        stroke={color}
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+      {spokes.map((spoke, index) => {
+        const [x, y] = point(index, radius(spoke.value));
+        return (
+          <circle key={spoke.name} cx={x} cy={y} r={3} fill={color}>
+            <title>{spoke.text}</title>
+          </circle>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** Every precinct by travel time and a share the reader picks, coloured by its housing. */
+function PrecinctScatter({ precincts }: { precincts: PrecinctPoint[] }) {
+  const [ref, width] = useWidth<HTMLDivElement>(720);
+  const [picked, setPicked] = useState(SHARES[0].key);
+  const [only, setOnly] = useState<string | null>(null);
+  const tooltip = useTooltip();
+  const metric: Metric = SHARES.find((item) => item.key === picked) ?? SHARES[0];
+  const height = 380;
+  const [left, right, top, bottom] = [40, 12, 10, 42];
+  const points = precincts
+    .map((precinct) => ({ precinct, value: metric.value(precinct) }))
+    .filter((point): point is { precinct: PrecinctPoint; value: number } => point.value != null);
+  const farthest = 60;
+  const highest = Math.ceil(Math.max(...points.map((point) => point.value)) / 10) * 10;
+  const x = (minutes: number) => left + (Math.min(minutes, farthest) / farthest) * (width - left - right);
+  const y = (value: number) => top + (1 - value / highest) * (height - top - bottom);
+  const largest = Math.max(...precincts.map((precinct) => precinct.registered));
+  return (
+    <div ref={ref}>
+      <div className="toolbar" style={{ marginBottom: 12 }}>
+        <div className="segmented" role="group" aria-label="Co má graf ukazovat">
+          {SHARES.map((item) => (
+            <button key={item.key} aria-pressed={picked === item.key} onClick={() => setPicked(item.key)}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="legend" style={{ marginBottom: 6 }}>
+        {Object.entries(KINDS).map(([kind, item]) => (
+          <button
+            key={kind}
+            className="legend-item text-button"
+            style={{ padding: 0, fontWeight: 500, color: "var(--ink-2)", opacity: only && only !== kind ? 0.45 : 1 }}
+            onClick={() => setOnly(only === kind ? null : kind)}
+            aria-pressed={only === kind}
+          >
+            <span className="swatch" style={{ background: item.color }} />
+            {item.name}
+          </button>
+        ))}
+      </div>
+      <svg className="chart" width={width} height={height} role="img" aria-label={`Okrsky podle doby cesty a ${metric.label}`}>
+        {Array.from({ length: highest / 10 + 1 }, (_, index) => index * 10).map((tick) => (
+          <g key={tick}>
+            <line className={tick === 0 ? "axis-line" : "grid-line"} x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} />
+            <text x={left - 8} y={y(tick)} dy="0.35em" textAnchor="end">
+              {tick} %
+            </text>
+          </g>
+        ))}
+        {[0, 10, 20, 30, 40, 50, 60].map((tick) => (
+          <text key={tick} x={x(tick)} y={height - bottom + 16} textAnchor="middle">
+            {tick === farthest ? `${tick}+` : tick}
+          </text>
+        ))}
+        <text x={(left + width - right) / 2} y={height - 6} textAnchor="middle">
+          minut do centra MHD
+        </text>
+        {points.map(({ precinct, value }) => (
+          <circle
+            key={precinct.id}
+            className="scatter-dot"
+            cx={x(precinct.minutes)}
+            cy={y(value)}
+            r={2 + Math.sqrt(precinct.registered / largest) * 3.5}
+            fill={kindColor(precinct.kind)}
+            opacity={only ? (only === precinct.kind ? 0.85 : 0.06) : 0.6}
+            onMouseMove={(event) =>
+              tooltip.show(
+                event,
+                <>
+                  <div className="t-sub">Okrsek {precinct.id}</div>
+                  <div className="t-title">
+                    {metric.label} {metric.format(value)}
+                  </div>
+                  <div className="t-sub">
+                    {kindName(precinct.kind)}, {fmtNum(precinct.minutes, 0)} minut do centra
+                  </div>
+                </>,
+              )
+            }
+            onMouseLeave={tooltip.hide}
+          />
+        ))}
+      </svg>
+      {tooltip.element}
+    </div>
+  );
+}
+
 export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
-  const { years, bands, outer, city } = data;
+  const { years, times, kinds, city } = data;
   const colorOf = groupColors(data.lists);
-  const [nearest, farthest] = [bands[0], bands[bands.length - 1]];
-  const beyond = bands.filter((band) => band.from >= 4);
-  const total = (rows: VoterGroup[], value: (row: VoterGroup) => number) => rows.reduce((sum, row) => sum + value(row), 0);
-  const livingBeyond = (total(beyond, (row) => row.registered) / city.registered) * 100;
-  const votesBeyond = (total(beyond, camp) / camp(city)) * 100;
-  const ratios = bands.map(campOverPirati);
-  const [houses, estates] = [outer[0], outer[outer.length - 1]];
-  const denseInner = data.inner[data.inner.length - 1];
-  const councilPath = `/${data.council.election}/${data.council.code}`;
-
+  const [nearest, farthest] = [times[0], times[times.length - 1]];
+  const kind = (key: string) => kinds.find((item) => item.kind === key);
+  const [older, panel, houses] = [kind("older"), kind("panel"), kind("houses")];
+  const apartments = kinds.filter((item) => item.kind !== "houses" && item.kind !== "mixed");
+  const ratios = times.map(campOverPirati);
   const lists = ["prahaSobe", "pirati", "stan", "spolu", "ano"];
-  const shareColumns = <Row extends VoterGroup>(group: string): HeatColumn<Row>[] =>
-    lists.map((key) => ({
-      group,
-      head: label(key),
-      value: (row: Row) => share(row, key),
-      format: pct,
-      tint: colorOf(key),
-    }));
 
-  const bandColumns: HeatColumn<Band>[] = [
+  // The same travel time, another kind of housing
+  const rings = [...new Map(data.kindsByTime.map((item) => [`${item.from}`, item])).values()].sort((a, b) => a.from - b.from);
+  const atTime = (key: string, from: number) => data.kindsByTime.find((item) => item.kind === key && item.from === from);
+  const middleRing = rings[Math.min(1, rings.length - 1)];
+  const olderMiddle = middleRing && atTime("older", middleRing.from);
+  const panelMiddle = middleRing && atTime("panel", middleRing.from);
+
+  const shareColumns = <Row extends VoterGroup>(group: string): HeatColumn<Row>[] =>
+    lists.map((key) => ({ group, head: label(key), value: (row: Row) => share(row, key), format: pct, tint: colorOf(key) }));
+
+  const timeColumns: HeatColumn<TimeBand>[] = [
     { head: "Zapsaní voliči (tis.)", value: (row) => row.registered, format: inThousands },
-    ...shareColumns<Band>(`Podíl hlasů ${years.current}`),
+    ...shareColumns<TimeBand>(`Podíl hlasů ${years.current}`),
     {
       group: `Sněmovna ${years.parliamentary}`,
       head: "Piráti",
@@ -140,19 +282,25 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
       format: pct,
       tint: colorOf("pirati"),
     },
-    {
-      head: "Obě proti sněmovním hlasům Pirátů",
-      value: campOverPirati,
-      format: (value) => fmtPct(value, 0),
-    },
+    { head: "Obě proti sněmovním hlasům Pirátů", value: campOverPirati, format: (value) => fmtPct(value, 0) },
   ];
 
-  const housingColumns: HeatColumn<Housing>[] = [
+  const kindColumns: HeatColumn<KindGroup>[] = [
     { head: "Zapsaní voliči (tis.)", value: (row) => row.registered, format: inThousands },
+    { head: "Minut do centra", value: (row) => row.minutes, format: (value) => fmtNum(value, 0) },
     { group: "Účast", head: years.parliamentary, value: (row) => row.turnout.mid ?? 0, format: pct },
     { group: "Účast", head: years.current, value: (row) => row.turnout.now ?? 0, format: pct, tint: "var(--series-1)" },
-    ...shareColumns<Housing>(`Podíl hlasů ${years.current}`),
+    ...shareColumns<KindGroup>(`Podíl hlasů ${years.current}`),
   ];
+
+  const spokes = (group: Place) => [
+    { name: "Účast", now: group.turnout.now ?? 0, all: city.turnout.now ?? 1 },
+    ...lists.map((key) => ({ name: label(key), now: share(group, key), all: share(city, key) })),
+  ].map((item) => ({
+    name: item.name,
+    value: (item.now / item.all) * 100,
+    text: `${item.name}: ${fmtPct(item.now)}, v celém městě ${fmtPct(item.all)}`,
+  }));
 
   return (
     <>
@@ -161,7 +309,9 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
           <div className="value num">
             {fmtNum(share(nearest, "prahaSobe"), 0)} → {fmtPct(share(farthest, "prahaSobe"), 0)}
           </div>
-          <div className="label">Praha Sobě od centra k okraji města</div>
+          <div className="label">
+            Praha Sobě v okrscích do {nearest.to} minut od centra a v těch nad {farthest.from} minut
+          </div>
         </div>
         <div className="tile">
           <div className="value num">
@@ -172,15 +322,21 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
             {fmtPct(share(farthest, "pirati", "mid"), 0)}
           </div>
         </div>
-        <div className="tile">
-          <div className="value num">{fmtPct(livingBeyond, 0)}</div>
-          <div className="label">voličů žije dál než 4 km od centra</div>
-        </div>
-        {estates && houses && (
+        {panel && (
           <div className="tile">
-            <div className="value num">{fmtPct(estates.turnout.now ?? 0, 0)}</div>
+            <div className="value num">{fmtPct((panel.registered / city.registered) * 100, 0)}</div>
             <div className="label">
-              účast na okrajových sídlištích; ve čtvrtích rodinných domů {fmtPct(houses.turnout.now ?? 0, 0)}
+              voličů bydlí v okrscích panelových domů; Praha Sobě tam má {fmtPct(share(panel, "prahaSobe"))}
+            </div>
+          </div>
+        )}
+        {houses && (
+          <div className="tile">
+            <div className="value num">{fmtPct(houses.turnout.now ?? 0, 0)}</div>
+            <div className="label">
+              účast ve čtvrtích rodinných domů; v bytových domech{" "}
+              {fmtNum(Math.min(...apartments.map((item) => item.turnout.now ?? 0)), 0)}–
+              {fmtPct(Math.max(...apartments.map((item) => item.turnout.now ?? 0)), 0)}
             </div>
           </div>
         )}
@@ -189,39 +345,53 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
       <section className="prose">
         <h2>Shrnutí</h2>
         <p>
-          Podpora Prahy Sobě klesá od centra k okraji na polovinu. U Pirátů je pokles v komunálních volbách mírný, ve
-          sněmovních strmý.
+          Podpora Prahy Sobě klesá s dobou cesty do centra na polovinu. U Pirátů je pokles v komunálních volbách
+          mírný, ve sněmovních strmý.
         </p>
-        <p>
-          Většina hlasů je přesto mimo centrum. Dál než 4 km žije {fmtPct(livingBeyond, 0)} voličů a obě kandidátky
-          tam berou {fmtPct(votesBeyond, 0)} svých hlasů.
-        </p>
-        {estates && houses && (
+        {olderMiddle && panelMiddle && (
           <p>
-            Okraj ale není jeden. Na sídlištích je nízká účast, slabý STAN i Spolu a silné ANO. Ve čtvrtích rodinných
-            domů je účast vysoká a STAN se Spolu mají {fmtPct(share(houses, "stan") + share(houses, "spolu"), 0)}{" "}
-            hlasů. Prostor je hlavně na sídlištích, a to v účasti.
+            Víc než doba cesty ale rozhoduje, v čem lidé bydlí. Při stejném dojezdu {bandName(middleRing)} minut má
+            Praha Sobě ve starších bytových domech {fmtPct(share(olderMiddle, "prahaSobe"), 0)} a v panelových{" "}
+            {fmtPct(share(panelMiddle, "prahaSobe"), 0)}. Piráti mají v obou kolem{" "}
+            {fmtPct((share(olderMiddle, "pirati") + share(panelMiddle, "pirati")) / 2, 0)}.
+          </p>
+        )}
+        {panel && older && houses && (
+          <p>
+            V okrscích panelových domů žije {fmtPct((panel.registered / city.registered) * 100, 0)} voličů. Praha Sobě
+            s Piráty tam mají dohromady {fmtPct(campShare(panel), 0)}, ve starší zástavbě{" "}
+            {fmtPct(campShare(older), 0)}; silné je tam ANO. Čtvrti rodinných domů se liší hlavně účastí
+            a převahou STAN a Spolu.
           </p>
         )}
       </section>
 
+      <Figure
+        title="Okrsky na mapě"
+        sub="Vyberte, co má mapa ukazovat. Najetím na okrsek uvidíte jeho údaje, kliknutím ho otevřete v mapě výsledků."
+      >
+        <Suspense fallback={<Loading text="Načítám mapu…" />}>
+          <CentreMap election={data.council.election} code={data.council.code} precincts={data.precincts} />
+        </Suspense>
+      </Figure>
+
       <section className="prose">
-        <h2>Od centra k okraji</h2>
+        <h2>Doba cesty do centra</h2>
       </section>
 
       <Figure
-        title="Podíl hlasů podle vzdálenosti od centra"
+        title="Podíl hlasů podle doby cesty do centra"
         sub={`Volby do zastupitelstva ${years.current}; přerušovaně výsledek Pirátů ve sněmovních volbách ${years.parliamentary}`}
       >
         <BandLines
-          labels={bands.map(bandName)}
-          axis="kilometrů od Můstku"
+          labels={times.map(bandName)}
+          axis="minut do centra MHD v ranní špičce"
           series={[
-            ...lists.map((key) => ({ name: label(key), color: colorOf(key), values: bands.map((band) => share(band, key)) })),
+            ...lists.map((key) => ({ name: label(key), color: colorOf(key), values: times.map((band) => share(band, key)) })),
             {
               name: `Piráti do Sněmovny ${years.parliamentary}`,
               color: colorOf("pirati"),
-              values: bands.map((band) => share(band, "pirati", "mid")),
+              values: times.map((band) => share(band, "pirati", "mid")),
               dashed: true,
             },
           ]}
@@ -230,99 +400,189 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
 
       <section className="prose">
         <p>
-          Proti sněmovnímu výsledku ztrácejí Piráti nejvíc v centru, kde je nejsilnější Praha Sobě. STAN a Spolu mají
-          všude zhruba stejně, ANO k okraji roste.
+          Proti sněmovnímu výsledku ztrácejí Piráti nejvíc blízko centra, kde je nejsilnější Praha Sobě. STAN a Spolu
+          mají všude zhruba stejně, ANO se vzdáleností roste.
         </p>
       </section>
 
       <Figure
-        title="Pásma podle vzdálenosti od centra"
-        sub="Kilometry vzdušnou čarou od Můstku. Podíly jsou v procentech hlasů."
-        note={
-          <>
-            Poslední sloupec říká, kolik procent loňských sněmovních hlasů Pirátů představují letošní voliči Pirátů
-            a Prahy Sobě dohromady.{" "}
-            <Link className="inline-link" to={`${councilPath}/mapa`}>
-              Podívat se na mapu okrsků
-            </Link>
-          </>
-        }
+        title="Pásma podle doby cesty"
+        sub="Minuty ode dveří na Můstek pěšky a MHD. Podíly jsou v procentech hlasů."
+        note="Poslední sloupec říká, kolik procent loňských sněmovních hlasů Pirátů představují letošní voliči Pirátů a Prahy Sobě dohromady."
       >
-        <HeatTable rows={bands} rowHead="Km od centra" rowLabel={bandName} columns={bandColumns} />
+        <HeatTable rows={times} rowHead="Minut do centra" rowLabel={bandName} columns={timeColumns} />
       </Figure>
 
       <section className="prose">
         <p>
           Obě kandidátky mají dohromady v každém pásmu {fmtNum(Math.min(...ratios), 0)} až{" "}
-          {fmtPct(Math.max(...ratios), 0)} loňských sněmovních hlasů Pirátů. Slabší výsledek na okraji tedy není
-          zvláštnost komunálních voleb: bydlí tam méně lidí, kteří je volí i celostátně.
+          {fmtPct(Math.max(...ratios), 0)} loňských sněmovních hlasů Pirátů. Slabší výsledek daleko od centra tedy
+          není zvláštnost komunálních voleb: bydlí tam méně lidí, kteří je volí i celostátně.
         </p>
       </section>
 
-      {estates && houses && (
-        <>
-          <section className="prose">
-            <h2>Sídliště a rodinné domy</h2>
-            <p>
-              Okrsky dál než {data.outerFrom} km od centra jsou rozdělené do třetin podle počtu voličů na jednu
-              adresu. V rodinných domech připadá na adresu nejvýš {fmtNum(houses.perAddress[1], 0)} voličů, na
-              sídlištích aspoň {fmtNum(estates.perAddress[0], 0)}.
-            </p>
-          </section>
+      <section className="prose">
+        <h2>V čem lidé bydlí</h2>
+        <p>
+          Okrsek patří k tomu druhu zástavby, ve kterém je aspoň polovina jeho bytů. Panelové domy jsou sídliště.
+          Starší bytové domy jsou činžovní a zděná zástavba do roku 1989, novější jsou bytové domy postavené od roku
+          1990.
+        </p>
+      </section>
 
-          <Figure
-            title={`Okrajové okrsky podle zástavby`}
-            sub={`Okrsky ${data.outerFrom} a víc km od centra. Účast a podíly v procentech.`}
-          >
-            <HeatTable
-              rows={outer}
-              rowHead="Zástavba"
-              rowLabel={(row) => HOUSING[outer.indexOf(row)]}
-              columns={housingColumns}
-            />
-          </Figure>
+      <Figure title="Okrsky podle převažující zástavby" sub="Účast a podíly v procentech">
+        <HeatTable rows={kinds} rowHead="Zástavba" rowLabel={(row) => kindName(row.kind)} columns={kindColumns} />
+      </Figure>
 
-          <section className="prose">
-            <p>
-              Na sídlištích nejsou Piráti slabší než v rodinných domech ({fmtNum(share(estates, "pirati"))}{" "}
-              a {fmtPct(share(houses, "pirati"))}). Liší se účast: mezi sněmovními a komunálními volbami tam klesá
-              z {fmtNum(estates.turnout.mid ?? 0, 0)} na {fmtPct(estates.turnout.now ?? 0, 0)}. Piráti tam loni dostali{" "}
-              {thousands(voters(estates, "pirati", "mid"))} hlasů, letos je volilo {thousands(voters(estates, "pirati", "now"))}{" "}
-              lidí.
-            </p>
-            <p>
-              Ve čtvrtích rodinných domů přišlo {fmtPct(houses.turnout.now ?? 0, 0)} voličů a většinu hlasů mají STAN
-              se Spolu.
-              {denseInner && (
-                <>
-                  {" "}
-                  Nízká účast jde s hustou zástavbou i blíž k centru ({fmtPct(denseInner.turnout.now ?? 0, 0)}).
-                </>
-              )}
-            </p>
-          </section>
-        </>
+      <Figure
+        title="Každá zástavba proti celému městu"
+        sub="Přerušovaný kruh je průměr Prahy. Kam obrazec sahá za něj, tam je hodnota vyšší než v celém městě; střed je polovina průměru, okraj jeho jedenapůlnásobek."
+      >
+        <div className="radars">
+          {kinds.map((group) => (
+            <div className="radar" key={group.kind}>
+              <h4>
+                <span className="swatch" style={{ background: kindColor(group.kind) }} />
+                {kindName(group.kind)}
+              </h4>
+              <div className="small muted">{thousands(group.registered)} voličů</div>
+              <Radar spokes={spokes(group)} color={kindColor(group.kind)} />
+            </div>
+          ))}
+        </div>
+      </Figure>
+
+      {panel && older && houses && (
+        <section className="prose">
+          <p>
+            Sídliště jsou slabým místem Prahy Sobě ({fmtPct(share(panel, "prahaSobe"))} proti{" "}
+            {fmtPct(share(older, "prahaSobe"))} ve starší zástavbě), ne Pirátů, kteří tam mají{" "}
+            {fmtPct(share(panel, "pirati"))}, skoro svůj průměr. STAN i Spolu jsou tam nejslabší a ANO nejsilnější (
+            {fmtPct(share(panel, "ano"))}).
+          </p>
+          <p>
+            Nízká účast není zvláštnost sídlišť. Ve všech bytových domech přišlo{" "}
+            {fmtNum(Math.min(...apartments.map((item) => item.turnout.now ?? 0)), 0)} až{" "}
+            {fmtPct(Math.max(...apartments.map((item) => item.turnout.now ?? 0)), 0)} voličů, v rodinných domech{" "}
+            {fmtPct(houses.turnout.now ?? 0, 0)}. Tam mají STAN se Spolu{" "}
+            {fmtPct(share(houses, "stan") + share(houses, "spolu"), 0)} hlasů.
+          </p>
+        </section>
       )}
 
       <section className="prose">
-        <h2>Co z toho plyne</h2>
+        <h2>Zástavba při stejné době cesty</h2>
+      </section>
+
+      <Figure
+        title="Praha Sobě a Piráti podle zástavby a doby cesty"
+        sub="Podíl hlasů v procentech. Prázdné pole znamená méně než deset okrsků."
+      >
+        <div className="grid half">
+          {["prahaSobe", "pirati"].map((key) => {
+            const top = Math.max(...data.kindsByTime.map((item) => share(item, key)));
+            return (
+              <div key={key}>
+                <h4 className="split-title">{label(key)}</h4>
+                <div className="table-wrap">
+                  <table className="data matrix kind-matrix">
+                    <thead>
+                      <tr>
+                        <th>Zástavba</th>
+                        {rings.map((ring) => (
+                          <th key={ring.from} className="col">
+                            {bandName(ring)} min
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kinds.map((group) => (
+                        <tr key={group.kind}>
+                          <td>{kindName(group.kind)}</td>
+                          {rings.map((ring) => {
+                            const cell = atTime(group.kind, ring.from);
+                            return cell ? (
+                              <td
+                                key={ring.from}
+                                className="heat"
+                                title={`${fmtInt(cell.precincts)} okrsků`}
+                                style={{
+                                  background: `color-mix(in srgb, ${colorOf(key)} ${Math.round((share(cell, key) / top) * 60)}%, var(--surface-2))`,
+                                }}
+                              >
+                                {pct(share(cell, key))}
+                              </td>
+                            ) : (
+                              <td key={ring.from} className="empty">
+                                –
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Figure>
+
+      <section className="prose">
         <p>
-          Na sídlištích jde o účast vlastních sněmovních voličů, ne o přesvědčování cizích. Růst nad to by znamenal
-          získávat voliče ANO a lidi, kteří nevolí vůbec.
+          U Prahy Sobě rozhoduje zástavba i doba cesty
+          {olderMiddle && panelMiddle && (
+            <>
+              : při dojezdu {bandName(middleRing)} minut má ve starších domech{" "}
+              {fmtPct(share(olderMiddle, "prahaSobe"), 0)} a na sídlištích {fmtPct(share(panelMiddle, "prahaSobe"), 0)}
+            </>
+          )}
+          . Dál než půl hodiny od centra je slabá v každé zástavbě. U Pirátů jsou rozdíly malé v obou směrech.
         </p>
-        <p>Čtvrti rodinných domů jsou nejtěžší: účast je tam vysoká a volí se hlavně STAN a Spolu.</p>
-        <p>Jde o průměry za okrsky, ne o jednotlivé voliče.</p>
+      </section>
+
+      <Figure
+        title="Jednotlivé okrsky"
+        sub="Každá tečka je okrsek, velikost odpovídá počtu voličů. Kliknutím na druh zástavby v legendě zvýrazníte jen ten."
+      >
+        <PrecinctScatter precincts={data.precincts} />
+      </Figure>
+
+      <section className="prose">
+        <h2>Co z toho plyne</h2>
+        {panel && older && (
+          <p>
+            Sídliště jsou největší skupina voličů a Praha Sobě s Piráty tam mají o{" "}
+            {fmtNum(campShare(older) - campShare(panel), 0)} bodů méně než ve starší zástavbě. Rozdíl dělá Praha
+            Sobě; Piráti jsou tam stejně silní jako jinde.
+          </p>
+        )}
+        {panel && older && (
+          <p>
+            Účast je rezerva ve všech bytových domech, ne jen na sídlištích. Piráti dostali loni do Sněmovny v okrscích
+            starší zástavby {thousands(voters(older, "pirati", "mid"))} hlasů a na sídlištích{" "}
+            {thousands(voters(panel, "pirati", "mid"))}; letos je tam volilo {thousands(voters(older, "pirati", "now"))}{" "}
+            a {thousands(voters(panel, "pirati", "now"))} lidí.
+          </p>
+        )}
+        <p>
+          Čtvrti rodinných domů jsou nejtěžší: účast je tam vysoká a volí se hlavně STAN a Spolu. Jde o průměry za
+          okrsky, ne o jednotlivé voliče.
+        </p>
       </section>
 
       <section className="card method-notes">
         <h3>Jak se to počítalo</h3>
         <p className="note">
-          Vzdálenost je vzdušná čára od Můstku ke středu adres okrsku. Doba cesty MHD by některé okrsky zařadila
-          jinak, hlavně ty u metra a železnice.
+          Doba cesty je z jízdních řádů PID pro ranní špičku pracovního dne: jak dlouho před časem příchodu na Můstek
+          je potřeba vyjít z domu, v průměru pro příchody mezi 7.30 a 9.00. Zahrnuje chůzi na zastávku, čekání
+          a přestupy. Chůze se počítá vzdušnou čarou rychlostí 3,6 km/h.
         </p>
         <p className="note">
-          Zástavbu zastupuje počet zapsaných voličů na jednu adresu z registru adres. Je to hrubý znak: bytový dům
-          s jedním vchodem se počítá jako jedna adresa stejně jako rodinný dům.
+          Zástavba je z registru budov (RÚIAN): druh budovy, počet bytů, konstrukce a rok dokončení. Okrsek se řadí
+          podle bytů, ne podle počtu domů, a jeho doba cesty je doba z bytu uprostřed pořadí.
         </p>
         <p className="note">
           Hlasy v komunálních volbách jsou přepočtené na voliče: podíl kandidátky krát počet odevzdaných obálek.

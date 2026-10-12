@@ -2,7 +2,8 @@ import { Link, useParams } from "react-router-dom";
 import { useAnalysis } from "../api";
 import { Loading, Problem } from "../components/State";
 import { Prague2026 } from "./Prague2026";
-import { type CentreAnalysis, Prague2026Centre } from "./Prague2026Centre";
+import type { CentreAnalysis } from "./centreShared";
+import { Prague2026Centre } from "./Prague2026Centre";
 import { Prague2026Next } from "./Prague2026Next";
 import { Prague2026Spolu } from "./Prague2026Spolu";
 import type { NextTimeAnalysis, PragueAnalysis, SpoluStanAnalysis } from "./types";
@@ -52,7 +53,7 @@ export const ANALYSES: AnalysisEntry[] = [
     election: "kv2026",
     kicker: "Komunální volby 2026 · Praha",
     title: "Centrum, sídliště a předměstí",
-    lede: "Jak se podpora Pirátů a Prahy Sobě mění se vzdáleností od centra a s typem zástavby.",
+    lede: "Jak se podpora Pirátů a Prahy Sobě mění s dobou cesty do centra a s tím, v čem lidé bydlí.",
     updated: "12. října 2026",
     body: (data) => <Prague2026Centre data={data as CentreAnalysis} />,
   },
