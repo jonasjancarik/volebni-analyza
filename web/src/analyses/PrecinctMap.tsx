@@ -19,6 +19,8 @@ export interface MapLayer<Row> {
   /** "change" puts zero in the middle of the scale: red below, blue above */
   scale?: "share" | "change";
   kind?: (row: Row) => { name: string; color: string } | null;
+  /** What the layer says about one precinct, for the tooltip: the numbers its colour stands for */
+  describe?: (row: Row) => React.ReactNode;
 }
 
 interface Props<Row> {
@@ -29,7 +31,8 @@ interface Props<Row> {
   layers: { title: string; items: MapLayer<Row>[] }[];
   /** Layer shown first */
   initial: string;
-  tooltip: (row: Row) => React.ReactNode;
+  /** The tooltip of a precinct; it is given the layer on show, so that it can explain the colour under the pointer */
+  tooltip: (row: Row, layer: MapLayer<Row>) => React.ReactNode;
 }
 
 /** The precincts of a council coloured by what the reader picks. */
@@ -62,8 +65,8 @@ export function PrecinctMap<Row extends { id: string }>({ election, code, rows, 
   }, [layer, rows]);
 
   // Handlers registered once read the latest state through a ref
-  const latest = useRef({ byId, tooltip });
-  latest.current = { byId, tooltip };
+  const latest = useRef({ byId, tooltip, layer });
+  latest.current = { byId, tooltip, layer };
   const geojson = boundaries.data;
 
   useEffect(() => {
@@ -132,7 +135,7 @@ export function PrecinctMap<Row extends { id: string }>({ election, code, rows, 
       const row = latest.current.byId.get(String(id));
       pointer.show(
         event.originalEvent,
-        row ? latest.current.tooltip(row) : <div className="t-sub">Okrsek {String(id)}: bez údajů</div>,
+        row ? latest.current.tooltip(row, latest.current.layer) : <div className="t-sub">Okrsek {String(id)}: bez údajů</div>,
       );
     });
     instance.on("mouseleave", "precinct-fill", () => {

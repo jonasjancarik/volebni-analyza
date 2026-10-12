@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Link } from "react-router-dom";
 import { Loading } from "../components/State";
-import { fmtInt, fmtNum, fmtPct } from "../format";
+import { fmtInt, fmtNum, fmtPct, fmtPp } from "../format";
 import {
   bare,
   CampSeats,
@@ -51,6 +51,15 @@ const BLOC_LAYER: MapLayer<Precinct> = {
   legend: "Praha 5 Sobě, Piráti a SEN proti ODS, TOP 09, STAN a ANO; rozdíl v bodech",
   scale: "change",
   value: (precinct) => blocShare(precinct, "coalition2022") - blocShare(precinct, "townHall"),
+  describe: (precinct) => (
+    <>
+      Rozdíl {fmtPp(blocShare(precinct, "coalition2022") - blocShare(precinct, "townHall"))}
+      <div className="t-sub">
+        Praha 5 Sobě, Piráti a SEN {fmtPct(blocShare(precinct, "coalition2022"))}, ODS, TOP 09, STAN a ANO{" "}
+        {fmtPct(blocShare(precinct, "townHall"))}
+      </div>
+    </>
+  ),
 };
 
 /** Lists that have no colour of their own in Praha 5 take that of their closest relative */

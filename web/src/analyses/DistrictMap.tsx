@@ -26,12 +26,14 @@ export default function DistrictMap({ data, colorOf, shares, groupColors, more =
       label: label(key),
       legend: `${label(key)}, % hlasů do zastupitelstva městské části`,
       value: (precinct: Precinct) => precinct.local[key],
+      describe: (precinct: Precinct) => `${label(key)} ${fmtPct(precinct.local[key] ?? 0)}`,
     })),
     {
       key: "turnout",
       label: "Účast",
       legend: "Účast, % zapsaných voličů",
       value: (precinct) => precinct.turnout.now,
+      describe: (precinct) => `Účast ${fmtPct(precinct.turnout.now ?? 0)}`,
     },
   ];
 
@@ -49,6 +51,15 @@ export default function DistrictMap({ data, colorOf, shares, groupColors, more =
       legend: `Piráti, změna od roku ${years.previous} v bodech`,
       scale: "change",
       value: (precinct) => change(precinct, "pirati"),
+      describe: (precinct) => (
+        <>
+          Piráti {fmtPp(change(precinct, "pirati"))}
+          <div className="t-sub">
+            {years.previous}: {fmtPct(precinct.previousLocal.pirati ?? 0)}, {years.current}:{" "}
+            {fmtPct(precinct.local.pirati ?? 0)}
+          </div>
+        </>
+      ),
     },
     {
       key: "pirati-ballots",
@@ -56,6 +67,15 @@ export default function DistrictMap({ data, colorOf, shares, groupColors, more =
       legend: "Piráti do zastupitelstva městské části proti pražskému; rozdíl v bodech",
       scale: "change",
       value: (precinct) => localOverCity(precinct, "pirati"),
+      describe: (precinct) => (
+        <>
+          Piráti {fmtPp(localOverCity(precinct, "pirati"))}
+          <div className="t-sub">
+            do městské části {fmtPct(precinct.local.pirati ?? 0)}, do hlavního města{" "}
+            {fmtPct(precinct.city.pirati ?? 0)}
+          </div>
+        </>
+      ),
     },
     {
       key: "group",
@@ -65,6 +85,7 @@ export default function DistrictMap({ data, colorOf, shares, groupColors, more =
         precinct.group
           ? { name: groupName.get(precinct.group) ?? precinct.group, color: groupColors[precinct.group] }
           : null,
+      describe: (precinct) => (precinct.group ? (groupName.get(precinct.group) ?? precinct.group) : "Bez zařazení"),
     },
     // One kind of housing everywhere would be a map of a single colour
     ...(data.kinds.length > 1
@@ -75,6 +96,7 @@ export default function DistrictMap({ data, colorOf, shares, groupColors, more =
             legend: "Převažující zástavba",
             kind: (precinct: Precinct) =>
               precinct.kind ? { name: KIND_NAMES[precinct.kind], color: kindColor(precinct.kind) } : null,
+            describe: (precinct: Precinct) => (precinct.kind ? KIND_NAMES[precinct.kind] : "Bez údajů o zástavbě"),
           },
         ]
       : []),
@@ -90,17 +112,15 @@ export default function DistrictMap({ data, colorOf, shares, groupColors, more =
         { title: "Podíl hlasů", items: shareLayers },
         { title: "Srovnání", items: comparisons },
       ]}
-      tooltip={(precinct) => (
+      tooltip={(precinct, layer) => (
         <>
           <div className="t-sub">
             Okrsek {precinct.id}
             {precinct.part && ` · ${precinct.part}`}
           </div>
+          {/* First what the colour under the pointer stands for; a layer that does not say shows who leads */}
           <div className="t-title">
-            {label(winner(precinct))} {fmtPct(precinct.local[winner(precinct)] ?? 0)}
-          </div>
-          <div>
-            Piráti {fmtPct(precinct.local.pirati ?? 0)}, proti roku {years.previous} {fmtPp(change(precinct, "pirati"))}
+            {layer.describe?.(precinct) ?? `${label(winner(precinct))} ${fmtPct(precinct.local[winner(precinct)] ?? 0)}`}
           </div>
           <div className="t-sub">
             {fmtInt(precinct.registered)} zapsaných voličů, účast {fmtPct(precinct.turnout.now ?? 0, 0)}

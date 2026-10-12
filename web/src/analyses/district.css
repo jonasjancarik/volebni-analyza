@@ -102,3 +102,8 @@ table.precinct-list th.sorted {
     gap: 4px;
   }
 }
+
+/* The numbers under the headline of a map tooltip are not part of the headline */
+.tooltip .t-title .t-sub {
+  font-weight: 400;
+}
