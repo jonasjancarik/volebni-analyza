@@ -26,6 +26,7 @@ from election_comparison import (
     group_columns,
     match_precincts,
     precinct_table,
+    precinct_type_labels,
 )
 from election_config import ELECTIONS, ElectionConfig, get_election_config
 
@@ -834,6 +835,35 @@ def _write_stored_comparison(path: Path, key: dict, result: dict) -> None:
         logger.warning("Could not store the comparison in %s: %s", path, error)
 
 
+def _matched_tables(
+    current: dict, previous: dict, area: Optional[str]
+) -> Tuple[pd.DataFrame, pd.DataFrame, int]:
+    """Precinct tables of both elections for the precincts that can be compared.
+
+    Also returns how many precincts the current election has, matched or not.
+    """
+    area_precincts = None
+    if area:
+        area_precincts = {
+            str(d.get("district_code"))
+            for d in current.get("district_data") or []
+            if str(d.get("municipality_code")) == area
+        }
+
+    tables = []
+    for municipality in (previous, current):
+        turnout_df, votes_df = _precinct_frames(municipality, area_precincts)
+        tables.append(
+            precinct_table(turnout_df, votes_df)
+            if not turnout_df.empty and not votes_df.empty
+            else pd.DataFrame()
+        )
+
+    if tables[0].empty or tables[1].empty:
+        return pd.DataFrame(), pd.DataFrame(), len(tables[1])
+    return (*match_precincts(*tables), len(tables[1]))
+
+
 def comparison(election_id: str, code: str, area: Optional[str] = None) -> dict:
     """Matched precincts of this and the previous election and the voter flows.
 
@@ -866,28 +896,7 @@ def comparison(election_id: str, code: str, area: Optional[str] = None) -> dict:
             _comparison_cache[key] = stored
         return stored
 
-    area_precincts = None
-    if area:
-        area_precincts = {
-            str(d.get("district_code"))
-            for d in current.get("district_data") or []
-            if str(d.get("municipality_code")) == area
-        }
-
-    tables = []
-    for municipality in (previous, current):
-        turnout_df, votes_df = _precinct_frames(municipality, area_precincts)
-        tables.append(
-            precinct_table(turnout_df, votes_df)
-            if not turnout_df.empty and not votes_df.empty
-            else pd.DataFrame()
-        )
-
-    all_precincts = len(tables[1])
-    if tables[0].empty or tables[1].empty:
-        previous_table = current_table = pd.DataFrame()
-    else:
-        previous_table, current_table = match_precincts(*tables)
+    previous_table, current_table, all_precincts = _matched_tables(current, previous, area)
     matched = len(current_table)
 
     flows = None
@@ -938,6 +947,41 @@ def comparison(election_id: str, code: str, area: Optional[str] = None) -> dict:
         _comparison_cache[key] = result
     _write_stored_comparison(stored_file, stored_key, result)
     return result
+
+
+def flow_inputs(election_id: str, code: str, area: Optional[str] = None) -> dict:
+    """What the voter-flow estimate is computed from, precinct by precinct.
+
+    The page that explains the method repeats the estimate in the browser, so
+    it gets the same shares, weights and precinct types as `estimate_flows`.
+    """
+    flows = comparison(election_id, code, area)["flows"]
+    if not flows:
+        raise NotFound("Pro toto zastupitelstvo se přesuny voličů neodhadují.")
+
+    current = _municipality(election_id, code)
+    previous = _results(previous_election_id(election_id))["municipalities"][code]
+    previous_table, current_table, _ = _matched_tables(current, previous, area)
+
+    sources, targets = flows["sources"], flows["targets"]
+    x = previous_table[sources].div(previous_table["registered"], axis=0)
+    y = current_table[targets].div(current_table["registered"], axis=0)
+    labels = precinct_type_labels(x.to_numpy(), flows["precinctTypes"])
+    return {
+        "sources": sources,
+        "targets": targets,
+        "precincts": [
+            {
+                "id": precinct,
+                "registered": int(current_table.at[precinct, "registered"]),
+                "registeredPrevious": int(previous_table.at[precinct, "registered"]),
+                "type": int(labels[position]),
+                "previous": (x.iloc[position] * 100).round(3).tolist(),
+                "current": (y.iloc[position] * 100).round(3).tolist(),
+            }
+            for position, precinct in enumerate(current_table.index)
+        ],
+    }
 
 
 def precompute_comparisons() -> int:

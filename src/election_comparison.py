@@ -185,6 +185,13 @@ def _standardise(x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     return (x - mean) / spread, mean, spread
 
 
+def precinct_type_labels(x: np.ndarray, precinct_types: int) -> np.ndarray:
+    """Which type every precinct belongs to, for a given number of types."""
+    if precinct_types > 1:
+        return _cluster_precincts(_standardise(x)[0], precinct_types)[0]
+    return np.zeros(len(x), dtype=int)
+
+
 def _fit_by_type(x, y, weights, labels, starts=None, quick=False) -> List[np.ndarray]:
     """One transition matrix per precinct type.
 
@@ -298,10 +305,7 @@ def estimate_flows(
     source_voters = previous[sources].to_numpy(dtype=float)
 
     precinct_types = choose_precinct_types(x, y, weights)
-    if precinct_types > 1:
-        labels, _ = _cluster_precincts(_standardise(x)[0], precinct_types)
-    else:
-        labels = np.zeros(len(x), dtype=int)
+    labels = precinct_type_labels(x, precinct_types)
 
     matrices = _fit_by_type(x, y, weights, labels)
     matrix = _aggregate(matrices, labels, source_voters)

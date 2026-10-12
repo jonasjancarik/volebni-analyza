@@ -86,6 +86,11 @@ def comparison(election_id: str, code: str, area: Optional[str] = None):
     return store.comparison(election_id, code, area)
 
 
+@app.get("/api/elections/{election_id}/councils/{code}/comparison/inputs")
+def flow_inputs(election_id: str, code: str, area: Optional[str] = None):
+    return store.flow_inputs(election_id, code, area)
+
+
 @app.get("/api/elections/{election_id}/councils/{code}/candidates")
 def candidates(election_id: str, code: str):
     return store.candidates(election_id, code)
