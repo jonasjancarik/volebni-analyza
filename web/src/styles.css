@@ -2280,7 +2280,67 @@ table.matrix th.group:last-child {
   padding-right: 10px;
 }
 
+table.matrix td.heat.plain {
+  background: none;
+}
+
+.election-bars {
+  display: grid;
+  gap: 18px;
+}
+
+.election-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.election-name {
+  font-weight: 620;
+  font-size: 14px;
+  padding-top: 1px;
+}
+
+.election-values {
+  display: grid;
+  gap: 5px;
+}
+
+.election-value {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr) 96px;
+  gap: 12px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.election-value > span:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.election-track {
+  display: block;
+  height: 12px;
+}
+
+.election-track span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+}
+
 @media (max-width: 900px) {
+  .election-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .election-value {
+    grid-template-columns: 112px minmax(0, 1fr) 84px;
+    gap: 8px;
+  }
   .topbar-right {
     flex-basis: 230px;
     justify-content: flex-end;

@@ -2,7 +2,8 @@ import { Link, useParams } from "react-router-dom";
 import { useAnalysis } from "../api";
 import { Loading, Problem } from "../components/State";
 import { Prague2026 } from "./Prague2026";
-import type { PragueAnalysis } from "./types";
+import { Prague2026Spolu } from "./Prague2026Spolu";
+import type { PragueAnalysis, SpoluStanAnalysis } from "./types";
 
 interface AnalysisEntry {
   slug: string;
@@ -25,6 +26,15 @@ export const ANALYSES: AnalysisEntry[] = [
     lede: "Proč STAN a Spolu získaly v zastupitelstvu většinu a kolik chybělo k tomu, aby potřebovaly třetího partnera.",
     updated: "12. října 2026",
     body: (data) => <Prague2026 data={data as PragueAnalysis} />,
+  },
+  {
+    slug: "praha-2026-volici-spolu-a-stan",
+    election: "kv2026",
+    kicker: "Komunální volby 2026 · Praha",
+    title: "Kde hledat voliče Spolu a STAN",
+    lede: "Kteří voliči obou vítězných kandidátek jsou nejméně pevní a ve kterých částech Prahy jich je nejvíc.",
+    updated: "12. října 2026",
+    body: (data) => <Prague2026Spolu data={data as SpoluStanAnalysis} />,
   },
 ];
 

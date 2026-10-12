@@ -78,3 +78,34 @@ export interface PragueAnalysis {
     flows: KeyedFlows;
   };
 }
+
+type When = "then" | "mid" | "now";
+
+/** People who voted in a set of precincts in three elections: the previous municipal one, the parliamentary one between and the current one */
+export interface VoterGroup {
+  precincts: number;
+  registered: number;
+  voted: Record<When, number>;
+  /** By list key; a list that did not run in an election has no number for it */
+  voters: Record<string, Partial<Record<When, number>>>;
+}
+
+export interface SpoluStanAnalysis {
+  council: { election: string; code: string; name: string };
+  years: { current: string; previous: string; parliamentary: string };
+  summary: Summary;
+  previousSummary: Summary;
+  lists: FollowedList[];
+  seats: number;
+  majority: number;
+  votesPerBallot: number;
+  scenarios: Scenario[];
+  flows: KeyedFlows;
+  parliamentary: PragueAnalysis["parliamentary"];
+  city: VoterGroup;
+  /** Precincts in fifths by the share of its parliamentary voters Spolu kept, from the lowest */
+  fifths: VoterGroup[];
+  districts: (VoterGroup & { code: string; name: string })[];
+  /** The city-wide estimate narrowed to each district large enough for one */
+  districtFlows: { code: string; name: string; rough: boolean; flows: KeyedFlows }[];
+}

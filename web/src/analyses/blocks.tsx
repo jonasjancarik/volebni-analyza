@@ -31,6 +31,27 @@ export function thousands(people: number): string {
   return `${fmtInt(count)} ${plural(count, "tisíc", "tisíce", "tisíc")}`;
 }
 
+/** 6 557 → "6 600" */
+export const hundreds = (people: number) => fmtInt(Math.round(people / 100) * 100);
+
+/** "+5,4 bodu" */
+export const points = (value: number) => fmtPp(value).replace(/p\.\s*b\.$/, "bodu");
+
+/** One flow of an estimate: what share of the source group it is, of the target group, and how many people */
+export function cell(flows: KeyedFlows, source: string, target: string) {
+  const row = flows.sources.indexOf(source);
+  const column = flows.targets.indexOf(target);
+  return {
+    share: flows.transitions[row][column],
+    low: flows.transitionsLow[row][column],
+    high: flows.transitionsHigh[row][column],
+    origin: flows.origin[row][column],
+    originLow: flows.originLow[row][column],
+    originHigh: flows.originHigh[row][column],
+    people: (flows.electorate[row][column] / 100) * flows.previousRegistered,
+  };
+}
+
 const GAIN = "#2a78d6";
 const LOSS = "#e34948";
 
@@ -581,3 +602,127 @@ export function DistrictTable({ districts, years, colorOf, initial = 15 }: Distr
     </>
   );
 }
+
+export interface HeatColumn<Row> {
+  head: string;
+  /** Heading shared by neighbouring columns of the same group */
+  group?: string;
+  value: (row: Row) => number;
+  format: (value: number) => string;
+  /** A colour for values where more means stronger, or "change" for blue gains and red losses */
+  tint?: string;
+}
+
+interface HeatTableProps<Row> {
+  rows: Row[];
+  rowHead: string;
+  rowLabel: (row: Row) => string;
+  columns: HeatColumn<Row>[];
+}
+
+/** A table of numbers with cells tinted by value, each column on its own scale; changes share one. */
+export function HeatTable<Row>({ rows, rowHead, rowLabel, columns }: HeatTableProps<Row>) {
+  const grouped = columns.some((column) => column.group);
+  const groups: { name: string; span: number }[] = [];
+  for (const column of columns) {
+    const previous = groups[groups.length - 1];
+    if (previous && column.group && previous.name === column.group) previous.span += 1;
+    else groups.push({ name: column.group ?? "", span: 1 });
+  }
+  const top = columns.map((column) => Math.max(...rows.map((row) => Math.abs(column.value(row))), 1e-9));
+  const reach = Math.max(...columns.flatMap((column, index) => (column.tint === "change" ? [top[index]] : [])), 1e-9);
+  const style = (column: HeatColumn<Row>, index: number, value: number) =>
+    column.tint === "change" ? changeTint(value, reach) : tint(column.tint!, (value / top[index]) * 0.75);
+
+  return (
+    <div className="table-wrap">
+      <table className="data matrix">
+        <thead>
+          {grouped && (
+            <tr>
+              <th rowSpan={2}>{rowHead}</th>
+              {groups.map((group, index) => (
+                <th key={index} className="group" colSpan={group.span > 1 ? group.span : undefined}>
+                  {group.name}
+                </th>
+              ))}
+            </tr>
+          )}
+          <tr>
+            {!grouped && <th>{rowHead}</th>}
+            {columns.map((column, index) => (
+              <th key={index} className="col">
+                {column.head}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, position) => (
+            <tr key={position}>
+              <td>{rowLabel(row)}</td>
+              {columns.map((column, index) => {
+                const value = column.value(row);
+                return (
+                  <td
+                    key={index}
+                    className={column.tint ? "heat" : "heat plain"}
+                    style={column.tint ? style(column, index, value) : undefined}
+                  >
+                    {column.format(value)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+interface ElectionBarsProps {
+  rows: { key: string; values: (number | null)[] }[];
+  /** Name of each election, in the order of the values */
+  elections: string[];
+  colorOf: (key: string) => string;
+}
+
+/** How many people voted for each list in several elections, as bars on one scale. */
+export function ElectionBars({ rows, elections, colorOf }: ElectionBarsProps) {
+  const scale = Math.max(...rows.flatMap((row) => row.values.map((value) => value ?? 0)), 1);
+  return (
+    <div className="election-bars">
+      {rows.map((row) => (
+        <div className="election-row" key={row.key}>
+          <div className="election-name">
+            <Name group={row.key} colorOf={colorOf} />
+          </div>
+          <div className="election-values num">
+            {row.values.map((value, index) => (
+              <div className="election-value" key={elections[index]}>
+                <span className="small muted">{elections[index]}</span>
+                <span className="election-track">
+                  {value != null && (
+                    <span
+                      style={{
+                        width: `${(value / scale) * 100}%`,
+                        background: colorOf(row.key),
+                        // The parliamentary election is another kind of vote; it reads as lighter
+                        opacity: index === 1 ? 0.45 : 1,
+                      }}
+                    />
+                  )}
+                </span>
+                <span className={value != null ? "share" : "muted"}>
+                  {value != null ? `${fmtInt(Math.round(value / 1000))} tis.` : "nekandidovala"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+

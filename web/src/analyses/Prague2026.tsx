@@ -1,40 +1,25 @@
 import { Link } from "react-router-dom";
 import { FlowBars } from "../components/FlowBars";
-import { fmtInt, fmtNum, fmtPct, fmtPp, fmtRange, plural } from "../format";
+import { fmtInt, fmtNum, fmtPct, fmtRange, plural } from "../format";
 import {
   CampSeats,
+  cell,
   DistrictTable,
   destinations,
   FifthsTable,
   Figure,
   FlowMatrix,
   groupColors,
+  hundreds,
   label,
   origins,
+  points,
   ResultsTable,
   ScenarioTable,
   SplitBar,
   thousands,
 } from "./blocks";
-import type { District, KeyedFlows, PragueAnalysis, Scenario } from "./types";
-
-function cell(flows: KeyedFlows, source: string, target: string) {
-  const row = flows.sources.indexOf(source);
-  const column = flows.targets.indexOf(target);
-  return {
-    share: flows.transitions[row][column],
-    low: flows.transitionsLow[row][column],
-    high: flows.transitionsHigh[row][column],
-    origin: flows.origin[row][column],
-    originLow: flows.originLow[row][column],
-    originHigh: flows.originHigh[row][column],
-    people: (flows.electorate[row][column] / 100) * flows.previousRegistered,
-  };
-}
-
-const hundreds = (people: number) => fmtInt(Math.round(people / 100) * 100);
-/** "+5,4 bodu" */
-const points = (value: number) => fmtPp(value).replace(/p\.\s*b\.$/, "bodu");
+import type { District, PragueAnalysis, Scenario } from "./types";
 
 export function Prague2026({ data }: { data: PragueAnalysis }) {
   const { years, seats, majority, flows, precincts, districts, parliamentary } = data;

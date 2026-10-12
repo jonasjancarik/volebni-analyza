@@ -104,7 +104,11 @@ one result, with its tables and charts drawn from the same data as the rest
 of the app. The first one looks at the Pirates and Praha Sobě in the 2026
 Prague election: seats and what would have changed them, voter flows since
 2022, precincts and city districts, and an estimate of how the Pirates'
-voters of the 2025 parliamentary election voted a year later.
+voters of the 2025 parliamentary election voted a year later. The second one
+asks where the voters of Spolu and STAN are least firmly theirs: how many of
+Spolu's parliamentary voters it keeps in the municipal election, by precinct
+and city district, where STAN's new voters came from, and the smallest shift
+that would end the two lists' majority.
 
 An analysis has two halves that are kept apart on purpose:
 
