@@ -1,6 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Scatter } from "../components/Scatter";
+import { Link } from "react-router-dom";
 import { Loading } from "../components/State";
 import { downloadCsv, fmtInt, fmtNum, fmtPct, plural } from "../format";
 import {
@@ -13,7 +12,6 @@ import {
   HeatTable,
   hundreds,
   label,
-  points,
   ResultsTable,
 } from "./blocks";
 import {
@@ -329,11 +327,10 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
   const { years, seats, majority, district, precincts, groups } = data;
   const ownColor = groupColors(data.lists);
   const colorOf = (key: string) => ownColor(SAME_COLOR[key] ?? key);
-  const navigate = useNavigate();
   const councilPath = `/${data.council.election}/${data.council.code}`;
 
   const list = (key: string) => data.lists.find((item) => item.key === key)!;
-  const [praha5Sobe, ods, stan, sen, ano, pirati, top] = ["praha5Sobe", "ods", "stan", "sen", "ano", "pirati", "top"].map(list);
+  const pirati = list("pirati");
   const previousList = (key: string) => data.previousLists.find((item) => item.key === key);
   const bloc = (key: string) => data.blocs.find((item) => item.key === key)!;
   const [coalition, townHall] = [bloc("coalition2022"), bloc("townHall")];
@@ -341,7 +338,7 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
   const inLine = (key: string) => data.nextInLine.find((item) => item.key === key);
   const [nextSobe, nextPirati, nextTop] = [inLine("praha5Sobe"), inLine("pirati"), inLine("top")];
   const lastSeatInCoalition = BLOCS[0].lists.includes(data.lastSeat.key);
-  const [newPirati, fromStan, jointThree] = [scenario("new-pirati"), scenario("stan-to-pirati"), scenario("joint-three")];
+  const [newPirati, fromStan] = [scenario("new-pirati"), scenario("stan-to-pirati")];
   const ofVoters = (item: BlocScenario) => ((item.voters ?? 0) / data.summary.ballots) * 100;
 
   // The two ballots of the same voters
@@ -353,9 +350,8 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
   // Precincts
   const { counts } = data;
   const fell = counts.fell.pirati;
-  const fromMost = (won: Record<string, number>) => Object.entries(won).sort((a, b) => b[1] - a[1]);
-  const [winners, winnersBefore] = [fromMost(counts.winners.now), fromMost(counts.winners.then)];
-  const [weakest, strongest] = [data.fifths[0], data.fifths[data.fifths.length - 1]];
+  const winners = Object.entries(counts.winners.now).sort((a, b) => b[1] - a[1]);
+  const weakest = data.fifths[0];
 
   // Neighbourhoods and housing
   const group = (key: string) => groups.find((item) => item.key === key);
@@ -402,10 +398,8 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
     .sort((a, b) => b.now - b.then - (a.now - a.then));
   const votersOf = (key: string) => voterRows.find((row) => row.key === key)!;
   const [stanVoters, piratiVoters] = [votersOf("stan"), votersOf("pirati")];
-  const signedTens = (people: number) => `${people < 0 ? "−" : "+"}${tens(Math.abs(people))}`;
   const riseOf = (area: Area) => (area.turnout.now ?? 0) - (area.turnout.then ?? 0);
   const riseTogether = Object.values(turnout.together.rise);
-  const [lowTurnout, highTurnout] = [turnout.byLevel[0], turnout.byLevel[turnout.byLevel.length - 1]];
   const riseColumns: HeatColumn<Area>[] = [
     { group: "Účast", head: years.previous, value: (row) => row.turnout.then ?? 0, format: pct },
     { group: "Účast", head: years.current, value: (row) => row.turnout.now ?? 0, format: pct },
@@ -422,8 +416,6 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       }),
     ),
   ];
-  const piratiCity = voters(district.city.pirati, "now") ?? 0;
-  const coalitionVoters = voters(coalition.share.now, "now") ?? 0;
   const turnoutDrop = (1 - district.ballots.now / district.ballots.mid) * 100;
 
   const describe = (item: BlocScenario): { title: string; detail?: string } => {
@@ -547,10 +539,9 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
         <h2>Shrnutí</h2>
         <p>
           Piráti mají v zastupitelstvu páté městské části {pirati.seats} {seatsWord(pirati.seats)} místo{" "}
-          {pirati.previousSeats}.
-          Jejich podíl klesl z {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}. Horší výsledek než
-          před čtyřmi lety mají {inCount(fell)} z {precincts.length} okrsků
-          {barrandov && <>, nejvíc ztratili na Barrandově, kde byli nejsilnější</>}.
+          {pirati.previousSeats}. Jejich podíl klesl z {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}{" "}
+          a nižší je {inCount(fell)} z {precincts.length} okrsků
+          {barrandov && <>, nejvíc na Barrandově</>}.
         </p>
         <p>
           Praha 5 Sobě, Piráti a SEN, které po volbách {years.previous} složily radu s nejtěsnější většinou, mají
@@ -559,15 +550,16 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
         </p>
         {nextSobe && nextPirati && (
           <p>
-            Poslední mandát připadl kandidátce {label(data.lastSeat.key)}. Praze 5 Sobě k němu chybělo asi{" "}
-            {fmtInt(nextSobe.missingVoters)} voličů a Pirátům {fmtInt(nextPirati.missingVoters)}. Poměr sil by to
-            nezměnilo, mandát by ztratil {label(data.lastSeat.key)}.
+            Poslední mandát připadl kandidátce {label(data.lastSeat.key)}. Pirátům k němu chybělo asi{" "}
+            {fmtInt(nextPirati.missingVoters)} voličů a Praze 5 Sobě {fmtInt(nextSobe.missingVoters)}; poměr sil by
+            to nezměnilo.
           </p>
         )}
         <p>
           STAN dostal do místního zastupitelstva {fmtPct(ballot("stan").local)} hlasů, do pražského od stejných voličů{" "}
-          {fmtPct(ballot("stan").city ?? 0)}. Rozdíl si místně rozdělily hlavně ODS s TOP 09, SEN a Naše Praha 5.
+          {fmtPct(ballot("stan").city ?? 0)}.
         </p>
+        <p>Vyšší účast výsledek neposunula: Piráti ztráceli stejně tam, kde stoupla hodně, i tam, kde skoro vůbec.</p>
       </section>
 
       <section className="prose">
@@ -575,7 +567,7 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
         <p>
           Po volbách v roce {years.previous} vedla radnici koalice Prahy 5 Sobě, Pirátů a SEN 21, která měla{" "}
           {coalition.seats.then} hlasů ze {seats}. V prosinci 2024 zastupitelé radu odvolali a novou zvolily ODS, TOP
-          09, ANO a STAN. Graf řadí mandáty podle těchto dvou táborů.
+          09, ANO a STAN.
         </p>
       </section>
 
@@ -595,18 +587,6 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
           withoutPrevious={{ ods: "jiná sestava", top: "jiná sestava" }}
         />
       </Figure>
-
-      <section className="prose">
-        <p>
-          Piráti ztratili {(pirati.previousSeats ?? 0) - pirati.seats} {seatsWord((pirati.previousSeats ?? 0) - pirati.seats)}{" "}
-          a ANO {(ano.previousSeats ?? 0) - ano.seats}. STAN jich má {stan.seats} místo {stan.previousSeats} a SEN{" "}
-          {sen.seats} místo {sen.previousSeats}. Praha 5 Sobě drží {praha5Sobe.seats}, stejně jako ODS s TOP 09
-          a lidovci dohromady ({ods.seats} + {top.seats}).
-        </p>
-        <p>
-          Na kandidátky, které se do zastupitelstva nedostaly, připadlo {fmtPct(data.withoutSeats)} hlasů.
-        </p>
-      </section>
 
       <section className="prose">
         <h2>Poslední mandát</h2>
@@ -642,8 +622,7 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
               , třetí by poměr posunul na {coalition.seats.now - 1} : {townHall.seats.now + 1}
             </>
           )}
-          . Poměr {coalition.seats.now} : {townHall.seats.now} by nezměnila ani společná kandidátka Prahy 5 Sobě
-          a Pirátů.
+          .
         </p>
       </section>
 
@@ -657,19 +636,9 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       {newPirati && fromStan && (
         <section className="prose">
           <p>
-            Většinu ODS, TOP 09, STAN a ANO by ukončily až dva mandáty navíc pro druhý tábor: asi{" "}
-            {tens(newPirati.voters ?? 0)} nových voličů Pirátů, tedy {fmtPct(ofVoters(newPirati))} těch, kdo přišli,
-            nebo asi {tens(fromStan.voters ?? 0)} lidí, kteří by místo STAN volili Piráty.
-            {jointThree && (
-              <>
-                {" "}
-                Společná kandidátka všech tří by přidala{" "}
-                {jointThree.blocs.coalition2022 - coalition.seats.now === 1
-                  ? "jeden mandát"
-                  : `${jointThree.blocs.coalition2022 - coalition.seats.now} mandáty`}
-                .
-              </>
-            )}
+            Většinu ODS, TOP 09, STAN a ANO by ukončily až dva mandáty navíc pro druhý tábor. Společná kandidátka
+            by na to nestačila; bylo by potřeba asi {tens(newPirati.voters ?? 0)} nových voličů Pirátů, nebo asi{" "}
+            {tens(fromStan.voters ?? 0)} lidí, kteří by místo STAN volili Piráty.
           </p>
         </section>
       )}
@@ -677,8 +646,8 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       <section className="prose">
         <h2>Dva lístky, stejní voliči</h2>
         <p>
-          Každý volič dostal dva hlasovací lístky: do zastupitelstva Prahy 5 a do zastupitelstva hlavního města. Ve
-          všech {precincts.length} okrscích tak jde srovnat, jak titíž lidé hlasovali o radnici a o magistrátu.
+          Každý volič dostal dva hlasovací lístky: do zastupitelstva Prahy 5 a do zastupitelstva hlavního města.
+          Jde tak srovnat, jak titíž lidé hlasovali o radnici a o magistrátu.
         </p>
       </section>
 
@@ -692,25 +661,17 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
 
       <section className="prose">
         <p>
-          Piráti dostali do zastupitelstva Prahy 5 o {fmtNum(Math.abs(gap("pirati")))} bodu méně než do pražského,
-          v přepočtu asi o {tens(inVoters(gap("pirati")))} voličů. Místně měli méně{" "}
-          {inCount(counts.lowerLocally.pirati)} z {precincts.length} okrsků. Před čtyřmi lety byl rozdíl {fmtNum(Math.abs(ballot("pirati").previousGap ?? 0))}{" "}
-          bodu; tehdy na pražském lístku chyběl SEN, který v Praze 5 dostal{" "}
-          {fmtPct(district.previousLocal.sen ?? 0)}.
+          Největší rozdíl má STAN: do pražského zastupitelstva ho volilo asi o {tens(inVoters(gap("stan")))} lidí víc
+          než do zastupitelstva Prahy 5 a místně dostal méně {inCount(counts.lowerLocally.stan)} z {precincts.length}{" "}
+          okrsků. Místně naopak získávají ODS s TOP 09, SEN a Naše Praha 5.
         </p>
         <p>
-          Letos SEN kandidoval do obou zastupitelstev. V Praze 5 dostal na pražském lístku{" "}
-          {fmtPct(district.city.sen ?? 0)}, v celé Praze {fmtPct(data.cityWide.now.sen ?? 0)}. Piráti tu na stejném
-          lístku klesli z {fmtNum(district.previousCity.pirati ?? 0)} na {fmtPct(district.city.pirati ?? 0)}.
+          Piráti dostali do zastupitelstva Prahy 5 o {fmtNum(Math.abs(gap("pirati")))} bodu méně než do pražského.
+          Před čtyřmi lety byl rozdíl {fmtNum(Math.abs(ballot("pirati").previousGap ?? 0))} bodu; tehdy na pražském
+          lístku chyběl SEN, který letos kandidoval do obou zastupitelstev a v Praze 5 na něm dostal{" "}
+          {fmtPct(district.city.sen ?? 0)}, v celé Praze {fmtPct(data.cityWide.now.sen ?? 0)}.
         </p>
-        <p>
-          Největší rozdíl mezi lístky má STAN: do pražského zastupitelstva ho volilo asi o{" "}
-          {tens(inVoters(gap("stan")))} lidí víc než do zastupitelstva Prahy 5. Místně méně dostal{" "}
-          {inCount(counts.lowerLocally.stan)} z {precincts.length} okrsků. Víc než na pražském lístku naopak místně mají
-          ODS s TOP 09 a lidovci ({points(gap("ods"))} proti Spolu), SEN ({points(gap("sen"))}) a Naše Praha 5, která
-          do pražského zastupitelstva nekandidovala ({fmtPct(ballot("nasePraha5").local)}).
-        </p>
-        <p>Jsou to rozdíly součtů. Říkají, kolik hlasů kde přebývá a chybí, ne kdo je komu dal.</p>
+        <p>Jsou to rozdíly součtů; neříkají, kdo komu hlas dal.</p>
       </section>
 
       <section className="prose">
@@ -723,15 +684,7 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
                 : `${index === winners.length - 1 ? " a " : ", "}${label(key)} ${inCount(precinctsWon)}`}
             </span>
           ))}
-          . V roce {years.previous} vedla{" "}
-          {winnersBefore
-            .slice(0, 2)
-            .map(([key, precinctsWon]) => `${key === "odsTop" ? "společná kandidátka ODS a TOP 09" : label(key)} ${inCount(precinctsWon)}`)
-            .join(" a ")}
-          ; letos se hlasy ODS a TOP 09 dělí mezi dvě kandidátky.
-        </p>
-        <p>
-          Praha 5 Sobě, Piráti a SEN mají dohromady víc hlasů než ODS, TOP 09, STAN a ANO{" "}
+          . Praha 5 Sobě, Piráti a SEN mají dohromady víc hlasů než ODS, TOP 09, STAN a ANO{" "}
           {inCount(counts.coalitionAhead.now)} okrscích, před čtyřmi lety {inCount(counts.coalitionAhead.then)}.
         </p>
       </section>
@@ -763,46 +716,19 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
 
       <section className="prose">
         <p>
-          V nejslabší pětině Piráti ztratili {fmtNum(Math.abs(change(weakest, "pirati")))} bodu, v nejsilnější{" "}
-          {fmtNum(Math.abs(change(strongest, "pirati")))}. STAN přitom přidal všude zhruba stejně, od{" "}
-          {fmtNum(Math.min(...data.fifths.map((fifth) => change(fifth, "stan"))))} do{" "}
-          {fmtNum(Math.max(...data.fifths.map((fifth) => change(fifth, "stan"))))} bodu, a posílil{" "}
+          STAN přidal ve všech pětinách zhruba stejně a posílil{" "}
           {counts.rose.stan === counts.compared
             ? `ve všech ${counts.compared} okrscích`
             : `${inCount(counts.rose.stan)} z ${counts.compared} okrsků`}
-          .
-          V někdejších pirátských baštách navíc rostly Praha 5 Sobě ({points(change(strongest, "praha5Sobe"))}) a SEN (
-          {points(change(strongest, "sen"))}).
+          . V někdejších pirátských baštách navíc rostly Praha 5 Sobě a SEN.
         </p>
       </section>
-
-      <Figure
-        title={`Piráti v okrscích v letech ${years.previous} a ${years.current}`}
-        sub="Každá tečka je okrsek, velikost odpovídá počtu voličů. Pod úhlopříčkou jsou okrsky, kde Piráti ztratili. Kliknutím okrsek otevřete v mapě výsledků."
-      >
-        <Scatter
-          points={precincts
-            .filter((precinct) => precinct.previousLocal.pirati != null && precinct.local.pirati != null)
-            .map((precinct) => ({
-              id: precinct.id,
-              label: `Okrsek ${precinct.id}${precinct.part ? ` · ${precinct.part}` : ""}`,
-              previous: precinct.previousLocal.pirati ?? 0,
-              current: precinct.local.pirati ?? 0,
-              size: precinct.registered,
-            }))}
-          previousYear={years.previous}
-          currentYear={years.current}
-          selected={null}
-          onSelect={(id) => navigate(`${councilPath}/mapa?okrsek=${id}`)}
-          color={colorOf("pirati")}
-        />
-      </Figure>
 
       <section className="prose">
         <h2>Čtvrti</h2>
         <p>
-          Okrsky jsou tu spojené do {groups.length === 4 ? "čtyř" : groups.length} celků podle částí obce. Barrandov,
-          který patří k Hlubočepům, je vedený zvlášť.
+          Okrsky jsou spojené do {groups.length === 4 ? "čtyř" : groups.length} celků podle částí obce; Barrandov,
+          který patří k Hlubočepům, je zvlášť.
         </p>
       </section>
 
@@ -830,17 +756,11 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
             .
           </p>
           <p>
-            Barrandovský výsledek z roku {years.previous} se přitom vymykal. Piráti tam tehdy do zastupitelstva Prahy
-            5 dostali skoro stejný podíl hlasů jako loni do Sněmovny ({fmtNum(barrandov.previousLocal.pirati ?? 0)}{" "}
+            Barrandovský výsledek z roku {years.previous} byl výjimečný: Piráti tam tehdy do zastupitelstva Prahy 5
+            dostali skoro stejný podíl hlasů jako loni do Sněmovny ({fmtNum(barrandov.previousLocal.pirati ?? 0)}{" "}
             a {fmtPct(barrandov.parliamentary.pirati ?? 0)}). Jinde měli místně jen{" "}
             {fmtNum(Math.min(...others.map(localOverParliament)), 0)} až{" "}
             {fmtPct(Math.max(...others.map(localOverParliament)), 0)} svého sněmovního podílu.
-          </p>
-          <p>
-            Praha 5 Sobě má nejvíc hlasů v celku {byShare("praha5Sobe")[0].name} (
-            {fmtPct(byShare("praha5Sobe")[0].local.praha5Sobe ?? 0)}) a nejméně v celku{" "}
-            {byShare("praha5Sobe")[groups.length - 1].name} (
-            {fmtPct(byShare("praha5Sobe")[groups.length - 1].local.praha5Sobe ?? 0)}). ODS a STAN mají všude podobně.
           </p>
         </section>
       )}
@@ -898,19 +818,15 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       </section>
 
       <Figure
-        title="Kolik voličů kandidátky získaly a ztratily"
-        sub={`Volby do zastupitelstva Prahy 5 v letech ${years.previous} a ${years.current}, hlasy přepočtené na voliče`}
-        note={`V roce ${years.previous} jsou u ODS, TOP 09 a KDU-ČSL sečtené jejich dvě tehdejší kandidátky, i když na jedné z nich byli také Zelení.`}
+        title="Kolik lidí volilo kterou kandidátku"
+        sub={`Volby do zastupitelstva Prahy 5 v letech ${years.previous} a ${years.current} a sněmovní volby ${years.parliamentary} ve stejných okrscích`}
+        note={`Hlasy v komunálních volbách jsou přepočtené na voliče. V roce ${years.previous} jsou u ODS, TOP 09 a KDU-ČSL sečtené jejich dvě tehdejší kandidátky, i když na jedné z nich byli také Zelení.`}
       >
-        <HeatTable
-          rows={voterRows}
-          rowHead="Kandidátka"
-          rowLabel={(row) => label(row.key)}
-          columns={[
-            { head: years.previous, value: (row) => row.then, format: tens },
-            { head: years.current, value: (row) => row.now, format: tens },
-            { head: "Rozdíl", value: (row) => row.now - row.then, format: signedTens, tint: "change" },
-          ]}
+        <ElectionBars
+          rows={electionRows}
+          elections={[`Praha 5, ${years.previous}`, `Sněmovna ${years.parliamentary}`, `Praha 5, ${years.current}`]}
+          colorOf={colorOf}
+          format={hundreds}
         />
       </Figure>
 
@@ -922,8 +838,8 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
           {stanVoters.now - stanVoters.then > moreBallots && (
             <>
               {" "}
-              STAN jich přibral {tens(stanVoters.now - stanVoters.then)}, víc, než kolik voličů celkem přibylo. Jeho
-              růst tedy nemůže stát jen na lidech, kteří minule nevolili.
+              STAN jich přibral {tens(stanVoters.now - stanVoters.then)}, víc, než kolik voličů celkem přibylo; jeho
+              růst tedy nestojí jen na lidech, kteří minule nevolili.
             </>
           )}
         </p>
@@ -943,11 +859,8 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
 
       <section className="prose">
         <p>
-          Kde účast stoupla víc, nedopadly volby jinak. Piráti ztratili ve všech třech skupinách podobně, od{" "}
-          {fmtNum(Math.min(...turnout.byRise.map((third) => Math.abs(change(third, "pirati")))))} do{" "}
-          {fmtNum(Math.max(...turnout.byRise.map((third) => Math.abs(change(third, "pirati")))))} bodu, a STAN všude
-          přidal {fmtNum(Math.min(...turnout.byRise.map((third) => change(third, "stan"))))} až{" "}
-          {fmtNum(Math.max(...turnout.byRise.map((third) => change(third, "stan"))))} bodu.
+          Kde účast stoupla víc, nedopadly volby jinak: Piráti ztratili a STAN přidal ve všech třech skupinách
+          podobně.
         </p>
       </section>
 
@@ -965,72 +878,33 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
 
       <section className="prose">
         <p>
-          S výsledkem souvisí spíš to, jak vysoká účast v okrsku bývá. Piráti mají v okrscích s nízkou účastí{" "}
-          {fmtPct(lowTurnout.local.pirati ?? 0)} a v těch s vysokou {fmtPct(highTurnout.local.pirati ?? 0)}; Praha 5
-          Sobě {fmtNum(lowTurnout.local.praha5Sobe ?? 0)} a {fmtPct(highTurnout.local.praha5Sobe ?? 0)}. Je to
-          vlastnost míst, ne důsledek letošní účasti: v okrscích s nízkou účastí dostali Piráti nejvíc i loni do
-          Sněmovny ({fmtPct(lowTurnout.parliamentary.pirati ?? 0)}).
+          S výsledkem souvisí spíš to, jak vysoká účast v okrsku bývá: Piráti jsou silnější tam, kde je nízká,
+          Praha 5 Sobě tam, kde je vysoká. Je to vlastnost míst, ne letošních voleb; v okrscích s nízkou účastí
+          dostali Piráti nejvíc i loni do Sněmovny.
         </p>
         <p>
-          Od sněmovních voleb účast klesla všude, a to bez ohledu na to, jak silní tam Piráti byli. Jestli doma
+          Tehdy je v Praze 5 volilo {hundreds(piratiVotes)} lidí. Od té doby přišlo k volbám o{" "}
+          {fmtPct(turnoutDrop, 0)} méně voličů, a to bez ohledu na to, jak silní v okrsku Piráti byli. Jestli doma
           zůstali častěji právě jejich voliči, se z okrsků nepozná.
-        </p>
-      </section>
-
-      <section className="prose">
-        <h2>Proti sněmovním volbám</h2>
-        <p>
-          Do Sněmovny loni v Praze 5 volilo Piráty {hundreds(piratiVotes)} lidí ({fmtPct(district.parliamentary.pirati ?? 0)}).
-          Letos jim do zastupitelstva Prahy 5 dalo hlas asi {hundreds(pirati.voters)} voličů a do pražského{" "}
-          {hundreds(piratiCity)}. K volbám ovšem přišlo o {fmtPct(turnoutDrop, 0)} méně lidí.
-        </p>
-      </section>
-
-      <Figure
-        title="Kolik lidí volilo kterou kandidátku"
-        sub={`Volby do zastupitelstva Prahy 5 v letech ${years.previous} a ${years.current} a sněmovní volby ${years.parliamentary} ve stejných okrscích`}
-        note={`Hlasy v komunálních volbách jsou přepočtené na voliče. V roce ${years.previous} jsou u ODS, TOP 09 a KDU-ČSL sečtené jejich dvě tehdejší kandidátky, i když na jedné z nich byli také Zelení.`}
-      >
-        <ElectionBars
-          rows={electionRows}
-          elections={[`Praha 5, ${years.previous}`, `Sněmovna ${years.parliamentary}`, `Praha 5, ${years.current}`]}
-          colorOf={colorOf}
-          format={hundreds}
-        />
-      </Figure>
-
-      <section className="prose">
-        <p>
-          Praha 5 Sobě, Piráti a SEN mají dohromady asi {hundreds(coalitionVoters)} voličů, o{" "}
-          {fmtPct((coalitionVoters / piratiVotes - 1) * 100, 0)} víc, než kolik bylo loni sněmovních voličů Pirátů.
-          Koho loni volili dnešní voliči Prahy 5 Sobě a SEN, se z těchto čísel nepozná.
         </p>
       </section>
 
       <section className="prose">
         <h2>Co z toho plyne</h2>
         <p>
-          Místní ztráta Pirátů je menší než jejich ztráta na pražském lístku: v Praze 5 klesli do místního
-          zastupitelstva z {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}, do pražského z{" "}
-          {fmtNum(district.previousCity.pirati ?? 0)} na {fmtPct(district.city.pirati ?? 0)}. Místně ale už před
-          čtyřmi lety dostávali výrazně méně než na pražském lístku.
+          Místně Piráti ztratili méně než na pražském lístku: do zastupitelstva Prahy 5 klesli z{" "}
+          {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}, do pražského v týchž okrscích z{" "}
+          {fmtNum(district.previousCity.pirati ?? 0)} na {fmtPct(district.city.pirati ?? 0)}.
         </p>
-        {nextPirati && newPirati && (
-          <p>
-            Čtvrtý mandát Pirátům unikl o {fmtInt(nextPirati.missingVoters)} voličů, poměr sil v zastupitelstvu by ale
-            změnilo až asi {tens(newPirati.voters ?? 0)} voličů navíc.
-          </p>
-        )}
         {barrandov && (
           <p>
             Největší ztráty jsou na Barrandově, kde žije {fmtPct((barrandov.registered / district.registered) * 100, 0)}{" "}
-            voličů Prahy 5{senGrewMostOnBarrandov && " a kde letos nejvíc posílil SEN"}.
+            voličů Prahy 5{senGrewMostOnBarrandov && " a kde nejvíc posílil SEN"}.
           </p>
         )}
         <p>
-          STAN má v Praze 5 na místním lístku o {fmtPct((1 - ballot("stan").local / (ballot("stan").city ?? 1)) * 100, 0)}{" "}
-          méně hlasů než na pražském. Nejméně tolik jeho pražských voličů volí do zastupitelstva Prahy 5 někoho
-          jiného.
+          STAN má na místním lístku o {fmtPct((1 - ballot("stan").local / (ballot("stan").city ?? 1)) * 100, 0)} méně
+          hlasů než na pražském. Nejméně tolik jeho pražských voličů volí do zastupitelstva Prahy 5 někoho jiného.
         </p>
         <p>Proč voliči hlasovali na obou lístcích různě a proč Piráty opouštěli, z výsledků vyčíst nejde.</p>
       </section>
