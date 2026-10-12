@@ -33,7 +33,7 @@ function generator(seed: number): () => number {
   };
 }
 
-function ringsOf(feature: Feature): Position[][] {
+export function ringsOf(feature: Feature): Position[][] {
   const geometry = feature.geometry;
   if (geometry?.type === "Polygon") return geometry.coordinates;
   if (geometry?.type === "MultiPolygon") return geometry.coordinates.flat();

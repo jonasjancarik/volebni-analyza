@@ -1,9 +1,10 @@
 import { type ExpressionSpecification, type GeoJSONSource, Map as MapLibre, NavigationControl } from "maplibre-gl";
-import type { FeatureCollection, Point } from "geojson";
+import type { FeatureCollection, Point, Polygon } from "geojson";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type Boundaries, useAddresses, useBoundaries, useComparison } from "../api";
-import { NO_DATA, type Scale, divergingScale, resolveColor, sequentialScale } from "../colors";
+import { NO_DATA, RAMPS, type Scale, divergingScale, resolveColor, sequentialScale } from "../colors";
 import type { TabProps } from "../Council";
+import { circleShapes } from "../components/cartogram";
 import { type DotGroup, dotPoints, dotSteps } from "../components/dots";
 import { bounds, STYLES } from "../components/mapBase";
 import { PrecinctDetail } from "../components/PrecinctDetail";
@@ -22,6 +23,10 @@ const METRICS: { id: Metric; label: string }[] = [
 
 const TURNOUT = "__turnout";
 const DOTS = "tecky";
+const CIRCLES = "kruhy";
+/** Colours the dots by the list their votes went to, in place of a scale */
+const BY_LIST = "strana";
+
 interface Painted {
   /** Colour and tooltip text of each precinct that has a value */
   values: Map<string, { color: string; text: string; sub?: string }>;
@@ -55,7 +60,12 @@ export function MapTab({ council, colors, focus }: TabProps) {
   const [changeOf, setChangeOf] = useParam("zm");
   const [view, setView] = useParam("z");
   const [perDotParam, setPerDot] = useParam("tecka");
+  const [rampParam, setRamp] = useParam("barvy");
+  const [plusParam, setPlus] = useParam("plus");
+  const [apartParam, setApart] = useParam("odsun");
   const asDots = view === DOTS;
+  const asCircles = view === CIRCLES;
+  const apart = apartParam === "1";
   const addresses = useAddresses(election.id, council.code, asDots);
   const metric: Metric = METRICS.some((item) => item.id === metricParam) ? (metricParam as Metric) : "podil";
   const comparison = useComparison(election.id, council.code, null, metric === "zmena" && !!previous);
@@ -63,13 +73,38 @@ export function MapTab({ council, colors, focus }: TabProps) {
   const parliamentary = election.type === "parliamentary";
   const listWord = parliamentary ? "strany" : "kandidátky";
 
+  // The followed list first, then the lists added to it
+  const combo = useMemo(() => {
+    const extras = (plusParam ?? "")
+      .split(".")
+      .filter(Boolean)
+      .map(Number)
+      .filter((index) => Number.isInteger(index) && index >= 0 && index < lists.length && index !== focus);
+    return [focus, ...new Set(extras)];
+  }, [plusParam, focus, lists.length]);
+  const [picking, setPicking] = useState(combo.length > 1);
+  const toggleList = (index: number) => {
+    const extras = combo.slice(1);
+    const next = extras.includes(index) ? extras.filter((item) => item !== index) : [...extras, index];
+    setPlus(next.length ? next.join(".") : null);
+  };
+  const comboName =
+    combo.length === 1
+      ? listName(lists[focus].name)
+      : `${combo.length} ${parliamentary ? plural(combo.length, "strana", "strany", "stran") : plural(combo.length, "kandidátka", "kandidátky", "kandidátek")} dohromady`;
+
+  const scaled = metric === "podil" || metric === "ucast";
+  const byList = asDots && metric === "podil" && rampParam === BY_LIST;
+  const ramp = rampParam && RAMPS[rampParam] ? rampParam : null;
+
   const painted = useMemo<Painted>(() => {
     const values: Painted["values"] = new Map();
     const inArea = precincts.filter((precinct) => precinct.registered > 0);
     const total = (votes: number[]) => votes.reduce((sum, value) => sum + value, 0);
+    const rampColors = ramp ? RAMPS[ramp].colors : undefined;
 
     if (metric === "ucast") {
-      const scale = sequentialScale(inArea.map((precinct) => precinct.turnout));
+      const scale = sequentialScale(inArea.map((precinct) => precinct.turnout), rampColors);
       for (const precinct of inArea) {
         values.set(precinct.id, { color: scale.color(precinct.turnout), text: `Účast ${fmtPct(precinct.turnout)}` });
       }
@@ -79,24 +114,20 @@ export function MapTab({ council, colors, focus }: TabProps) {
     if (metric === "podil") {
       const shares = inArea.map((precinct) => {
         const all = total(precinct.votes);
-        return all ? (precinct.votes[focus] / all) * 100 : 0;
+        return all ? (combo.reduce((sum, index) => sum + precinct.votes[index], 0) / all) * 100 : 0;
       });
-      const scale = sequentialScale(shares);
+      const scale = sequentialScale(shares, rampColors);
       inArea.forEach((precinct, i) =>
         values.set(precinct.id, {
           color: scale.color(shares[i]),
           text: `${fmtPct(shares[i])} hlasů`,
-          sub: truncate(listName(lists[focus].name), 40),
+          sub: truncate(comboName, 40),
         }),
       );
       return {
         values,
         legend: (
-          <RampLegend
-            title={`${truncate(listName(lists[focus].name), 34)} (% hlasů)`}
-            scale={scale}
-            format={(edge) => fmtNum(edge, edge % 1 ? 1 : 0)}
-          />
+          <RampLegend title={`${truncate(comboName, 34)} (% hlasů)`} scale={scale} format={(edge) => fmtNum(edge, edge % 1 ? 1 : 0)} />
         ),
       };
     }
@@ -159,7 +190,7 @@ export function MapTab({ council, colors, focus }: TabProps) {
         />
       ),
     };
-  }, [metric, precincts, focus, lists, colors, comparison.data, changeOf]);
+  }, [metric, precincts, combo, comboName, ramp, lists, colors, comparison.data, changeOf]);
 
   const precinctById = useMemo(() => new Map(precincts.map((precinct) => [precinct.id, precinct])), [precincts]);
   const selectedPrecinct = selected ? precinctById.get(selected) : undefined;
@@ -169,58 +200,85 @@ export function MapTab({ council, colors, focus }: TabProps) {
     [area, precincts],
   );
 
-  const dots = useMemo(() => {
-    const features = boundaries.data?.features;
-    if (!asDots || !features || addresses.isLoading) return null;
-    const homes = addresses.data?.points ?? {};
+  // What the dots and circles count in each precinct
+  const sized = useMemo(() => {
+    if (!asDots && !asCircles) return null;
     // Turnout is about people who came to vote, everything else about votes
     const ofTurnout =
       metric === "ucast" ||
       (metric === "zmena" && (!changeOf || changeOf === TURNOUT || !comparison.data?.sameLists.includes(changeOf)));
-    const list = metric === "podil" ? focus : metric === "zmena" ? lists.findIndex((item) => item.name === changeOf) : -1;
-    const listColor = metric === "vitez" ? colors.map(resolveColor) : [];
+    const chosen =
+      metric === "podil"
+        ? combo
+        : metric === "zmena" && !ofTurnout
+          ? [lists.findIndex((item) => item.name === changeOf)].filter((index) => index >= 0)
+          : [];
+    const people = metric !== "vitez" && chosen.length === 0;
+    const listColor = metric === "vitez" || byList ? colors.map(resolveColor) : [];
     const groups = new Map<string, DotGroup[]>();
     const counts = new Map<string, number>();
     const perList = lists.map(() => 0);
     let total = 0;
     for (const precinct of precincts) {
       if (precinct.registered <= 0) continue;
+      const color = painted.values.get(precinct.id)?.color ?? NO_DATA;
       let parts: DotGroup[];
       if (metric === "vitez") {
         parts = precinct.votes.map((count, i) => ({ count, color: listColor[i] }));
         precinct.votes.forEach((count, i) => (perList[i] += count));
+      } else if (people) {
+        parts = [{ count: precinct.ballots, color }];
+      } else if (byList) {
+        parts = chosen.map((index) => ({ count: precinct.votes[index], color: listColor[index] }));
       } else {
-        const count = ofTurnout || list === -1 ? precinct.ballots : precinct.votes[list];
-        parts = [{ count, color: painted.values.get(precinct.id)?.color ?? NO_DATA }];
+        parts = [{ count: chosen.reduce((sum, index) => sum + precinct.votes[index], 0), color }];
       }
       const count = parts.reduce((sum, part) => sum + part.count, 0);
       groups.set(precinct.id, parts);
       counts.set(precinct.id, count);
       total += count;
     }
-    const steps = dotSteps(total);
-    const perDot = steps.options.includes(Number(perDotParam)) ? Number(perDotParam) : steps.auto;
+    const one = parliamentary ? "tuto stranu" : "tuto kandidátku";
+    const more = parliamentary ? "vybrané strany" : "vybrané kandidátky";
     return {
-      points: dotPoints(features, groups, perDot, focusIds, homes),
-      atHomes: Object.keys(homes).length > 0,
-      perDot,
-      steps,
+      groups,
       counts,
       total,
       perList,
-      people: ofTurnout || (metric !== "vitez" && list === -1),
+      people,
+      /** Whose votes are counted, to finish a sentence in the legend */
+      target: people || metric === "vitez" ? "" : ` pro ${chosen.length > 1 ? more : one}`,
     };
-  }, [asDots, boundaries.data, metric, changeOf, comparison.data, focus, lists, colors, precincts, painted, perDotParam, focusIds, addresses.isLoading, addresses.data]);
+  }, [asDots, asCircles, metric, changeOf, comparison.data, combo, byList, lists, colors, precincts, painted, parliamentary]);
+
+  const dots = useMemo(() => {
+    const features = boundaries.data?.features;
+    if (!asDots || !sized || !features || addresses.isLoading) return null;
+    const homes = addresses.data?.points ?? {};
+    const steps = dotSteps(sized.total);
+    const perDot = steps.options.includes(Number(perDotParam)) ? Number(perDotParam) : steps.auto;
+    return {
+      points: dotPoints(features, sized.groups, perDot, focusIds, homes),
+      atHomes: Object.keys(homes).length > 0,
+      perDot,
+      steps,
+    };
+  }, [asDots, sized, boundaries.data, perDotParam, focusIds, addresses.isLoading, addresses.data]);
+
+  const circles = useMemo(() => {
+    const features = boundaries.data?.features;
+    return asCircles && sized && features ? circleShapes(features, sized.counts, apart) : null;
+  }, [asCircles, sized, boundaries.data, apart]);
 
   const unit = (count: number) =>
-    dots?.people ? plural(count, "hlasující", "hlasující", "hlasujících") : plural(count, "hlas", "hlasy", "hlasů");
-  // With dots on the map, the tooltip also says how many they stand for
+    sized?.people ? plural(count, "hlasující", "hlasující", "hlasujících") : plural(count, "hlas", "hlasy", "hlasů");
+  // With dots or circles on the map, the tooltip also says how many they stand for
   const described = useMemo(() => {
-    if (!dots) return painted.values;
+    if (!sized) return painted.values;
     const values: Painted["values"] = new Map();
-    for (const [id, count] of dots.counts) {
+    for (const [id, count] of sized.counts) {
       const value = painted.values.get(id);
-      const amount = `${fmtInt(count)} ${dots.people ? plural(count, "hlasující", "hlasující", "hlasujících") : plural(count, "hlas", "hlasy", "hlasů")}`;
+      const amount = `${fmtInt(count)} ${sized.people ? plural(count, "hlasující", "hlasující", "hlasujících") : plural(count, "hlas", "hlasy", "hlasů")}`;
       values.set(id, {
         color: value?.color ?? NO_DATA,
         text: value?.text ?? amount,
@@ -228,7 +286,7 @@ export function MapTab({ council, colors, focus }: TabProps) {
       });
     }
     return values;
-  }, [dots, painted]);
+  }, [sized, painted]);
 
   if (boundaries.isPending) return <Loading text="Načítám hranice okrsků…" />;
   if (boundaries.error) return <Problem error={boundaries.error} />;
@@ -237,6 +295,16 @@ export function MapTab({ council, colors, focus }: TabProps) {
   }
 
   const sameLists = comparison.data?.sameLists ?? [];
+  // Lists shown in the legend when each dot has the colour of its list
+  const legendLists =
+    sized && asDots && metric === "vitez"
+      ? sized.perList
+          .map((votes, index) => ({ votes, index }))
+          .sort((a, b) => b.votes - a.votes)
+          .slice(0, 8)
+      : byList
+        ? combo.map((index) => ({ votes: null, index }))
+        : null;
 
   return (
     <div className="map-layout">
@@ -258,11 +326,14 @@ export function MapTab({ council, colors, focus }: TabProps) {
             Jak to mapa ukazuje
           </div>
           <div className="segmented vertical" role="group" aria-label="Jak to mapa ukazuje">
-            <button aria-pressed={!asDots} onClick={() => setView(null)}>
+            <button aria-pressed={!asDots && !asCircles} onClick={() => setView(null)}>
               Vybarvené okrsky
             </button>
             <button aria-pressed={asDots} onClick={() => setView(DOTS)}>
               Tečky podle počtu hlasů
+            </button>
+            <button aria-pressed={asCircles} onClick={() => setView(CIRCLES)}>
+              Kruhy podle počtu hlasů
             </button>
           </div>
         </div>
@@ -288,12 +359,78 @@ export function MapTab({ council, colors, focus }: TabProps) {
             </span>
           </label>
         )}
+        {asCircles && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <p className="note">
+              Každý okrsek je kruh, jehož plocha odpovídá počtu hlasů. Velký okrsek s málo voliči tak na mapě nezabere víc
+              místa než malý okrsek, kde jich je hodně.
+            </p>
+            <label className="toggle">
+              <input type="checkbox" checked={apart} onChange={(event) => setApart(event.target.checked ? "1" : null)} />
+              Odsunout kruhy, které se překrývají
+            </label>
+            <p className="note">
+              {apart
+                ? "Kruhy se nepřekrývají, ale neleží přesně na místě svého okrsku."
+                : "Kruhy leží na místě svého okrsku, v hustě obydlených částech se proto překrývají."}
+            </p>
+          </div>
+        )}
+        {scaled && (
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="field-label">Barvy</span>
+            <select
+              className="select block"
+              value={byList ? BY_LIST : (ramp ?? "")}
+              onChange={(event) => setRamp(event.target.value || null)}
+            >
+              <option value="">Od světle modré po tmavou</option>
+              {Object.entries(RAMPS).map(([id, item]) => (
+                <option key={id} value={id}>
+                  {item.label}
+                </option>
+              ))}
+              {asDots && metric === "podil" && (
+                <option value={BY_LIST}>
+                  {combo.length > 1
+                    ? `Každá ${parliamentary ? "strana" : "kandidátka"} svou barvou`
+                    : `Barva ${listWord}`}
+                </option>
+              )}
+            </select>
+          </label>
+        )}
         {metric === "podil" && (
-          <p className="note">
-            Mapa ukazuje sledovanou {parliamentary ? "stranu" : "kandidátku"},{" "}
-            <strong style={{ color: "var(--ink)" }}>{listName(lists[focus].name)}</strong>. Jinou vyberete nahoře vedle
-            názvu.
-          </p>
+          <div style={{ display: "grid", gap: 10 }}>
+            <p className="note">
+              Mapa ukazuje sledovanou {parliamentary ? "stranu" : "kandidátku"},{" "}
+              <strong style={{ color: "var(--ink)" }}>{listName(lists[focus].name)}</strong>. Jinou vyberete nahoře vedle
+              názvu.
+            </p>
+            <details className="pick" open={picking} onToggle={(event) => setPicking(event.currentTarget.open)}>
+              <summary>
+                Sečíst s dalšími {parliamentary ? "stranami" : "kandidátkami"}
+                {combo.length > 1 && ` (${combo.length - 1})`}
+              </summary>
+              <div className="pick-list">
+                {lists.map(
+                  (list, index) =>
+                    index !== focus && (
+                      <label key={list.name}>
+                        <input type="checkbox" checked={combo.includes(index)} onChange={() => toggleList(index)} />
+                        <span className="swatch" style={{ background: colors[index] }} />
+                        {truncate(listName(list.name), 34)}
+                      </label>
+                    ),
+                )}
+              </div>
+            </details>
+            {combo.length > 1 && (
+              <p className="note">
+                Hlasy vybraných {parliamentary ? "stran" : "kandidátek"} se sčítají a mapa je ukazuje dohromady.
+              </p>
+            )}
+          </div>
         )}
         {metric === "zmena" && (
           <label style={{ display: "grid", gap: 4 }}>
@@ -323,7 +460,7 @@ export function MapTab({ council, colors, focus }: TabProps) {
           </label>
         )}
         <p className="note">
-          Kliknutím na okrsek zobrazíte jeho výsledky.
+          Kliknutím na {asCircles ? "kruh" : "okrsek"} zobrazíte {asCircles ? "výsledky jeho okrsku" : "jeho výsledky"}.
           {boundaries.data.boundariesYear !== election.year &&
             ` Hranice okrsků jsou z roku ${boundaries.data.boundariesYear}, novější zatím nejsou zveřejněné.`}
           {boundaries.data.missing > 0 &&
@@ -336,6 +473,7 @@ export function MapTab({ council, colors, focus }: TabProps) {
           geojson={boundaries.data}
           painted={described}
           dots={dots?.points ?? null}
+          circles={circles}
           selected={selectedPrecinct?.id ?? null}
           onSelect={setSelected}
           focusIds={focusIds}
@@ -348,32 +486,36 @@ export function MapTab({ council, colors, focus }: TabProps) {
         {metric === "zmena" && comparison.isPending ? (
           <div className="map-legend">Porovnávám s minulými volbami…</div>
         ) : (
-          (painted.legend || dots) && (
+          (painted.legend || sized) && (
             <div className="map-legend">
-              {dots && metric === "vitez" ? (
+              {legendLists ? (
                 <>
                   <div className="title">Barva tečky říká, komu hlasy patří</div>
                   <div style={{ display: "grid", gap: 4 }}>
-                    {dots.perList
-                      .map((votes, index) => ({ votes, index }))
-                      .sort((a, b) => b.votes - a.votes)
-                      .slice(0, 8)
-                      .map(({ votes, index }) => (
-                        <span className="legend-item" key={index}>
-                          <span className="swatch" style={{ background: colors[index] }} />
-                          <span style={{ flex: 1 }}>{truncate(listName(lists[index].name), 26)}</span>
-                          <span className="num muted">{fmtPct(dots.total ? (votes / dots.total) * 100 : 0)}</span>
-                        </span>
-                      ))}
+                    {legendLists.map(({ votes, index }) => (
+                      <span className="legend-item" key={index}>
+                        <span className="swatch" style={{ background: colors[index] }} />
+                        <span style={{ flex: 1 }}>{truncate(listName(lists[index].name), 26)}</span>
+                        {votes != null && sized && (
+                          <span className="num muted">{fmtPct(sized.total ? (votes / sized.total) * 100 : 0)}</span>
+                        )}
+                      </span>
+                    ))}
                   </div>
                 </>
               ) : (
                 painted.legend
               )}
-              {dots && (
+              {dots && sized && (
                 <div className="dot-key">
                   Jedna tečka = {fmtInt(dots.perDot)} {unit(dots.perDot)}
-                  {!dots.people && metric !== "vitez" && ` pro ${parliamentary ? "tuto stranu" : "tuto kandidátku"}`}
+                  {sized.target}
+                </div>
+              )}
+              {circles && sized && (
+                <div className="dot-key">
+                  Čím větší kruh, tím víc {sized.people ? "hlasujících" : "hlasů"}
+                  {sized.target} v okrsku
                 </div>
               )}
             </div>
@@ -402,6 +544,8 @@ interface MapProps {
   painted: Painted["values"];
   /** One point for every so many votes, drawn in place of the coloured precincts */
   dots: FeatureCollection<Point> | null;
+  /** A circle per precinct, drawn in place of its real shape */
+  circles: FeatureCollection<Polygon> | null;
   selected: string | null;
   /** Precincts to zoom to; the others are dimmed */
   focusIds: Set<string> | null;
@@ -417,7 +561,7 @@ const fillOpacity = (dotted: boolean): ExpressionSpecification => [
   dotted ? 0.08 : 0.82,
 ];
 
-function PrecinctMap({ geojson, painted, dots, selected, focusIds, onSelect, label }: MapProps) {
+function PrecinctMap({ geojson, painted, dots, circles, selected, focusIds, onSelect, label }: MapProps) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibre | null>(null);
   const [ready, setReady] = useState(false);
@@ -543,6 +687,12 @@ function PrecinctMap({ geojson, painted, dots, selected, focusIds, onSelect, lab
     // The map is rebuilt only when it shows a different council
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geojson]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (!ready || !instance) return;
+    (instance.getSource("precincts") as GeoJSONSource).setData(circles ?? geojson);
+  }, [ready, circles, geojson]);
 
   useEffect(() => {
     const instance = map.current;
