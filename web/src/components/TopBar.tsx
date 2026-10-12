@@ -1,4 +1,4 @@
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useConfig, useElections } from "../api";
 import { Search } from "./Search";
 
@@ -32,6 +32,9 @@ export function TopBar() {
           )}
         </div>
         <div className="topbar-right">
+          <NavLink to="/analyzy" className="nav-link">
+            Analýzy
+          </NavLink>
           {config.data?.legacyUrl && (
             <a className="quiet-link" href={config.data.legacyUrl} target="_blank" rel="noreferrer">
               Původní verze

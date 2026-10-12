@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { ANALYSES, AnalysisCards } from "./analyses";
 import { type Place, useElections, useOverview } from "./api";
 import { Search } from "./components/Search";
 import { Loading, Problem } from "./components/State";
@@ -40,6 +41,7 @@ export function Home({ electionId }: { electionId: string }) {
   const parliamentary = data.kind === "parliamentary";
   const scale = Math.max(...data.places.map((place) => place.winner?.share ?? 0), 1);
   const change = data.previousTurnout != null ? data.turnout - data.previousTurnout : null;
+  const analyses = ANALYSES.filter((entry) => entry.election === electionId);
 
   return (
     <div className="page">
@@ -82,6 +84,16 @@ export function Home({ electionId }: { electionId: string }) {
           )}
         </div>
       </section>
+
+      {analyses.length > 0 && (
+        <>
+          <div className="section-head">
+            <h2>Analýzy</h2>
+            <span className="hint">Co výsledky znamenají</span>
+          </div>
+          <AnalysisCards entries={analyses} />
+        </>
+      )}
 
       <div className="section-head">
         <h2>{parliamentary ? "Kraje" : "Největší města"}</h2>

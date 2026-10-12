@@ -1,0 +1,90 @@
+import { Link, useParams } from "react-router-dom";
+import { useAnalysis } from "../api";
+import { Loading, Problem } from "../components/State";
+import { Prague2026 } from "./Prague2026";
+import type { PragueAnalysis } from "./types";
+
+interface AnalysisEntry {
+  slug: string;
+  /** Election the analysis is about; the home page of that election links to it */
+  election: string;
+  kicker: string;
+  title: string;
+  lede: string;
+  updated: string;
+  /** Draws the article from the figures the API computed for it */
+  body: (data: unknown) => React.ReactNode;
+}
+
+export const ANALYSES: AnalysisEntry[] = [
+  {
+    slug: "praha-2026-pirati-praha-sobe",
+    election: "kv2026",
+    kicker: "Komunální volby 2026 · Praha",
+    title: "Piráti a Praha Sobě v pražských volbách",
+    lede: "Proč STAN a Spolu získaly v zastupitelstvu většinu a kolik chybělo k tomu, aby potřebovaly třetího partnera.",
+    updated: "12. října 2026",
+    body: (data) => <Prague2026 data={data as PragueAnalysis} />,
+  },
+];
+
+export function AnalysisCards({ entries }: { entries: AnalysisEntry[] }) {
+  return (
+    <div className="analysis-grid">
+      {entries.map((entry) => (
+        <Link key={entry.slug} to={`/analyzy/${entry.slug}`} className="place-card analysis-card">
+          <div className="kicker">{entry.kicker}</div>
+          <h3>{entry.title}</h3>
+          <p>{entry.lede}</p>
+          <span className="more-link">Číst analýzu</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+export function AnalysesPage() {
+  return (
+    <div className="page article">
+      <header className="article-head">
+        <h1>Analýzy</h1>
+        <p className="lede">Výsledky voleb vyložené v souvislostech, s čísly počítanými ze stejných dat jako zbytek aplikace.</p>
+      </header>
+      <AnalysisCards entries={ANALYSES} />
+    </div>
+  );
+}
+
+export function AnalysisPage() {
+  const { slug = "" } = useParams();
+  const entry = ANALYSES.find((item) => item.slug === slug);
+  if (!entry) {
+    return (
+      <div className="page">
+        <Problem title="Tuhle analýzu tu nemáme" text="Zkontrolujte adresu, nebo si vyberte ze seznamu analýz." />
+      </div>
+    );
+  }
+  return <Article key={entry.slug} entry={entry} />;
+}
+
+function Article({ entry }: { entry: AnalysisEntry }) {
+  const analysis = useAnalysis<unknown>(entry.slug);
+  return (
+    <article className="page article">
+      <header className="article-head">
+        <nav className="crumbs" aria-label="Kde jste">
+          <Link to="/analyzy">Analýzy</Link>
+          <span aria-hidden>/</span>
+          <span>{entry.kicker}</span>
+        </nav>
+        <h1>{entry.title}</h1>
+        <p className="lede">{entry.lede}</p>
+        <div className="small muted">Aktualizováno {entry.updated}</div>
+      </header>
+      {analysis.isPending && <Loading text="Počítám čísla pro analýzu. Poprvé to trvá několik sekund." />}
+      {analysis.error && <Problem error={analysis.error} />}
+      {analysis.data != null && <div className="article-body">{entry.body(analysis.data)}</div>}
+    </article>
+  );
+}

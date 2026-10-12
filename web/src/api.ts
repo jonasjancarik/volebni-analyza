@@ -276,3 +276,7 @@ export const useCandidates = (election: string, code: string) =>
     queryFn: () => get<Candidate[]>(`/elections/${election}/councils/${code}/candidates`),
     ...forever,
   });
+
+/** Figures of one written analysis; each analysis has its own shape */
+export const useAnalysis = <T>(slug: string) =>
+  useQuery({ queryKey: ["analysis", slug], queryFn: () => get<T>(`/analyses/${slug}`), ...forever });

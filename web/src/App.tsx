@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import { AnalysesPage, AnalysisPage } from "./analyses";
 import { useElections } from "./api";
 import { Loading, Problem } from "./components/State";
 import { TopBar } from "./components/TopBar";
@@ -35,6 +36,8 @@ export function App() {
       <main>
         <Routes>
           <Route path="/" element={<ElectionGate>{() => null}</ElectionGate>} />
+          <Route path="/analyzy" element={<AnalysesPage />} />
+          <Route path="/analyzy/:slug" element={<AnalysisPage />} />
           <Route path="/:electionId" element={<ElectionGate>{(id) => <Home electionId={id} />}</ElectionGate>} />
           <Route
             path="/:electionId/:code/:tab?"
