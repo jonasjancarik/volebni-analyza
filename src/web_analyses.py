@@ -745,6 +745,123 @@ def _prague_2026_next_time() -> dict:
     }
 
 
+# Můstek, where the three metro lines of the centre meet
+CENTRE = (14.4245, 50.0835)
+OUTER_FROM_KM = 6
+DISTANCE_BANDS = (0, 2, 4, 6, 8, 10)
+
+
+def _precinct_places(election: str, code: str) -> pd.DataFrame:
+    """Where the people of every precinct live: kilometres from the centre
+    as the crow flies, and how many addresses the precinct has.
+
+    The place of a precinct is the middle of its addresses, so that a forest
+    or a field inside it does not pull it away; without the address file it
+    is the middle of its outline and the number of addresses is unknown.
+    """
+    import shapely
+    from shapely.geometry import shape
+
+    features = store.boundaries(election, code)["features"]
+    ids = [feature["properties"]["id"] for feature in features]
+    shapes = shapely.make_valid(np.array([shape(feature["geometry"]) for feature in features]))
+    middle = shapely.centroid(shapes)
+    places = pd.DataFrame(
+        {"lng": shapely.get_x(middle), "lat": shapely.get_y(middle), "addresses": np.nan}, index=ids
+    )
+
+    path = store.RAW_INPUT_DIR / store.ADDRESS_POINTS
+    if path.exists() and len(shapes):
+        everything = np.load(path, mmap_mode="r")
+        west, south, east, north = shapely.total_bounds(shapes)
+        longitude, latitude = everything[:, 0], everything[:, 1]
+        nearby = np.asarray(
+            everything[(longitude >= west) & (longitude <= east) & (latitude >= south) & (latitude <= north)],
+            dtype="float64",
+        )
+        address, precinct = shapely.STRtree(shapes).query(shapely.points(nearby), predicate="within")
+        found = pd.DataFrame(
+            {"id": np.array(ids)[precinct], "lng": nearby[address, 0], "lat": nearby[address, 1]}
+        )
+        by_precinct = found.groupby("id").agg(lng=("lng", "mean"), lat=("lat", "mean"), addresses=("lng", "size"))
+        places.update(by_precinct)
+
+    # Degrees to kilometres at the latitude of the centre
+    east_km = (places["lng"] - CENTRE[0]) * 111.32 * math.cos(math.radians(CENTRE[1]))
+    north_km = (places["lat"] - CENTRE[1]) * 110.57
+    places["km"] = np.hypot(east_km, north_km)
+    return places[["km", "addresses"]]
+
+
+def _with_turnout(part: pd.DataFrame) -> dict:
+    """A voter group with the turnout of each election, which needs the
+    electorate of each as well."""
+    group = _voter_group(part)
+    group["turnout"] = {
+        when: float(part[f"voted_{when}"].sum() / part[f"registered_{when}"].sum() * 100)
+        for when in WHEN
+        if part[f"registered_{when}"].sum() > 0
+    }
+    return group
+
+
+def _thirds_by_housing(part: pd.DataFrame) -> List[dict]:
+    """Precincts in thirds by voters per address, from family houses, where
+    an address is one household, to housing estates, where it is a block."""
+    known = part[part["per_address"].notna()]
+    if len(known) < 30:
+        return []
+    third = pd.qcut(known["per_address"], 3, labels=False)
+    return [
+        {
+            "perAddress": [
+                float(known[third == index]["per_address"].min()),
+                float(known[third == index]["per_address"].max()),
+            ],
+            **_with_turnout(known[third == index]),
+        }
+        for index in range(3)
+    ]
+
+
+def _prague_2026_centre() -> dict:
+    """Support by distance from the centre and by the kind of housing."""
+    election, previous, parliamentary = "kv2026", "kv2022", "ps2025"
+    first = analysis("praha-2026-pirati-praha-sobe")
+    voters = _precinct_voters(
+        store._municipality(previous, PRAGUE),
+        store._municipality(election, PRAGUE),
+        parliamentary,
+        PRAGUE_REGION,
+    )
+    voters = voters[voters["registered_now"] > 0]
+    places = _precinct_places(election, PRAGUE)
+    precinct = voters.index.str.split("-").str[1]
+    voters = voters.assign(
+        km=places["km"].reindex(precinct).to_numpy(),
+        addresses=places["addresses"].reindex(precinct).to_numpy(),
+    )
+    voters = voters[voters["km"].notna()]
+    voters["per_address"] = voters["registered_now"] / voters["addresses"].where(voters["addresses"] > 0)
+
+    edges = [*DISTANCE_BANDS, math.inf]
+    bands = []
+    for low, high in zip(edges, edges[1:]):
+        part = voters[(voters["km"] >= low) & (voters["km"] < high)]
+        if len(part):
+            bands.append({"from": low, "to": None if high == math.inf else high, **_with_turnout(part)})
+
+    return {
+        **{name: first[name] for name in ("council", "years", "summary", "lists")},
+        "city": _with_turnout(voters),
+        "bands": bands,
+        "outerFrom": OUTER_FROM_KM,
+        # From family houses to housing estates
+        "outer": _thirds_by_housing(voters[voters["km"] >= OUTER_FROM_KM]),
+        "inner": _thirds_by_housing(voters[voters["km"] < OUTER_FROM_KM]),
+    }
+
+
 ANALYSES: Dict[str, dict] = {
     "praha-2026-pirati-praha-sobe": {
         "build": _prague_2026,
@@ -756,6 +873,10 @@ ANALYSES: Dict[str, dict] = {
     },
     "praha-2026-co-by-zmenilo-vysledek": {
         "build": _prague_2026_next_time,
+        "elections": ("kv2026", "kv2022", "ps2025"),
+    },
+    "praha-2026-centrum-sidliste-predmesti": {
+        "build": _prague_2026_centre,
         "elections": ("kv2026", "kv2022", "ps2025"),
     },
 }
