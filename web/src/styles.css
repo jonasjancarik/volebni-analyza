@@ -1548,9 +1548,8 @@ details.more > .more-body {
 
 .method-search {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-  gap: 28px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 26px;
 }
 
 .method-caption {
@@ -1569,11 +1568,6 @@ details.more > .more-body {
   font-size: 13px;
 }
 
-.method-matrix th.col {
-  font-size: 11.5px;
-  padding: 6px 7px;
-  max-width: 78px;
-}
 
 .method-matrix th[scope="row"] {
   border-bottom: 0;
@@ -1687,7 +1681,6 @@ details.more > .more-body {
   .grid.two,
   .grid.half,
   .method-split,
-  .method-search,
   .map-layout,
   .overview-top,
   .flow-facts {

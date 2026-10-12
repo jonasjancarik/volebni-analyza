@@ -25,7 +25,7 @@ export function TableSearch({ inputs, source, target, currentYear, previousYear,
   const [playing, setPlaying] = useState(false);
   const [started, setStarted] = useState(false);
   const [seenRef, seen] = useSeen<HTMLDivElement>(0.5);
-  const [ref, width] = useWidth<HTMLDivElement>(440);
+  const [ref, width] = useWidth<HTMLDivElement>(640);
   const tooltip = useTooltip();
 
   // Starts by itself the first time the reader gets here
@@ -71,10 +71,11 @@ export function TableSearch({ inputs, source, target, currentYear, previousYear,
   const predicted = predictions[index].map((value, i) => blend(value, predictions[following][i], share) * 100);
   const max =
     Math.max(...actual, ...predictions[last].map((value) => value * 100), 100 / inputs.targets.length, 1) * 1.08;
-  const size = Math.min(width, 440);
-  const margin = { top: 24, right: 12, bottom: 44, left: 44 };
-  const inner = size - margin.left - margin.right;
-  const innerHeight = size - margin.top - margin.bottom;
+  // The same size as the chart of the previous step
+  const height = Math.min(430, Math.max(300, width * 0.62));
+  const margin = { top: 26, right: 16, bottom: 46, left: 46 };
+  const inner = width - margin.left - margin.right;
+  const innerHeight = height - margin.top - margin.bottom;
   const x = (value: number) => margin.left + (Math.min(value, max) / max) * inner;
   const y = (value: number) => margin.top + innerHeight - (Math.min(value, max) / max) * innerHeight;
   const color = words.mark(inputs.targets[target]);
@@ -123,7 +124,7 @@ export function TableSearch({ inputs, source, target, currentYear, previousYear,
                   <th />
                   {inputs.targets.map((name, c) => (
                     <th key={name} className={`col${c === target ? " on" : ""}`} title={name}>
-                      {truncate(words.short(name), 18)}
+                      {truncate(words.short(name), 22)}
                     </th>
                   ))}
                 </tr>
@@ -165,13 +166,12 @@ export function TableSearch({ inputs, source, target, currentYear, previousYear,
           </div>
           <svg
             className="chart"
-            width={size}
-            height={size}
-            style={{ width: size }}
+            width={width}
+            height={height}
             role="img"
             aria-label={`Výsledek skupiny ${targetName} v okrscích podle tabulky a ve skutečnosti`}
           >
-            {ticks(0, max, 5).map((mark) => (
+            {ticks(0, max).map((mark) => (
               <g key={mark}>
                 <line className="grid-line" x1={x(mark)} x2={x(mark)} y1={margin.top} y2={margin.top + innerHeight} />
                 <line className="grid-line" x1={margin.left} x2={margin.left + inner} y1={y(mark)} y2={y(mark)} />
@@ -187,7 +187,7 @@ export function TableSearch({ inputs, source, target, currentYear, previousYear,
             <text x={x(max) - 4} y={y(max) + 14} textAnchor="end">
               přesná shoda
             </text>
-            <text x={margin.left + inner} y={size - 6} textAnchor="end">
+            <text x={margin.left + inner} y={height - 6} textAnchor="end">
               podle tabulky, % zapsaných →
             </text>
             <text x={margin.left - 34} y={12}>
