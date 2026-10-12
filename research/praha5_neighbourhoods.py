@@ -1,16 +1,17 @@
 """
-Which neighbourhood each precinct of Praha 5 lies in.
+Which neighbourhood each precinct of a city district of Prague lies in.
 
-The analysis of Praha 5 groups precincts by neighbourhood (PRAGUE_5_PARTS in
-src/web_analyses.py). This prints the table that list was made from: for every
-precinct, the part of the municipality that most of its addresses are in,
-according to the address register (RÚIAN). Barrandov is not a part of the
-municipality, so the precincts of Hlubočepy that lie up on the plateau were
-moved to it by hand afterwards.
+The analyses of city districts group precincts by neighbourhood (PRAGUE_5_PARTS
+and PRAGUE_1_PARTS in src/web_districts.py). This prints the table those lists
+were made from: for every precinct, the part of the municipality that most of
+its addresses are in, according to the address register (RÚIAN). In Praha 5,
+Barrandov is not a part of the municipality, so the precincts of Hlubočepy
+that lie up on the plateau were moved to it by hand afterwards.
 
 Run from the repository root, again after precincts are redrawn:
 
-    uv run python research/praha5_neighbourhoods.py
+    uv run python research/praha5_neighbourhoods.py                    # Praha 5
+    uv run python research/praha5_neighbourhoods.py --council 500054   # Praha 1
 """
 
 import argparse
@@ -69,11 +70,12 @@ def runs(numbers: list) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser.add_argument("--council", default=PRAGUE_5, help="Kód městské části, výchozí je Praha 5")
     parser.add_argument("--election", default="kv2026", help="Volby, jejichž okrsky se mají zařadit")
     parser.add_argument("--day", default=latest_export_day(), help="Den exportu registru, RRRRMMDD")
     args = parser.parse_args()
 
-    features = store.boundaries(args.election, PRAGUE_5)["features"]
+    features = store.boundaries(args.election, args.council)["features"]
     precincts = np.array([feature["properties"]["id"] for feature in features])
     shapes = shapely.make_valid(np.array([shape(feature["geometry"]) for feature in features]))
     table = addresses(args.day)

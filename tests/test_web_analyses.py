@@ -8,15 +8,19 @@ sys.path.append(str(Path(__file__).parent.parent / "src"))
 import pandas as pd  # noqa: E402
 
 from web_analyses import (  # noqa: E402
-    _on_ballots,
-    _Prague5Seats,
     _SeatMath,
     group_key,
-    prague_5_key,
-    prague_5_part,
     seat_allocation,
     seat_order,
     smallest_shift,
+)
+from web_districts import (  # noqa: E402
+    _on_ballots,
+    _one_more_seat,
+    _Prague5Seats,
+    prague_1_key,
+    prague_5_key,
+    prague_5_part,
 )
 
 
@@ -170,3 +174,39 @@ def test_turnout_of_a_group_leaves_out_unusual_precincts():
     # Precinct 3 counts for the votes, not for the turnout
     assert group["turnout"]["now"] == 50
     assert group["local"]["pirati"] == 10
+
+
+def test_lists_of_praha_1_keep_their_key_in_both_elections():
+    assert prague_1_key("PRAHA 1 SOBĚ") == "praha1Sobe"
+    # STAN and KDU-ČSL ran together both times, under another name in 2022
+    assert prague_1_key("My, co tady žijeme") == "stanKdu"
+    assert prague_1_key("Starostové, KDU-ČSL s podporou Iniciativy občanů") == "stanKdu"
+    assert prague_1_key("TOP 09") == prague_1_key("TOP 09 – Srdce Prahy") == "top09"
+    assert prague_1_key("Naše PRAHA 1") == "nasePraha1"
+    assert prague_1_key("Piráti a občané z Prahy 1") == prague_1_key("Piráti a nezávislí pro Prahu 1") == "pirati"
+    assert prague_1_key("Patrioti pro Prahu 1") is None
+
+
+def test_one_more_seat_counts_the_threshold_too():
+    # 30 seats; D has 4.9 % and no seat, though its votes would be worth one
+    council = {
+        "seats": 30,
+        "summary": {"ballots": 10_000},
+        "lists": [
+            {"name": "A", "votes": 45_100},
+            {"name": "B", "votes": 30_000},
+            {"name": "C", "votes": 20_000},
+            {"name": "D", "votes": 4_900},
+        ],
+    }
+    seats = _SeatMath(council, key_of=lambda name: name, step=10)
+    assert seat_allocation(seats.votes, 30) == {"A": 15, "B": 9, "C": 6}
+
+    over = _one_more_seat(seats, "D")
+
+    # 5 % of the votes after they are added: (4 900 + x) / (100 000 + x) >= 0.05
+    assert over["votes"] == 110
+    assert over["seats"] == 0
+    assert over["voters"] == 11
+    # The last seat was A's fifteenth
+    assert over["from"] == "A"
