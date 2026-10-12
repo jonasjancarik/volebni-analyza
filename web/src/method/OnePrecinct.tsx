@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LazyMiniMap } from "../components/LazyMiniMap";
 import { MapLink } from "../components/MapLink";
 import { fmtInt, fmtPct, truncate } from "../format";
 import { useWidth } from "../hooks";
@@ -114,10 +115,7 @@ export function OnePrecinct(props: Props) {
 
       <div className="method-panel">
         <div className="method-panel-head">
-          <span className="method-precinct">
-            <span className="field-label">Okrsek {data.id}</span>
-            <MapLink precinct={data.id} />
-          </span>
+          <span className="field-label">Okrsek {data.id}</span>
           <button className="text-button" onClick={onAnother}>
             Zkusit jiný okrsek
           </button>
@@ -146,6 +144,10 @@ export function OnePrecinct(props: Props) {
           Ať jezdec posunete kamkoli, oba sloupce zůstanou stejné. Výsledky tohoto okrsku tedy připouštějí cokoli od{" "}
           {fmtPct(before ? (least / before) * 100 : 0, 0)} do {fmtPct(before ? (most / before) * 100 : 0, 0)}.
         </p>
+        <div className="method-where">
+          <LazyMiniMap precinct={data.id} />
+          <MapLink precinct={data.id} label="Otevřít na velké mapě" />
+        </div>
       </div>
     </div>
   );

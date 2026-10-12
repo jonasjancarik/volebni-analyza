@@ -250,11 +250,16 @@ button {
   border: 1px solid var(--line);
 }
 
-.method-precinct {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+.method-where {
+  margin-top: 16px;
+}
+
+.method-where .mini-map {
+  height: 170px;
+}
+
+.method-where .map-link {
+  margin-top: 8px;
 }
 
 /* ---------- Search ---------- */

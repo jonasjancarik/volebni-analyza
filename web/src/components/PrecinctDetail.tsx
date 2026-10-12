@@ -1,11 +1,8 @@
-import { lazy, Suspense } from "react";
 import type { ComparedPrecinct, Council, Precinct } from "../api";
 import { fmtInt, fmtPct, fmtPp } from "../format";
 import { MapLink } from "./MapLink";
+import { LazyMiniMap } from "./LazyMiniMap";
 import { ResultRows } from "./ResultRows";
-
-// The map library is large; it loads only when a precinct is opened
-const PrecinctMiniMap = lazy(() => import("./PrecinctMiniMap").then((module) => ({ default: module.PrecinctMiniMap })));
 
 interface Props {
   council: Council;
@@ -53,9 +50,7 @@ export function PrecinctDetail({ council, precinct, colors, focus, compared, pre
       </div>
       {map && (
         <div className="detail-map">
-          <Suspense fallback={<div className="mini-map" />}>
-            <PrecinctMiniMap precinct={precinct.id} />
-          </Suspense>
+          <LazyMiniMap precinct={precinct.id} />
           <MapLink precinct={precinct.id} label="Otevřít na velké mapě" />
         </div>
       )}
