@@ -82,11 +82,13 @@ the address of the Streamlit app to show a link to it in the header.
 The map uses the free OpenFreeMap base map and needs no API key.
 
 Voter-flow estimates take a few seconds each, so the API computes all of them
-in the background when it starts (about half a minute the first time) and
-keeps them in `output/<election>/cache/`, or in `VOLBY_CACHE_DIR` when that is
-set. A stored estimate is used only while the results of both elections and
-the model (`FLOW_MODEL_VERSION`) are the ones it was computed from. Set
-`VOLBY_PRECOMPUTE=0` to compute them only when a page asks for them.
+in the background when it starts (`src/web_prepare.py`, about half a minute
+the first time) and keeps them in `output/<election>/cache/`, or in
+`VOLBY_CACHE_DIR` when that is set. A stored estimate is used only while the
+results of both elections and the model (`FLOW_MODEL_VERSION`) are the ones it
+was computed from. Set `VOLBY_PRECOMPUTE=0` to compute them only when a page
+asks for them. The figures of the analyses below are prepared and stored the
+same way.
 
 The voter-flow tab has a second view, "Jak odhad vzniká" (`?pohled=metoda`),
 that explains the method on the precincts of the council being viewed: what a
@@ -95,6 +97,31 @@ transition table played back step by step, and the repeated fits behind the
 ranges. It repeats the estimate in the browser (`web/src/method/model.ts`)
 from the model inputs served by `/api/elections/<election>/councils/<code>/comparison/inputs`,
 so a change to the estimate in `src/election_comparison.py` has to be mirrored there.
+
+### Analyses
+
+The "Analýzy" section (`/analyzy`) holds written analyses: an article about
+one result, with its tables and charts drawn from the same data as the rest
+of the app. The first one looks at the Pirates and Praha Sobě in the 2026
+Prague election: seats and what would have changed them, voter flows since
+2022, precincts and city districts, and an estimate of how the Pirates'
+voters of the 2025 parliamentary election voted a year later.
+
+An analysis has two halves that are kept apart on purpose:
+
+- `src/web_analyses.py` computes every number (`ANALYSES` maps the address of
+  an analysis to the function that builds its figures) and serves them at
+  `/api/analyses/<slug>`. Bump `ANALYSIS_VERSION` when the figures change, so
+  that stored ones are recomputed.
+- `web/src/analyses/` holds the text and the page: `index.tsx` lists the
+  analyses, one file per analysis (`Prague2026.tsx`) writes the article around
+  the figures, and `blocks.tsx` has the tables and charts they share.
+
+The estimate between a parliamentary and a municipal election is rougher than
+the one between two municipal elections: turnout differs a lot, the lists are
+not the same, and the result moves with the number of precinct types more than
+with the choice of precincts. Its ranges therefore also cover every number of
+precinct types the data allow (`flows_across_settings`).
 
 ### MCP server for AI assistants
 
