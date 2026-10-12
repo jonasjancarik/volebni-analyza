@@ -215,6 +215,13 @@ def _fit_by_type(x, y, weights, labels, starts=None, quick=False) -> List[np.nda
     return matrices
 
 
+def precinct_type_options(precincts: int, groups: int) -> List[int]:
+    """Numbers of precinct types that leave every type enough precincts for
+    a full transition matrix."""
+    min_size = max(60, 6 * groups)
+    return [k for k in (1, 2, 3, 4, 6) if precincts // k >= min_size]
+
+
 def choose_precinct_types(
     x: np.ndarray, y: np.ndarray, weights: np.ndarray, folds: int = 5
 ) -> int:
@@ -228,8 +235,7 @@ def choose_precinct_types(
     precincts to estimate a full transition matrix.
     """
     groups = x.shape[1]
-    min_size = max(60, 6 * groups)
-    candidates = [k for k in (1, 2, 3, 4, 6) if len(x) // k >= min_size]
+    candidates = precinct_type_options(len(x), groups)
     if len(candidates) < 2:
         return 1
 
@@ -287,6 +293,7 @@ def estimate_flows(
     current: pd.DataFrame,
     resamples: int = 100,
     interval: float = 0.9,
+    precinct_types: Optional[int] = None,
 ) -> Dict:
     """Voter flows between two matched precinct tables.
 
@@ -297,6 +304,8 @@ def estimate_flows(
 
     The interval shows how much the estimate depends on which precincts are
     in the data. It does not cover the error of the model's assumptions.
+    `precinct_types` fixes the number of precinct types instead of choosing
+    it, to see how much the estimate depends on that choice.
     """
     sources, targets = group_columns(previous), group_columns(current)
     x = previous[sources].div(previous["registered"], axis=0).to_numpy()
@@ -304,7 +313,7 @@ def estimate_flows(
     weights = current["registered"].to_numpy(dtype=float)
     source_voters = previous[sources].to_numpy(dtype=float)
 
-    precinct_types = choose_precinct_types(x, y, weights)
+    precinct_types = precinct_types or choose_precinct_types(x, y, weights)
     labels = precinct_type_labels(x, precinct_types)
 
     matrices = _fit_by_type(x, y, weights, labels)
