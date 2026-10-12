@@ -38,6 +38,9 @@ ROUGH_FLOWS_BELOW = 100
 RAW_INPUT_DIR = Path("input/raw")
 BOUNDARIES_2022 = "electoral_districts_boundaries.geojson"
 BOUNDARIES_2025 = "electoral_districts_boundaries_2025_municipal.geojson"
+# Written by src/address_points.py
+ADDRESS_POINTS = "address_points.npy"
+ADDRESSES_PER_PRECINCT = 48
 
 REGIONS = {
     "1100": "Praha",
@@ -1019,3 +1022,56 @@ def precompute_comparisons() -> int:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
     logger.info("Voter-flow estimates ready: %s", precompute_comparisons())
+
+
+def addresses(election_id: str, code: str) -> dict:
+    """
+    A random handful of addresses in every precinct, as flat [lng, lat, ...]
+    lists. The map draws its dots there, which keeps them out of forests,
+    parks and fields. Empty when the address file has not been built.
+    """
+    path = RAW_INPUT_DIR / ADDRESS_POINTS
+    if not path.exists():
+        return {"points": {}}
+    key = (f"addresses:{election_id}:{code}", path.stat().st_mtime)
+    with _lock:
+        if key in _file_cache:
+            return _file_cache[key]
+
+    import shapely
+    from shapely.geometry import shape
+
+    features = boundaries(election_id, code)["features"]
+    shapes = shapely.make_valid(np.array([shape(f["geometry"]) for f in features]))
+    points: Dict[str, List[float]] = {}
+    if len(shapes):
+        everything = np.load(path, mmap_mode="r")
+        west, south, east, north = shapely.total_bounds(shapes)
+        longitude, latitude = everything[:, 0], everything[:, 1]
+        nearby = np.asarray(
+            everything[
+                (longitude >= west)
+                & (longitude <= east)
+                & (latitude >= south)
+                & (latitude <= north)
+            ],
+            dtype="float64",
+        )
+        address, precinct = shapely.STRtree(shapes).query(
+            shapely.points(nearby), predicate="within"
+        )
+        order = np.argsort(precinct, kind="stable")
+        address, precinct = address[order], precinct[order]
+        starts = np.flatnonzero(np.diff(precinct, prepend=-1))
+        # Seeded, so that the dots do not move between restarts of the server
+        rng = np.random.default_rng(0)
+        for start, end in zip(starts, [*starts[1:], len(precinct)]):
+            chosen = rng.permutation(address[start:end])[:ADDRESSES_PER_PRECINCT]
+            points[features[precinct[start]]["properties"]["id"]] = (
+                np.round(nearby[chosen], 5).ravel().tolist()
+            )
+
+    result = {"points": points}
+    with _lock:
+        _file_cache[key] = result
+    return result

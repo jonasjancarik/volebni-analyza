@@ -236,6 +236,19 @@ export const useBoundaries = (election: string, code: string, enabled = true) =>
     ...forever,
   });
 
+/** Some addresses of each precinct, as flat [lng, lat, …] lists keyed by precinct id */
+export interface Addresses {
+  points: Record<string, number[]>;
+}
+
+export const useAddresses = (election: string, code: string, enabled = true) =>
+  useQuery({
+    queryKey: ["addresses", election, code],
+    queryFn: () => get<Addresses>(`/elections/${election}/councils/${code}/addresses`),
+    enabled,
+    ...forever,
+  });
+
 export const useComparison = (election: string, code: string, area: string | null, enabled = true) =>
   useQuery({
     queryKey: ["comparison", election, code, area],

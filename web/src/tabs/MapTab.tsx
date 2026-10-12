@@ -1,7 +1,7 @@
 import { type ExpressionSpecification, type GeoJSONSource, Map as MapLibre, NavigationControl } from "maplibre-gl";
 import type { FeatureCollection, Point } from "geojson";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type Boundaries, useBoundaries, useComparison } from "../api";
+import { type Boundaries, useAddresses, useBoundaries, useComparison } from "../api";
 import { NO_DATA, type Scale, divergingScale, resolveColor, sequentialScale } from "../colors";
 import type { TabProps } from "../Council";
 import { type DotGroup, dotPoints, dotSteps } from "../components/dots";
@@ -56,6 +56,7 @@ export function MapTab({ council, colors, focus }: TabProps) {
   const [view, setView] = useParam("z");
   const [perDotParam, setPerDot] = useParam("tecka");
   const asDots = view === DOTS;
+  const addresses = useAddresses(election.id, council.code, asDots);
   const metric: Metric = METRICS.some((item) => item.id === metricParam) ? (metricParam as Metric) : "podil";
   const comparison = useComparison(election.id, council.code, null, metric === "zmena" && !!previous);
   const area = areas.some((item) => item.code === areaParam) ? areaParam : null;
@@ -170,7 +171,8 @@ export function MapTab({ council, colors, focus }: TabProps) {
 
   const dots = useMemo(() => {
     const features = boundaries.data?.features;
-    if (!asDots || !features) return null;
+    if (!asDots || !features || addresses.isLoading) return null;
+    const homes = addresses.data?.points ?? {};
     // Turnout is about people who came to vote, everything else about votes
     const ofTurnout =
       metric === "ucast" ||
@@ -199,7 +201,8 @@ export function MapTab({ council, colors, focus }: TabProps) {
     const steps = dotSteps(total);
     const perDot = steps.options.includes(Number(perDotParam)) ? Number(perDotParam) : steps.auto;
     return {
-      points: dotPoints(features, groups, perDot, focusIds),
+      points: dotPoints(features, groups, perDot, focusIds, homes),
+      atHomes: Object.keys(homes).length > 0,
       perDot,
       steps,
       counts,
@@ -207,7 +210,7 @@ export function MapTab({ council, colors, focus }: TabProps) {
       perList,
       people: ofTurnout || (metric !== "vitez" && list === -1),
     };
-  }, [asDots, boundaries.data, metric, changeOf, comparison.data, focus, lists, colors, precincts, painted, perDotParam, focusIds]);
+  }, [asDots, boundaries.data, metric, changeOf, comparison.data, focus, lists, colors, precincts, painted, perDotParam, focusIds, addresses.isLoading, addresses.data]);
 
   const unit = (count: number) =>
     dots?.people ? plural(count, "hlasující", "hlasující", "hlasujících") : plural(count, "hlas", "hlasy", "hlasů");
@@ -278,8 +281,10 @@ export function MapTab({ council, colors, focus }: TabProps) {
               ))}
             </select>
             <span className="note">
-              Tečky jsou uvnitř okrsku rozmístěné náhodně, neukazují tedy, kde přesně voliči bydlí. Díky nim je ale vidět,
-              kde je hlasů hodně a kde málo, i když je okrsek velký.
+              {dots.atHomes
+                ? "Tečky leží u náhodně vybraných adres v okrsku, lesy, parky a pole proto zůstávají prázdné. Kde přesně voliči bydlí, ale neukazují."
+                : "Tečky jsou uvnitř okrsku rozmístěné náhodně, neukazují tedy, kde přesně voliči bydlí."}{" "}
+              Díky nim je vidět, kde je hlasů hodně a kde málo, i když je okrsek velký.
             </span>
           </label>
         )}

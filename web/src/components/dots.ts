@@ -53,8 +53,14 @@ function inside(x: number, y: number, rings: Position[][]): boolean {
   return within;
 }
 
+/** How far from its address a dot may land, so that dots sharing one do not cover each other */
+const SPREAD = { lng: 0.00042, lat: 0.00027 };
+
 /**
- * Dots placed at random inside each precinct, one for every `perDot` votes.
+ * Dots for every precinct, one for every `perDot` votes. They sit next to
+ * addresses of the precinct (`homes`, flat [lng, lat, …] lists), which keeps
+ * them out of forests and parks; a precinct without known addresses gets
+ * them at random anywhere inside.
  * What is left after dividing becomes a dot with the matching probability,
  * so that small precincts are not lost and totals stay right on average.
  */
@@ -63,6 +69,7 @@ export function dotPoints(
   groups: Map<string, DotGroup[]>,
   perDot: number,
   focusIds: Set<string> | null,
+  homes: Record<string, number[]> = {},
 ): FeatureCollection<Point> {
   const shapes = new Map<string, Position[][]>();
   for (const feature of features) {
@@ -89,15 +96,28 @@ export function dotPoints(
     const rounding = generator(hash(`${id}#`));
     const place = generator(hash(id));
     const dim = focusIds ? !focusIds.has(id) : false;
+    const known = homes[id]?.length ? homes[id] : null;
+    let placed = 0;
     for (const part of parts) {
       const exact = part.count / perDot;
       const wanted = Math.floor(exact) + (rounding() < exact % 1 ? 1 : 0);
       // A sliver of a precinct must not stall the page
       let tries = wanted * 40 + 100;
       for (let made = 0; made < wanted && tries > 0; tries--) {
-        const x = west + place() * (east - west);
-        const y = south + place() * (north - south);
-        if (!inside(x, y, rings)) continue;
+        let x: number;
+        let y: number;
+        if (known) {
+          // The addresses come in random order; once all are used, they are shared
+          const home = (placed++ % (known.length / 2)) * 2;
+          const angle = place() * 2 * Math.PI;
+          const distance = Math.sqrt(place());
+          x = known[home] + Math.cos(angle) * distance * SPREAD.lng;
+          y = known[home + 1] + Math.sin(angle) * distance * SPREAD.lat;
+        } else {
+          x = west + place() * (east - west);
+          y = south + place() * (north - south);
+          if (!inside(x, y, rings)) continue;
+        }
         made++;
         points.push({
           type: "Feature",

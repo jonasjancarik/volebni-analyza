@@ -96,14 +96,28 @@ ranges. It repeats the estimate in the browser (`web/src/method/model.ts`)
 from the model inputs served by `/api/elections/<election>/councils/<code>/comparison/inputs`,
 so a change to the estimate in `src/election_comparison.py` has to be mirrored there.
 
+### Address points for the dot map
+
+The map of precincts can show votes as dots, one for a given number of votes.
+The dots are drawn next to addresses of the precinct, so that forests, parks
+and fields stay empty. The addresses come from the monthly export of the
+address register (RÚIAN, about 60 MB to download):
+
+```bash
+uv run python src/address_points.py
+```
+
+This writes `input/raw/address_points.npy`. Without the file the map still
+works and spreads the dots at random inside each precinct.
+
 ### Running in Docker
 
 `docker compose up -d --build` serves the new app on `127.0.0.1:3023` (change
 the port with `VOLBY_APP_PORT`) and the original Streamlit app on
 `127.0.0.1:3022` (`VOLBY_PORT`). The image holds only the code. Election
 results and precinct boundaries are not in Git, so copy `output/` and the files
-the apps read from `input/` (`input/raw/*.geojson`, `input/raw/*.gpkg` and
-`input/ps2025/processed/`) next to `docker-compose.yml` before starting it,
+the apps read from `input/` (`input/raw/*.geojson`, `input/raw/*.gpkg`,
+`input/raw/address_points.npy` and `input/ps2025/processed/`) next to `docker-compose.yml` before starting it,
 together with `.streamlit/secrets.toml` (an empty file is enough if you have
 no CARTO key).
 

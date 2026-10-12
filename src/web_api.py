@@ -81,6 +81,11 @@ def boundaries(election_id: str, code: str):
     return store.boundaries(election_id, code)
 
 
+@app.get("/api/elections/{election_id}/councils/{code}/addresses")
+def addresses(election_id: str, code: str):
+    return store.addresses(election_id, code)
+
+
 @app.get("/api/elections/{election_id}/councils/{code}/comparison")
 def comparison(election_id: str, code: str, area: Optional[str] = None):
     return store.comparison(election_id, code, area)
