@@ -9,7 +9,6 @@ import {
   SeatGrid,
   SplitBar,
   thousands,
-  TransferSteps,
 } from "./blocks";
 import type { NextTimeAnalysis, Scenario } from "./types";
 
@@ -19,6 +18,12 @@ const WHERE: Record<string, string> = {
   pirati: "SEN na kandidátce Pirátů",
   prahaSobe: "SEN na kandidátce Prahy Sobě",
   joint: "Piráti, Praha Sobě a SEN společně",
+};
+
+const WITH: Record<string, string> = {
+  pirati: "S Piráty",
+  prahaSobe: "S Prahou Sobě",
+  joint: "S Piráty a Prahou Sobě na jedné kandidátce",
 };
 
 const LEVERS: Record<string, string> = {
@@ -191,27 +196,52 @@ export function Prague2026Next({ data }: { data: NextTimeAnalysis }) {
       </section>
 
       <Figure
-        title="Kolik mandátů by měli Piráti a Praha Sobě podle toho, kolik voličů SEN by přešlo"
-        sub={`Dnes jich mají ${camp(actual)}. Čára ukazuje, kolik voličů SEN podle odhadu dřív volilo Prahu Sobě nebo Piráty.`}
+        title="Kolik voličů SEN by muselo společnou kandidátku volit"
+        sub={`Piráti a Praha Sobě mají dnes dohromady ${camp(actual)} mandátů. SEN má asi ${hundreds(sen.voters)} voličů.`}
       >
-        <TransferSteps
-          rows={(["pirati", "prahaSobe", "joint"] as const).map((recipient) => ({
-            label: WHERE[recipient],
-            steps: transfer(recipient).steps.map((step) => ({
-              share: step.share,
-              value: camp(step),
-              gain: camp(step) - camp(actual),
-            })),
-          }))}
-          mark={{ share: fromCamp, label: `${fmtPct(fromCamp, 0)} voličů SEN` }}
-        />
+        <div className="table-wrap">
+          <table className="data levers">
+            <thead>
+              <tr>
+                <th>S kým by SEN kandidoval</th>
+                <th className="r">Na jeden mandát navíc</th>
+                <th className="r">Na dva mandáty navíc</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(["pirati", "prahaSobe", "joint"] as const).map((recipient) => (
+                <tr key={recipient}>
+                  <td>{WITH[recipient]}</td>
+                  {[1, 2].map((gain) => {
+                    const share = neededFor(recipient, gain);
+                    return (
+                      <td className="r" key={gain}>
+                        {share == null ? (
+                          <span className="muted">nestačí ani všichni</span>
+                        ) : share === 0 ? (
+                          "stačí samotné spojení"
+                        ) : (
+                          <>
+                            <span className="share num">{hundreds(senVoters(share))}</span>{" "}
+                            <span className="small muted">({fmtPct(share, 0)} voličů SEN)</span>
+                          </>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Figure>
 
       <section className="prose">
         <p>
-          Praha Sobě potřebuje méně než Piráti, protože jí k dalšímu mandátu chybělo nejméně. Vodítkem, kolik voličů
-          by přešlo, je to, že asi {fmtPct(fromCamp, 0)} z nich v roce {years.previous} volilo Prahu Sobě nebo
-          Piráty. Kdyby společnou kandidátku volili jen oni,{" "}
+          Praha Sobě potřebuje méně než Piráti, protože jí k dalšímu mandátu chybělo nejméně. Kolik voličů SEN by
+          opravdu přešlo, nevíme. Vodítkem je, že asi {fmtPct(fromCamp, 0)} z nich, tedy{" "}
+          {hundreds(senVoters(fromCamp))} lidí, v roce {years.previous} volilo Prahu Sobě nebo Piráty. Kdyby společnou
+          kandidátku volili jen oni,{" "}
           {gains.every((gain) => gain === gains[0])
             ? `znamená to ve všech třech variantách o ${gains[0]} ${plural(gains[0], "mandát", "mandáty", "mandátů")} víc než dnes`
             : `znamená to o ${gains.join(", ")} mandátů víc než dnes podle varianty`}

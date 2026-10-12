@@ -2284,82 +2284,6 @@ table.matrix td.heat.plain {
   background: none;
 }
 
-.transfer {
-  display: grid;
-  gap: 10px;
-}
-
-.transfer-row {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 16px;
-  align-items: center;
-}
-
-.transfer-label {
-  font-size: 14px;
-  font-weight: 560;
-}
-
-.transfer-track {
-  position: relative;
-  display: flex;
-  gap: 2px;
-  height: 34px;
-  border-radius: 8px;
-}
-
-.transfer-track > span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  overflow: hidden;
-  white-space: nowrap;
-  font-size: 14px;
-  background: var(--surface-2);
-  color: var(--ink-2);
-}
-
-.transfer-track > span:first-child {
-  border-radius: 8px 0 0 8px;
-}
-
-.transfer-track > span:last-of-type {
-  border-radius: 0 8px 8px 0;
-}
-
-.transfer-track > span.gain-1 {
-  background: color-mix(in srgb, var(--series-1) 30%, var(--surface-2));
-  color: var(--ink);
-}
-
-.transfer-track > span.gain-2 {
-  background: var(--series-1);
-  color: #fff;
-}
-
-.transfer-mark {
-  position: absolute;
-  top: -5px;
-  bottom: -5px;
-  border-left: 2px dashed var(--ink);
-}
-
-.transfer-axis {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-  height: 20px;
-}
-
-.transfer-mark-label {
-  position: absolute;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  color: var(--ink-2);
-}
-
 table.seat-grid {
   width: auto;
 }
@@ -2450,10 +2374,6 @@ table.levers td.out {
 }
 
 @media (max-width: 900px) {
-  .transfer-row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
   .election-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
