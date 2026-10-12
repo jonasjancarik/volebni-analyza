@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { type CouncilRef, useCouncils } from "../api";
 import { fmtInt, fold } from "../format";
+import { useSameView } from "../hooks";
 
 interface Props {
   electionId: string;
@@ -37,6 +38,8 @@ function search(index: Indexed[], query: string, limit = 8): Indexed[] {
 export function Search({ electionId, large, shortcut, autoFocus, parliamentary }: Props) {
   const councils = useCouncils(electionId);
   const navigate = useNavigate();
+  // Parties are the same in every region, lists of a town are its own
+  const sameView = useSameView(electionId, parliamentary);
   const input = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -70,7 +73,7 @@ export function Search({ electionId, large, shortcut, autoFocus, parliamentary }
     setQuery("");
     setOpen(false);
     input.current?.blur();
-    navigate(`/${electionId}/${council.code}`);
+    navigate(sameView(council.code));
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {

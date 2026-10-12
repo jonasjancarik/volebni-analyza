@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 /** Pixel width of an element, so that charts can be drawn at their real size. */
 export function useWidth<T extends HTMLElement>(initial = 600) {
@@ -89,4 +89,27 @@ export function useParam(name: string): [string | null, (value: string | null) =
     [name, setParams],
   );
   return [params.get(name), set];
+}
+
+/** What describes how a tab looks; the rest of the address belongs to one council */
+const VIEW_PARAMS = ["m", "z", "barvy", "odsun", "pohled", "zaklad"];
+
+/**
+ * Address of another council that opens it the way the current one is shown:
+ * the same tab with the same view. With `sameLists` the picked lists carry
+ * over too, which only makes sense where every council has the same lists.
+ */
+export function useSameView(electionId: string, sameLists = false) {
+  const location = useLocation();
+  return (code: string) => {
+    const tab = location.pathname.split("/").filter(Boolean)[2];
+    const current = new URLSearchParams(location.search);
+    const query = new URLSearchParams();
+    for (const name of sameLists ? ["k", ...VIEW_PARAMS] : VIEW_PARAMS) {
+      const value = current.get(name);
+      if (value) query.set(name, value);
+    }
+    const search = query.toString();
+    return `/${electionId}/${code}${tab ? `/${tab}` : ""}${search ? `?${search}` : ""}`;
+  };
 }

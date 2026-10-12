@@ -5,7 +5,7 @@ import { listColors } from "./colors";
 import { Dropdown } from "./components/Dropdown";
 import { Loading, Problem } from "./components/State";
 import { listName, plural } from "./format";
-import { useParam } from "./hooks";
+import { useParam, useSameView } from "./hooks";
 import { CandidatesTab } from "./tabs/CandidatesTab";
 import { DataTab } from "./tabs/DataTab";
 import { FlowsTab } from "./tabs/FlowsTab";
@@ -51,6 +51,7 @@ export function CouncilPage({ electionId }: { electionId: string }) {
   const location = useLocation();
   const council = useCouncil(electionId, code);
   const [focusParam, setFocusParam] = useParam("k");
+  const sameView = useSameView(electionId);
 
   const data = council.data;
   const colorByName = useMemo(() => listColors((data?.lists ?? []).map((list) => list.name)), [data]);
@@ -89,7 +90,7 @@ export function CouncilPage({ electionId }: { electionId: string }) {
           {data.parent && (
             <>
               <span aria-hidden>/</span>
-              <Link to={`/${electionId}/${data.parent.code}`}>{data.parent.name}</Link>
+              <Link to={sameView(data.parent.code)}>{data.parent.name}</Link>
             </>
           )}
           <span aria-hidden>/</span>
