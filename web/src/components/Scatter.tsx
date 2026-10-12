@@ -15,6 +15,8 @@ interface Props {
   currentYear: string;
   selected: string | null;
   onSelect: (id: string) => void;
+  /** Colour of the dots; the first list's unless said otherwise */
+  color?: string;
 }
 
 function ticks(max: number): number[] {
@@ -23,7 +25,7 @@ function ticks(max: number): number[] {
 }
 
 /** Each precinct by its value last time (across) and now (up); above the diagonal means a gain. */
-export function Scatter({ points, previousYear, currentYear, selected, onSelect }: Props) {
+export function Scatter({ points, previousYear, currentYear, selected, onSelect, color = "var(--series-1)" }: Props) {
   const [ref, width] = useWidth<HTMLDivElement>(560);
   const tooltip = useTooltip();
   const height = Math.min(460, Math.max(300, width * 0.72));
@@ -70,7 +72,7 @@ export function Scatter({ points, previousYear, currentYear, selected, onSelect 
             cx={x(point.previous)}
             cy={y(point.current)}
             r={radius(point.size) + (point.id === selected ? 2 : 0)}
-            fill="var(--series-1)"
+            fill={color}
             fillOpacity={point.id === selected ? 1 : 0.55}
             stroke={point.id === selected ? "var(--ink)" : "var(--surface)"}
             strokeWidth={point.id === selected ? 2 : 1}

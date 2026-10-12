@@ -118,6 +118,18 @@ apartment buildings, family houses), with a map of the precincts the reader
 can recolour, radar charts and a chart of all precincts. It needs the two
 files described under "Travel times and buildings" below.
 
+The fifth one is about a single city district, Praha 5. It has no voter-flow
+estimate, because 81 precincts give only a rough one. Instead it looks at the
+seats of the district's two blocs and how close the last seat was, compares
+how the same voters filled in their two ballots (for the council of the
+district and for the council of the city), and goes through the precincts: a
+map the reader can recolour, the Pirates' losses by how strong they were
+before, neighbourhoods, kinds of housing and a table of all precincts.
+Neighbourhoods come from a list in `src/web_analyses.py` (`PRAGUE_5_PARTS`)
+that `research/praha5_neighbourhoods.py` helps to rebuild from the address
+register. Kinds of housing need the buildings file; without it the article
+leaves that part out.
+
 An analysis has two halves that are kept apart on purpose:
 
 - `src/web_analyses.py` computes every number (`ANALYSES` maps the address of
@@ -127,6 +139,8 @@ An analysis has two halves that are kept apart on purpose:
 - `web/src/analyses/` holds the text and the page: `index.tsx` lists the
   analyses, one file per analysis (`Prague2026.tsx`) writes the article around
   the figures, and `blocks.tsx` has the tables and charts they share.
+  `PrecinctMap.tsx` is a map of a council's precincts for an article: it is
+  given the layers to offer, each a number on a colour scale or a named kind.
 
 The estimate between a parliamentary and a municipal election is rougher than
 the one between two municipal elections: turnout differs a lot, the lists are

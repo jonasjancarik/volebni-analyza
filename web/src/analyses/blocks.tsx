@@ -12,6 +12,13 @@ const LABELS: Record<string, string> = {
   spd: "SPD",
   motoriste: "Motoristé",
   sen: "SEN",
+  praha5Sobe: "Praha 5 Sobě",
+  ods: "ODS",
+  top: "TOP 09 a lidovci",
+  odsTop: "ODS a TOP 09",
+  odsTopKdu: "ODS, TOP 09 a KDU-ČSL",
+  kduZeleni: "KDU-ČSL a Zelení",
+  nasePraha5: "Naše Praha 5",
   ostatni: "Ostatní kandidátky",
   nevolici: "Nevolili",
 };
@@ -72,7 +79,7 @@ const changeTint = (value: number, reach: number) =>
   tint(value >= 0 ? GAIN : LOSS, Math.abs(value) / reach, "#fff");
 
 /** "+5,4": the unit is in the column heading */
-const bare = (value: number) => fmtPp(value).replace(/\s*p\.\s*b\.$/, "");
+export const bare = (value: number) => fmtPp(value).replace(/\s*p\.\s*b\.$/, "");
 
 interface FigureProps {
   title: string;
@@ -275,9 +282,11 @@ interface ResultsTableProps {
   lists: FollowedList[];
   years: { current: string; previous: string };
   colorOf: (key: string) => string;
+  /** What to say in place of a change for a list with no result to compare with; a new list unless said otherwise */
+  withoutPrevious?: Record<string, string>;
 }
 
-export function ResultsTable({ lists, years, colorOf }: ResultsTableProps) {
+export function ResultsTable({ lists, years, colorOf, withoutPrevious = {} }: ResultsTableProps) {
   const scale = Math.max(...lists.map((list) => Math.max(list.share, list.previousShare ?? 0)));
   const reach = Math.max(...lists.map((list) => Math.abs(list.share - (list.previousShare ?? list.share))), 1);
   return (
@@ -315,7 +324,7 @@ export function ResultsTable({ lists, years, colorOf }: ResultsTableProps) {
                     {fmtPp(change)}
                   </td>
                 ) : (
-                  <td className="heat muted">nová</td>
+                  <td className="heat muted">{withoutPrevious[list.key] ?? "nová"}</td>
                 )}
                 <td className="r muted">{list.previousSeats ?? "–"}</td>
                 <td className="r">
@@ -686,10 +695,14 @@ interface ElectionBarsProps {
   /** Name of each election, in the order of the values */
   elections: string[];
   colorOf: (key: string) => string;
+  /** How to write a number of voters; whole thousands unless said otherwise */
+  format?: (voters: number) => string;
 }
 
+const inThousands = (voters: number) => `${fmtInt(Math.round(voters / 1000))} tis.`;
+
 /** How many people voted for each list in several elections, as bars on one scale. */
-export function ElectionBars({ rows, elections, colorOf }: ElectionBarsProps) {
+export function ElectionBars({ rows, elections, colorOf, format = inThousands }: ElectionBarsProps) {
   const scale = Math.max(...rows.flatMap((row) => row.values.map((value) => value ?? 0)), 1);
   return (
     <div className="election-bars">
@@ -715,7 +728,7 @@ export function ElectionBars({ rows, elections, colorOf }: ElectionBarsProps) {
                   )}
                 </span>
                 <span className={value != null ? "share" : "muted"}>
-                  {value != null ? `${fmtInt(Math.round(value / 1000))} tis.` : "nekandidovala"}
+                  {value != null ? format(value) : "nekandidovala"}
                 </span>
               </div>
             ))}

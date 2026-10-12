@@ -1,0 +1,104 @@
+/* The map inside an article is lower than the full map of a council */
+.article-map {
+  height: min(66vh, 600px);
+  min-height: 400px;
+}
+
+.map-layers {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.map-layer-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.map-layer-row .segmented {
+  flex-wrap: wrap;
+}
+
+/* One list on two ballots: a ring for the city's ballot, a dot for the district's */
+.ballot-track {
+  position: relative;
+  height: 16px;
+  min-width: 230px;
+}
+
+.ballot-track .between {
+  position: absolute;
+  top: 7px;
+  height: 2px;
+  background: var(--line-strong);
+}
+
+.ballot-track .mark {
+  position: absolute;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+}
+
+.ballot-track .mark.city,
+.ballot-key .mark.city {
+  background: var(--surface);
+  border: 2.5px solid;
+}
+
+.ballot-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.ballot-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ballot-key .mark {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--ink-2);
+  color: var(--ink-2);
+}
+
+table.bloc-scenarios th.sum,
+table.bloc-scenarios td.sum {
+  border-left: 1px solid var(--line-strong);
+  padding-left: 12px;
+}
+
+table.bloc-scenarios td.joint {
+  text-align: center;
+  background: var(--surface-2);
+  border-radius: 6px;
+}
+
+table.precinct-list td,
+table.precinct-list th {
+  white-space: nowrap;
+}
+
+table.precinct-list th.sorted {
+  color: var(--ink);
+}
+
+@media (max-width: 700px) {
+  .map-layer-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}

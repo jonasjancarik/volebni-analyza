@@ -91,10 +91,14 @@ export function sequentialScale(values: number[], colors: string[] = SEQUENTIAL)
   return fromEdges(colors, edges);
 }
 
-/** Symmetric around zero, so that equal gains and losses look equally strong. */
-export function divergingScale(values: number[]): Scale {
+/**
+ * Symmetric around zero, so that equal gains and losses look equally strong.
+ * The strongest colour starts at the change that `outer` of the values stay
+ * under; a lower share gives finer steps where most values are small.
+ */
+export function divergingScale(values: number[], outer = 0.95): Scale {
   const sorted = values.map(Math.abs).sort((a, b) => a - b);
-  const reach = Math.max(quantile(sorted, 0.95), 0.6);
+  const reach = Math.max(quantile(sorted, outer), 0.6);
   const step = niceStep(reach, 3) || 1;
   const half = step / 2;
   const edges = [-2 * step - half, -step - half, -half, half, step + half, 2 * step + half].map((edge) =>
