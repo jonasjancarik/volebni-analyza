@@ -66,7 +66,7 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
   const earlierSpolu = (target: string) => cell(earlier, "spolu", target);
   const earlierStan = (target: string) => cell(earlier, "stan", target);
 
-  const [loosest, firmest] = [fifths[0], fifths[fifths.length - 1]];
+  const loosest = fifths[0];
   const stanShares = fifths.map((fifth) => share(fifth, "stan", "now"));
   const large = districts.slice(0, 15);
   const byKept = [...large].sort((a, b) => kept(a, "spolu") - kept(b, "spolu"));
@@ -78,7 +78,6 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
   const fromSpoluToPrahaSobe = scenario("spolu-to-praha-sobe");
   const fromSpoluToPirati = scenario("spolu-to-pirati");
-  const fromStanToPrahaSobe = scenario("stan-to-praha-sobe");
   const fromStanToPirati = scenario("stan-to-pirati");
   const describe = (item: Scenario): { title: string; detail?: string } => {
     const people = hundreds(item.voters ?? 0);
@@ -150,33 +149,30 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
         <h2>Shrnutí</h2>
         <p>
           Nejsnáze se získávají hlasy, které strana nemá jisté, a těch má v Praze víc STAN než Spolu. Jádro Spolu
-          drží: z jeho voličů z roku {years.previous} mu zůstalo {fmtPct(spoluKept.share, 0)} a k Praze Sobě nebo
-          Pirátům odešlo jen asi {thousands(spoluToCamp)} lidí, zhruba stejně jako opačným směrem.
+          drží: z jeho voličů z roku {years.previous} mu zůstalo {fmtPct(spoluKept.share, 0)} a výměna s Prahou
+          Sobě a Piráty je vyrovnaná, asi {thousands(spoluToCamp)} lidí každým směrem.
         </p>
         <p>
-          Volní jsou hlavně lidé, kteří volí Spolu do Sněmovny, ale ne do zastupitelstva. Loni dostalo Spolu v Praze{" "}
-          {thousands(spoluVotes)} hlasů, letos mělo {thousands(spolu.voters)} voličů. Největší část těch ostatních
-          letos podle odhadu volila STAN.
+          Volní jsou lidé, kteří volí Spolu jen do Sněmovny. Loni dostalo Spolu v Praze{" "}
+          {thousands(spoluVotes)} hlasů, letos mělo {thousands(spolu.voters)} voličů. Největší část těch ostatních letos volila STAN.
         </p>
         <p>
-          STAN má proto nejméně ukotvené voliče ze všech. {fmtPct(100 - stanOwn.origin, 0)} z nich ho před čtyřmi
-          lety nevolilo a asi {thousands(stanFromPirati.people)} tvoří bývalí voliči Pirátů. Pro většinu STAN a Spolu
-          je přitom jedno, které z obou kandidátek hlasy ubudou.
+          STAN má proto nejméně ukotvené voliče: {fmtPct(100 - stanOwn.origin, 0)} z nich ho před čtyřmi lety
+          nevolilo a asi {thousands(stanFromPirati.people)} jsou bývalí voliči Pirátů. Pro většinu STAN a Spolu je
+          jedno, které z obou kandidátek hlasy ubudou.
         </p>
         <p>
-          Místně jsou voliči Spolu nejvolnější v okrscích, kde je silná Praha Sobě a Piráti a kde je nízká účast.
-          Nejpevnější jsou v městských částech {names(byKept.slice(-2).reverse())}.
+          Voliči Spolu jsou nejvolnější v okrscích, kde je silná Praha Sobě a Piráti a nízká účast. Nejpevnější jsou
+          v městských částech {names(byKept.slice(-2).reverse())}.
         </p>
       </section>
 
       <section className="prose">
         <h2>Jádro Spolu drží</h2>
         <p>
-          Z lidí, kteří v roce {years.previous} volili Spolu, ho {fmtPct(spoluKept.share, 0)} volilo znovu. Skoro
-          všichni ostatní přešli ke STAN ({fmtPct(spoluToStan.share, 0)}, asi {thousands(spoluToStan.people)}).
-          K Praze Sobě a Pirátům jich odešlo {fmtPct(cell(flows, "spolu", "prahaSobe").share, 0)} a{" "}
-          {fmtPct(cell(flows, "spolu", "pirati").share, 0)}, dohromady asi {thousands(spoluToCamp)}, a přibližně{" "}
-          {thousands(campToSpolu)} lidí přišlo od nich ke Spolu.
+          Z voličů Spolu z roku {years.previous} ho {fmtPct(spoluKept.share, 0)} volilo znovu a{" "}
+          {fmtPct(spoluToStan.share, 0)}, asi {thousands(spoluToStan.people)}, přešlo ke STAN. K Praze Sobě
+          a Pirátům odešlo asi {thousands(spoluToCamp)} lidí a {thousands(campToSpolu)} přišlo opačným směrem.
         </p>
       </section>
 
@@ -198,21 +194,17 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <p>
-          Místo těch, kdo odešli, získalo Spolu voliče jinde. Asi {fmtPct(cell(flows, "ano", "spolu").origin, 0)}{" "}
-          jeho letošních voličů volilo v roce {years.previous} ANO a dalších{" "}
-          {fmtPct(cell(flows, "nevolici", "spolu").origin, 0)} tehdy nevolilo. Přímá výměna voličů mezi Spolu
-          a dvojicí Praha Sobě a Piráti je malá a vyrovnaná, takže z tohoto jádra se v minulých čtyřech letech
-          získat nedalo.
+          Místo odešlých získalo Spolu voliče ANO ({fmtPct(cell(flows, "ano", "spolu").origin, 0)} jeho letošních
+          voličů) a lidi, kteří minule nevolili ({fmtPct(cell(flows, "nevolici", "spolu").origin, 0)}).
         </p>
       </section>
 
       <section className="prose">
         <h2>Voliči, kteří volí Spolu jen do Sněmovny</h2>
         <p>
-          Mnohem větší skupinu tvoří lidé, kteří Spolu volí ve sněmovních volbách, ale v komunálních ne. Loni v říjnu
-          dostalo Spolu v Praze {thousands(spoluVotes)} hlasů. Letos mělo {thousands(spolu.voters)} voličů, tedy
-          nanejvýš {fmtPct(keptAtMost, 0)} z nich, i kdyby žádný jeho letošní volič nebyl nový. Nejméně{" "}
-          {thousands(elsewhere)} lidí, kteří loni volili Spolu, letos volilo někoho jiného nebo nepřišlo.
+          Loni v říjnu dostalo Spolu v Praze {thousands(spoluVotes)} hlasů. Letos mělo {thousands(spolu.voters)}{" "}
+          voličů, tedy nanejvýš {fmtPct(keptAtMost, 0)} z nich. Nejméně {thousands(elsewhere)} lidí, kteří loni volili
+          Spolu, letos volilo někoho jiného nebo nepřišlo.
         </p>
       </section>
 
@@ -237,12 +229,8 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <p>
-          U STAN je to obráceně. Letos ho volilo asi {thousands(stan.voters)} lidí, víc než loni do Sněmovny (
+          U STAN je to obráceně: letos ho volilo víc lidí ({thousands(stan.voters)}) než loni do Sněmovny (
           {thousands(stanVotes)}), přestože k volbám přišlo o {fmtPct(turnoutDrop, 0)} méně voličů.
-        </p>
-        <p>
-          Kam loňští voliči Spolu šli, ukazuje odhad přesunů od sněmovních voleb. Je hrubší než odhad mezi dvojími
-          komunálními volbami, u velké skupiny, jako jsou voliči Spolu, je ale stabilnější než u menších stran.
         </p>
       </section>
 
@@ -255,19 +243,14 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <p>
-          Podle odhadu jich {fmtPct(earlierSpolu("spolu").share, 0)} volilo Spolu a{" "}
+          Podle odhadu {fmtPct(earlierSpolu("spolu").share, 0)} loňských voličů Spolu volilo Spolu a{" "}
           {fmtPct(earlierSpolu("stan").share, 0)} STAN (rozmezí{" "}
-          {fmtRange(earlierSpolu("stan").low, earlierSpolu("stan").high)}). Zbylá třetina se dělí mezi Prahu Sobě,
-          Piráty, malé kandidátky a ty, kdo nepřišli. Jak přesně, je nejisté: podíl pro Piráty je spíš nadsazený, ze
-          stejného důvodu, z jakého{" "}
+          {fmtRange(earlierSpolu("stan").low, earlierSpolu("stan").high)}). Jak se dělí zbylá třetina, je nejisté;
+          podíl pro Piráty je spíš nadsazený, ze stejného důvodu, z jakého{" "}
           <Link className="inline-link" to="/analyzy/praha-2026-pirati-praha-sobe">
             první analýza
           </Link>{" "}
           podhodnocuje věrnost loňských voličů Pirátů.
-        </p>
-        <p>
-          Jisté je to hlavní. Většina sněmovních voličů Spolu v komunálních volbách Spolu nevolí a největší díl z nich
-          letos připadl STAN.
         </p>
       </section>
 
@@ -280,23 +263,17 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <p>
-          Rozdíl mezi sněmovním a komunálním výsledkem Spolu tedy není v účasti. Jeho voliči ke komunálním volbám
-          chodí, podle odhadu nejvíc ze všech stran, jen v nich často volí jinou kandidátku. U Pirátů, ANO a SPD je
-          to naopak: velká část jejich sněmovních voličů zůstává doma.
-        </p>
-        <p>
-          Velikost rozdílu mezi stranami model nejspíš přehání, pořadí je ale při každém nastavení výpočtu stejné.
-          Lidi, kteří loni v Praze hlasovali na voličský průkaz a komunálně tu volit nemohou, odhad neodliší od těch,
-          kdo nepřišli.
+          Rozdíl mezi oběma výsledky Spolu tedy není v účasti. Jeho voliči ke komunálním volbám chodí, jen v nich
+          často volí jinou kandidátku. Velikost rozdílu mezi stranami model nejspíš přehání, pořadí se ale nemění.
         </p>
       </section>
 
       <section className="prose">
         <h2>STAN má nové voliče</h2>
         <p>
-          Z letošních voličů STAN ho v roce {years.previous} volilo jen {fmtPct(stanOwn.origin, 0)}. Ostatní přišli od
-          Spolu ({fmtPct(stanFromSpolu.origin, 0)}), od Pirátů ({fmtPct(stanFromPirati.origin, 0)}, asi{" "}
-          {thousands(stanFromPirati.people)} lidí) a v menší míře odjinud.
+          Z letošních voličů STAN ho v roce {years.previous} volilo jen {fmtPct(stanOwn.origin, 0)}.{" "}
+          {fmtPct(stanFromSpolu.origin, 0)} přišlo od Spolu a {fmtPct(stanFromPirati.origin, 0)}, asi{" "}
+          {thousands(stanFromPirati.people)} lidí, od Pirátů.
         </p>
       </section>
 
@@ -315,25 +292,20 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <p>
-          Ani sněmovní voliči STAN mu nejsou v komunálních volbách věrní. Z těch, kdo ho volili loni, mu letos dalo
-          hlas {fmtPct(earlierStan("stan").share, 0)} (rozmezí{" "}
-          {fmtRange(earlierStan("stan").low, earlierStan("stan").high)}),{" "}
-          {fmtPct(earlierStan("prahaSobe").share, 0)} volilo Prahu Sobě a {fmtPct(earlierStan("pirati").share, 0)}{" "}
+          Ani sněmovní voliči STAN mu nejsou věrní. Z těch loňských ho letos volilo{" "}
+          {fmtPct(earlierStan("stan").share, 0)} (rozmezí {fmtRange(earlierStan("stan").low, earlierStan("stan").high)}
+          ), {fmtPct(earlierStan("prahaSobe").share, 0)} volilo Prahu Sobě a {fmtPct(earlierStan("pirati").share, 0)}{" "}
           Piráty.
         </p>
         <p>
-          STAN navíc posílil všude stejně. Ve všech pětinách okrsků v tabulce níže má {fmtNum(Math.min(...stanShares))}{" "}
-          až {fmtPct(Math.max(...stanShares))} hlasů, ať je tam Spolu, Praha Sobě nebo Piráti silní, nebo slabí.
-          Takto rovnoměrný zisk naznačuje, že voliče přivedla celoměstská kampaň, ne vazba na konkrétní místo.
+          STAN navíc posílil všude stejně: ve všech pětinách okrsků v tabulce níže má {fmtNum(Math.min(...stanShares))}{" "}
+          až {fmtPct(Math.max(...stanShares))} hlasů. Takto rovnoměrný zisk naznačuje celoměstskou vlnu, ne vazbu na
+          konkrétní místo.
         </p>
       </section>
 
       <section className="prose">
         <h2>Kde jsou voliči Spolu nejvolnější</h2>
-        <p>
-          Rozdíly se nejlépe ukážou na okrscích seřazených podle toho, kolik svých loňských sněmovních voličů si
-          v nich Spolu letos udrželo.
-        </p>
       </section>
 
       <Figure
@@ -345,15 +317,9 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <p>
-          V pětině okrsků, kde si Spolu udrželo nejméně ({fmtPct(kept(loosest, "spolu"), 0)}), má Praha Sobě{" "}
-          {fmtPct(share(loosest, "prahaSobe", "now"))} a Piráti {fmtPct(share(loosest, "pirati", "now"))}, účast je
-          tam nejnižší a Spolu od roku {years.previous} ztratilo{" "}
-          {fmtNum(share(loosest, "spolu", "then") - share(loosest, "spolu", "now"))} bodu. V pětině, kde si udrželo
-          nejvíc ({fmtPct(kept(firmest, "spolu"), 0)}), má Praha Sobě {fmtPct(share(firmest, "prahaSobe", "now"))}{" "}
-          a Spolu neoslabilo.
-        </p>
-        <p>
-          Voliči Spolu tedy odcházejí ke STAN všude, a kde je silná Praha Sobě a Piráti, odcházejí navíc i k nim.
+          Kde si Spolu udrželo nejméně sněmovních voličů, je silná Praha Sobě a Piráti, nízká účast a Spolu tam od
+          roku {years.previous} ztratilo {fmtNum(share(loosest, "spolu", "then") - share(loosest, "spolu", "now"))}{" "}
+          bodu. Voliči Spolu tedy odcházejí ke STAN všude, a kde je silná Praha Sobě a Piráti, i k nim.
         </p>
       </section>
 
@@ -375,22 +341,19 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <p>
-          Mezi městskými částmi jsou rozdíly menší než mezi okrsky. Nejméně loňských voličů si Spolu udrželo
-          v částech {names(byKept.slice(0, 3))}, nejvíc v částech {names(byKept.slice(-2).reverse())}. V Praze 9 je
-          starostou lídr Spolu Tomáš Portlík.
+          Mezi městskými částmi jsou rozdíly menší. Nejméně si Spolu udrželo v částech {names(byKept.slice(0, 3))},
+          nejvíc v částech {names(byKept.slice(-2).reverse())}; v Praze 9 je starostou jeho lídr Tomáš Portlík.
         </p>
         <p>
-          Kam až to může dojít, ukazuje {campBest.name}. Praha Sobě s Piráty tam mají o{" "}
-          {fmtPct(campOverPirati(campBest), 0)} víc voličů, než kolik hlasů dostali Piráti loni do Sněmovny, a Spolu
-          si udrželo {fmtPct(kept(campBest, "spolu"), 0)} svých.
+          Kam až to může dojít, ukazuje {campBest.name}: Praha Sobě s Piráty tam mají o{" "}
+          {fmtPct(campOverPirati(campBest), 0)} víc voličů, než kolik hlasů dostali Piráti loni do Sněmovny.
         </p>
       </section>
 
       <section className="prose">
         <h2>Kde voliči Pirátů odešli ke STAN</h2>
         <p>
-          Asi {thousands(stanFromPirati.people)} letošních voličů STAN volilo v roce {years.previous} Piráty. Odhad
-          pro jednotlivé městské části je hrubý, protože se opírá o desítky okrsků místo tisíce, a jde jen pro{" "}
+          Odhad pro městské části je hrubý, opírá se o desítky okrsků místo tisíce a jde jen pro{" "}
           {districtFlows.length} největších.
         </p>
       </section>
@@ -416,12 +379,6 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <h2>Kolik by stačilo</h2>
-        <p>
-          K tomu, aby STAN a Spolu neměly většinu {majority} mandátů, by stačilo{" "}
-          {hundreds(fromSpoluToPrahaSobe.voters ?? 0)} voličů Spolu, kteří by volili Prahu Sobě, nebo{" "}
-          {hundreds(fromSpoluToPirati.voters ?? 0)}, kteří by volili Piráty. U voličů STAN vycházejí skoro stejná
-          čísla, {hundreds(fromStanToPrahaSobe.voters ?? 0)} a {hundreds(fromStanToPirati.voters ?? 0)}.
-        </p>
       </section>
 
       <Figure
@@ -433,51 +390,39 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <p>
-          Je to {fmtNum(((fromSpoluToPrahaSobe.voters ?? 0) / elsewhere) * 100, 0)} až{" "}
-          {fmtPct(((fromSpoluToPirati.voters ?? 0) / elsewhere) * 100, 0)} z lidí, kteří loni volili Spolu do Sněmovny
+          U Spolu je to {fmtNum(((fromSpoluToPrahaSobe.voters ?? 0) / elsewhere) * 100, 0)} až{" "}
+          {fmtPct(((fromSpoluToPirati.voters ?? 0) / elsewhere) * 100, 0)} z lidí, kteří ho loni volili do Sněmovny
           a letos do zastupitelstva ne. U STAN by stačilo, aby se k Pirátům vrátilo{" "}
-          {fmtPct(((fromStanToPirati.voters ?? 0) / stanFromPirati.people) * 100, 0)} jejich bývalých voličů, kteří
-          letos volili STAN.
+          {fmtPct(((fromStanToPirati.voters ?? 0) / stanFromPirati.people) * 100, 0)} jejich bývalých voličů.
         </p>
       </section>
 
       <section className="prose">
         <h2>Co z toho plyne</h2>
         <p>
-          U Spolu nejsou volné hlasy jeho voličů z komunálních voleb, ti drží. Volní jsou lidé, kteří ho volí jen do
-          Sněmovny, a největší část z nich letos získal STAN.
+          Komunální voliči Spolu drží. Volní jsou lidé, kteří ho volí jen do Sněmovny, a největší část z nich letos
+          získal STAN.
         </p>
         <p>
-          O tyto voliče se proto soupeří hlavně se STAN. Jeho elektorát je ze tří čtvrtin nový, rovnoměrně rozložený
-          po městě a zčásti složený z bývalých voličů Pirátů. Hlas, který STAN ztratí, zmenšuje většinu STAN a Spolu
-          stejně jako hlas, který ztratí Spolu.
+          O ně se proto soupeří hlavně se STAN, jehož elektorát je ze tří čtvrtin nový. Hlas, který ztratí STAN,
+          zmenšuje většinu STAN a Spolu stejně jako hlas, který ztratí Spolu.
         </p>
         <p>
-          Nejvíc voličů Spolu, kteří v komunálních volbách volí jinak, je v okrscích se silnou Prahou Sobě a Piráty
-          a s nízkou účastí. Tam, kde má Spolu vlastní místní oporu, jako v Praze 9, se drží nejlépe.
-        </p>
-        <p>
-          Výsledky ukazují, kde se voliči přesouvali, ne proč a za jakých podmínek by to udělali znovu. Na to jsou
-          potřeba průzkumy.
+          Výsledky ukazují, kde se voliči přesouvali, ne proč a jestli by to udělali znovu.
         </p>
       </section>
 
       <section className="card method-notes">
         <h3>Jak se to počítalo</h3>
         <p className="note">
-          Počty voličů v komunálních volbách jsou přepočtené z hlasů: podíl kandidátky na hlasech krát počet
-          odevzdaných obálek. Podíl, který si Spolu udrželo, je poměr jeho letošních voličů k loňským sněmovním
-          hlasům. Je to horní odhad, protože mezi letošními voliči Spolu jsou i lidé, kteří ho loni nevolili.
+          Počty voličů v komunálních volbách jsou přepočtené z hlasů. Podíl, který si Spolu udrželo, je poměr jeho
+          letošních voličů k loňským sněmovním hlasům; je to horní odhad, protože část letošních voličů ho loni
+          nevolila.
         </p>
         <p className="note">
-          Přesuny voličů jsou odhad, ne měření. Odhad mezi roky {years.previous} a {years.current} pracuje s{" "}
-          {fmtInt(flows.matched)} okrsky a vystihuje {fmtPct(flows.explained, 0)} rozdílů mezi nimi. Odhad od
-          sněmovních voleb vystihuje {fmtPct(earlier.explained, 0)} a jeho rozmezí pokrývají i různá nastavení výpočtu.
-        </p>
-        <p className="note">
-          Odhady pro městské části používají jen jejich okrsky, {fmtInt(Math.min(...districtFlows.map((item) => item.flows.matched)))}{" "}
-          až {fmtInt(Math.max(...districtFlows.map((item) => item.flows.matched)))}, a u těch s méně než stovkou
-          okrsků se mohou lišit o desítky procentních bodů.
+          Přesuny voličů jsou odhad, ne měření. Odhad od sněmovních voleb je hrubší a jeho rozmezí pokrývají i různá
+          nastavení výpočtu. Odhady pro městské části se u těch s méně než stovkou okrsků mohou lišit o desítky
+          procentních bodů.
         </p>
         <Link className="button" style={{ marginTop: 16, display: "inline-block" }} to={`${councilPath}/presuny`}>
           Otevřít přesuny voličů v aplikaci
