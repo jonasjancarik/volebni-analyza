@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/streamlit-1.45+-red.svg)](https://streamlit.io/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
 ## 🏛️ What This Tool Does
 
@@ -528,7 +528,9 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details. If you run a modified version as a public web service, you must offer its users the source code of your changes.
+
+The election results come from the Czech Statistical Office (volby.cz), addresses and buildings from the RÚIAN register (ČÚZK), and map tiles from OpenFreeMap with data © OpenStreetMap contributors. Those data keep their own terms.
 
 ## 🙏 Acknowledgments
 
