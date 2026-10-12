@@ -726,3 +726,49 @@ export function ElectionBars({ rows, elections, colorOf }: ElectionBarsProps) {
   );
 }
 
+interface StayedHomeTableProps {
+  /** Estimate from the parliamentary election to the municipal one */
+  flows: KeyedFlows;
+  /** Votes of the parties in the parliamentary election */
+  parties: { key: string; votes: number }[];
+  colorOf: (key: string) => string;
+}
+
+/** How many voters of each party in the parliamentary election did not vote in the municipal one. */
+export function StayedHomeTable({ flows, parties, colorOf }: StayedHomeTableProps) {
+  const rows = parties
+    .filter((party) => flows.sources.includes(party.key))
+    .map((party) => ({ ...party, home: cell(flows, party.key, "nevolici") }))
+    .sort((a, b) => b.home.share - a.home.share);
+  return (
+    <div className="table-wrap">
+      <table className="data matrix">
+        <thead>
+          <tr>
+            <th>Strana ve sněmovních volbách</th>
+            <th className="col">Hlasů v Praze</th>
+            <th className="col">Letos nepřišlo</th>
+            <th className="col">Rozmezí odhadu</th>
+            <th className="col">Asi lidí</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td>
+                <Name group={row.key} colorOf={colorOf} />
+              </td>
+              <td className="heat plain">{fmtInt(Math.round(row.votes / 1000))} tis.</td>
+              <td className="heat" style={changeTint(-row.home.share, 100)}>
+                {fmtPct(row.home.share, 0)}
+              </td>
+              <td className="heat plain muted">{fmtRange(row.home.low, row.home.high)}</td>
+              <td className="heat plain">{fmtInt(Math.round((row.votes * row.home.share) / 100000))} tis.</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+

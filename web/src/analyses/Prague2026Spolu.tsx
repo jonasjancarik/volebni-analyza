@@ -13,6 +13,7 @@ import {
   origins,
   ScenarioTable,
   SplitBar,
+  StayedHomeTable,
   thousands,
 } from "./blocks";
 import type { Scenario, SpoluStanAnalysis, VoterGroup } from "./types";
@@ -267,6 +268,26 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
         <p>
           Jisté je to hlavní. Většina sněmovních voličů Spolu v komunálních volbách Spolu nevolí a největší díl z nich
           letos připadl STAN.
+        </p>
+      </section>
+
+      <Figure
+        title="Kolik loňských voličů letos k volbám nepřišlo"
+        sub={`Voliči stran ze sněmovních voleb ${years.parliamentary}, kteří v komunálních volbách ${years.current} nevolili. Celkem letos přišlo o ${fmtPct(turnoutDrop, 0)} méně lidí.`}
+      >
+        <StayedHomeTable flows={earlier} parties={data.parliamentary.lists} colorOf={colorOf} />
+      </Figure>
+
+      <section className="prose">
+        <p>
+          Rozdíl mezi sněmovním a komunálním výsledkem Spolu tedy není v účasti. Jeho voliči ke komunálním volbám
+          chodí, podle odhadu nejvíc ze všech stran, jen v nich často volí jinou kandidátku. U Pirátů, ANO a SPD je
+          to naopak: velká část jejich sněmovních voličů zůstává doma.
+        </p>
+        <p>
+          Velikost rozdílu mezi stranami model nejspíš přehání, pořadí je ale při každém nastavení výpočtu stejné.
+          Lidi, kteří loni v Praze hlasovali na voličský průkaz a komunálně tu volit nemohou, odhad neodliší od těch,
+          kdo nepřišli.
         </p>
       </section>
 

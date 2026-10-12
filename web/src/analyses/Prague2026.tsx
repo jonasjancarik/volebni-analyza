@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { FlowBars } from "../components/FlowBars";
 import { fmtInt, fmtNum, fmtPct, fmtRange, plural } from "../format";
 import {
   CampSeats,
@@ -17,6 +16,7 @@ import {
   ResultsTable,
   ScenarioTable,
   SplitBar,
+  StayedHomeTable,
   thousands,
 } from "./blocks";
 import type { District, PragueAnalysis, Scenario } from "./types";
@@ -490,22 +490,35 @@ export function Prague2026({ data }: { data: PragueAnalysis }) {
           Při každém nastavení výpočtu vychází, že velká část loňských voličů Pirátů k letošním volbám nepřišla: podle
           odhadu {fmtRange(stayedHome.low, stayedHome.high)}. U voličů Spolu to je{" "}
           {fmtRange(cell(earlier, "spolu", "nevolici").low, cell(earlier, "spolu", "nevolici").high)}, u voličů STAN{" "}
-          {fmtRange(cell(earlier, "stan", "nevolici").low, cell(earlier, "stan", "nevolici").high)}. Rozdíl mezi
-          stranami model nejspíš přehání, jejich pořadí se ale nemění.
+          {fmtRange(cell(earlier, "stan", "nevolici").low, cell(earlier, "stan", "nevolici").high)}. Srovnání
+          všech stran je v tabulce.
         </p>
       </section>
 
       <Figure
         title="Kolik loňských voličů letos k volbám nepřišlo"
-        sub={`Podíl voličů strany ze sněmovních voleb ${years.parliamentary}, kteří v komunálních volbách ${years.current} nevolili`}
+        sub={`Voliči stran ze sněmovních voleb ${years.parliamentary}, kteří v komunálních volbách ${years.current} nevolili. Celkem letos přišlo o ${fmtPct(turnoutDrop, 0)} méně lidí.`}
       >
-        <FlowBars
-          bars={["spolu", "stan", "pirati", "ano", "motoriste", "spd"].map((key) => {
-            const home = cell(earlier, key, "nevolici");
-            return { name: key, label: label(key), color: colorOf(key), value: home.share, low: home.low, high: home.high };
-          })}
-        />
+        <StayedHomeTable flows={earlier} parties={parliamentary.lists} colorOf={colorOf} />
       </Figure>
+
+      <section className="prose">
+        <p>
+          Kdyby se všechny strany chovaly stejně, nepřišla by od každé asi třetina voličů. Odhad místo toho říká, že
+          voliči Spolu a STAN chodí ke komunálním volbám skoro všichni, kdežto voliči Pirátů, ANO a SPD z velké části
+          ne. Odpovídá tomu i to, že komunální účast je vyšší v okrscích, kde je silné Spolu, a nižší tam, kde jsou
+          silní Piráti.
+        </p>
+        <p>
+          Velikost rozdílu je ale nejspíš přehnaná. Že by ke komunálním volbám přišli skoro všichni voliči Spolu, když
+          celkem volila necelá polovina zapsaných, není věrohodné. Model nejspíš část jejich neúčasti připisuje jiným
+          stranám, hlavně Pirátům. Skutečné rozdíly budou menší, ale stejným směrem.
+        </p>
+        <p>
+          Jednu skupinu odhad oddělit neumí. Loni se v Praze hlasovalo i na voličský průkaz a tito lidé tu komunálně
+          volit nemohou. V datech vypadají stejně jako ti, kdo zůstali doma.
+        </p>
+      </section>
 
       <section className="prose">
         <p>
