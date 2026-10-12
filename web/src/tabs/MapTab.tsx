@@ -80,6 +80,12 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
   const addresses = useAddresses(election.id, council.code, asDots);
   const metric: Metric = METRICS.some((item) => item.id === metricParam) ? (metricParam as Metric) : "podil";
   const comparison = useComparison(election.id, council.code, null, metric === "zmena" && !!previous);
+  // The change follows the list picked at the top, unless turnout is asked for or the list ran under another name before
+  const comboNames = combo.map((index) => lists[index]?.name);
+  const changeLists =
+    changeOf !== TURNOUT && comparison.data && comboNames.every((name) => name && comparison.data.sameLists.includes(name))
+      ? comboNames
+      : null;
   const area = areas.some((item) => item.code === areaParam) ? areaParam : null;
   const parliamentary = election.type === "parliamentary";
   const listWord = parliamentary ? "strany" : "kandidátky";
@@ -164,16 +170,18 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
     // Change against the previous election, for precincts that exist in both
     const data = comparison.data;
     if (!data) return { values, legend: null };
-    const listIndex = changeOf && changeOf !== TURNOUT ? data.sameLists.indexOf(changeOf) : -1;
+    const listIndexes = changeLists ? changeLists.map((name) => data.sameLists.indexOf(name)) : [];
     const changes = data.precincts.map((precinct) =>
-      listIndex === -1 ? precinct.turnout[1] - precinct.turnout[0] : precinct.current[listIndex] - precinct.previous[listIndex],
+      listIndexes.length === 0
+        ? precinct.turnout[1] - precinct.turnout[0]
+        : listIndexes.reduce((sum, index) => sum + precinct.current[index] - precinct.previous[index], 0),
     );
     const scale = divergingScale(changes);
     data.precincts.forEach((precinct, i) =>
       values.set(precinct.id, {
         color: scale.color(changes[i]),
         text: fmtPp(changes[i]),
-        sub: listIndex === -1 ? `účast proti roku ${data.previousYear}` : `podíl hlasů proti roku ${data.previousYear}`,
+        sub: !changeLists ? `účast proti roku ${data.previousYear}` : `podíl hlasů proti roku ${data.previousYear}`,
       }),
     );
     return {
@@ -186,7 +194,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
         />
       ),
     };
-  }, [metric, precincts, combo, comboName, ramp, lists, colors, comparison.data, changeOf]);
+  }, [metric, precincts, combo, comboName, ramp, lists, colors, comparison.data, changeLists]);
 
   const precinctById = useMemo(() => new Map(precincts.map((precinct) => [precinct.id, precinct])), [precincts]);
   const selectedPrecinct = selected ? precinctById.get(selected) : undefined;
@@ -202,12 +210,12 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
     // Turnout is about people who came to vote, everything else about votes
     const ofTurnout =
       metric === "ucast" ||
-      (metric === "zmena" && (!changeOf || changeOf === TURNOUT || !comparison.data?.sameLists.includes(changeOf)));
+      (metric === "zmena" && !changeLists);
     const chosen =
       metric === "podil"
         ? combo
         : metric === "zmena" && !ofTurnout
-          ? [lists.findIndex((item) => item.name === changeOf)].filter((index) => index >= 0)
+          ? combo
           : [];
     const people = metric !== "vitez" && chosen.length === 0;
     const listColor = metric === "vitez" || byList ? colors.map(resolveColor) : [];
@@ -245,7 +253,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
       /** Whose votes are counted, to finish a sentence in the legend */
       target: people || metric === "vitez" ? "" : ` pro ${chosen.length > 1 ? more : one}`,
     };
-  }, [asDots, asCircles, metric, changeOf, comparison.data, combo, byList, lists, colors, precincts, painted, parliamentary]);
+  }, [asDots, asCircles, metric, changeLists, combo, byList, lists, colors, precincts, painted, parliamentary]);
 
   const dots = useMemo(() => {
     const features = boundaries.data?.features;
@@ -290,7 +298,6 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
     return <div className="banner neutral">Pro toto území nemáme hranice okrsků, mapu proto nejde zobrazit.</div>;
   }
 
-  const sameLists = comparison.data?.sameLists ?? [];
   const rampOptions = [
     { id: "", label: "Světle až tmavě modrá", colors: SEQUENTIAL },
     ...Object.entries(RAMPS).map(([id, item]) => ({ id, ...item })),
@@ -446,7 +453,7 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
             )}
           </p>
         )}
-        {metric !== "podil" && combo.length > 1 && (
+        {metric !== "podil" && metric !== "zmena" && combo.length > 1 && (
           <p className="note">
             Víc vybraných {parliamentary ? "stran" : "kandidátek"} mapa sčítá jen v pohledu „Podíl {listWord}“.
           </p>
@@ -454,15 +461,16 @@ export function MapTab({ council, colors, focus, combo }: TabProps) {
         {metric === "zmena" && (
           <label className="field">
             <span className="field-label">Co porovnat</span>
-            <select className="select block" value={changeOf ?? TURNOUT} onChange={(event) => setChangeOf(event.target.value === TURNOUT ? null : event.target.value)}>
+            <select className="select block" value={changeOf === TURNOUT ? TURNOUT : ""} onChange={(event) => setChangeOf(event.target.value || null)}>
+              <option value="">{truncate(comboName, 40)}</option>
               <option value={TURNOUT}>Volební účast</option>
-              {sameLists.map((name) => (
-                <option key={name} value={name}>
-                  {truncate(listName(name), 40)}
-                </option>
-              ))}
             </select>
-            <span className="note">Nabízí se kandidátky, které kandidovaly v obou volbách pod stejným názvem.</span>
+            <span className="note">
+              {changeOf !== TURNOUT && !changeLists
+                ? `Ne všechny vybrané ${parliamentary ? "strany" : "kandidátky"} kandidovaly v minulých volbách pod stejným názvem, mapa proto ukazuje změnu účasti. `
+                : ""}
+              Kandidátku změníte nahoře vedle názvu.
+            </span>
           </label>
         )}
         {areas.length > 1 && (
