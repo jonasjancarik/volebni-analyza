@@ -5,9 +5,15 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
+import pandas as pd  # noqa: E402
+
 from web_analyses import (  # noqa: E402
+    _on_ballots,
+    _Prague5Seats,
     _SeatMath,
     group_key,
+    prague_5_key,
+    prague_5_part,
     seat_allocation,
     seat_order,
     smallest_shift,
@@ -97,5 +103,70 @@ def test_fewest_votes_for_a_given_number_of_seats():
     assert seats.fewest("new", new_voters, 6)["votes"] == 0
     five = seats.fewest("new", new_voters, 5)
     assert five["stanSpolu"] == 5 and five["votes"] > 0
-    assert seats.stan_spolu(new_voters(five["votes"] - 1000)) == 6
+    assert seats.rival_seats(new_voters(five["votes"] - 1000)) == 6
 
+
+
+def test_lists_of_praha_5_keep_their_key_in_both_elections():
+    assert prague_5_key("PRAHA 5 SOBĚ") == "praha5Sobe"
+    assert prague_5_key("Koalice SEN 21 pro Prahu 5") == "sen"
+    assert prague_5_key("SEN PRO PRAHU 5 s podporou senátora Lásky a SOPU") == "sen"
+    # ODS and TOP 09 ran together in 2022 and apart in 2026
+    assert prague_5_key("SPOLEČNĚ PRO PRAHU 5") == "odsTop"
+    assert prague_5_key("Občanská demokratická strana") == "ods"
+    assert prague_5_key("TOP Lidovci a Nezávislí") == "top"
+    # Lists that carry the same name everywhere keep the city-wide key
+    assert prague_5_key("Česká pirátská strana") == "pirati"
+    assert prague_5_key("REZIDENTI 5P") is None
+
+
+def test_precincts_of_praha_5_belong_to_neighbourhoods():
+    assert prague_5_part("5001") == ("Malá Strana", "smichov")
+    assert prague_5_part("5045") == ("Košíře", "kosire")
+    # Barrandov is cut out of Hlubočepy by hand
+    assert prague_5_part("5066") == ("Barrandov", "barrandov")
+    assert prague_5_part("5067") == ("Hlubočepy", "jinonice")
+    assert prague_5_part("9999") == (None, None)
+
+
+def test_seats_of_praha_5_are_counted_by_blocs():
+    # 11 seats; SEN's 8 000 votes are the first quotient left without one
+    council = {
+        "seats": 11,
+        "summary": {"ballots": 10_000},
+        "lists": [
+            {"name": "PRAHA 5 SOBĚ", "votes": 30_000},
+            {"name": "Občanská demokratická strana", "votes": 34_000},
+            {"name": "STAROSTOVÉ A NEZÁVISLÍ", "votes": 26_000},
+            {"name": "Česká pirátská strana", "votes": 12_000},
+            {"name": "SEN PRO PRAHU 5 s podporou senátora Lásky a SOPU", "votes": 8_000},
+        ],
+    }
+    seats = _Prague5Seats(council)
+
+    actual = seats.outcome("actual", seats.votes)
+    assert actual["seats"] == {"ods": 4, "praha5Sobe": 3, "stan": 3, "pirati": 1}
+    assert actual["blocs"] == {"coalition2022": 4, "townHall": 7}
+
+    # One list of the three wins the seat that SEN's votes alone were short of
+    joint = seats.outcome("joint", seats.merged(seats.votes, ("praha5Sobe", "pirati", "sen")))
+    assert joint["seats"]["joint"] == joint["blocs"]["coalition2022"] == 5
+    assert joint["blocs"]["townHall"] == 6
+    assert "pirati" not in joint["seats"]
+
+
+def test_turnout_of_a_group_leaves_out_unusual_precincts():
+    def ballot(rows):
+        frame = pd.DataFrame(rows, columns=["id", "registered", "ballots", "votes", "pirati"]).set_index("id")
+        return frame.assign(area="x")
+
+    local = ballot([("1", 1000, 500, 5000, 500), ("2", 1000, 400, 4000, 800), ("3", 2000, 100, 1000, 100)])
+    frames = {name: local for name in ("local", "previousLocal", "city", "previousCity", "parliamentary")}
+
+    group = _on_ballots(frames, ["1", "3"], unusual=["3"])
+
+    assert group["precincts"] == 2
+    assert group["registered"] == 3000
+    # Precinct 3 counts for the votes, not for the turnout
+    assert group["turnout"]["now"] == 50
+    assert group["local"]["pirati"] == 10
