@@ -76,3 +76,26 @@ def test_shift_scenarios_find_the_fewest_voters_that_end_the_majority():
     # 11 votes per ballot on average here
     assert moved["voters"] == round(moved["votes"] / 11)
 
+
+def test_fewest_votes_for_a_given_number_of_seats():
+    council = {
+        "seats": 11,
+        "summary": {"ballots": 10_000},
+        "lists": [
+            {"name": "STAROSTOVÉ A NEZÁVISLÍ", "votes": 31_000},
+            {"name": "SPOLU pro Prahu", "votes": 29_000},
+            {"name": "PRAHA SOBĚ", "votes": 24_000},
+            {"name": "Česká pirátská strana", "votes": 26_000},
+        ],
+    }
+    seats = _SeatMath(council)
+
+    def new_voters(count):
+        return seats.changed(pirati=count)
+
+    # They already have six, so nothing has to move for "at most six"
+    assert seats.fewest("new", new_voters, 6)["votes"] == 0
+    five = seats.fewest("new", new_voters, 5)
+    assert five["stanSpolu"] == 5 and five["votes"] > 0
+    assert seats.stan_spolu(new_voters(five["votes"] - 1000)) == 6
+

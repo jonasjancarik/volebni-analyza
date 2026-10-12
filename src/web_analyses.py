@@ -148,12 +148,27 @@ class _SeatMath:
             },
             "stanSpolu": allocation.get("stan", 0) + allocation.get("spolu", 0),
             "votes": moved,
-            "voters": round(moved / self.per_ballot) if moved else None,
+            "voters": round(moved / self.per_ballot) if moved is not None else None,
         }
 
-    def without_majority(self, result: Dict[str, float]) -> bool:
+    def stan_spolu(self, result: Dict[str, float]) -> int:
         allocation = seat_allocation(result, self.seats)
-        return allocation.get("stan", 0) + allocation.get("spolu", 0) < self.majority
+        return allocation.get("stan", 0) + allocation.get("spolu", 0)
+
+    def without_majority(self, result: Dict[str, float]) -> bool:
+        return self.stan_spolu(result) < self.majority
+
+    def fewest(
+        self, key: str, move: Callable[[float], Dict[str, float]], at_most: int
+    ) -> Optional[dict]:
+        """The outcome of the fewest moved votes that leave STAN and Spolu
+        with `at_most` seats; None when no number of votes does."""
+        if self.stan_spolu(move(0)) <= at_most:
+            return self.outcome(key, move(0), 0)
+        moved = smallest_shift(
+            move, lambda result: self.stan_spolu(result) <= at_most, limit=self.votes["stan"]
+        )
+        return None if moved is None else self.outcome(key, move(moved), moved)
 
     def shifts(self, moves: Dict[str, Callable[[float], Dict[str, float]]]) -> List[dict]:
         """For each way of moving votes, the fewest that leave STAN and Spolu
@@ -621,6 +636,115 @@ def _prague_2026_spolu_stan() -> dict:
     }
 
 
+def _prague_2026_next_time() -> dict:
+    """What would have changed the result: the votes of SEN on another
+    list, more voters, voters coming back from STAN, alone and together."""
+    first = analysis("praha-2026-pirati-praha-sobe")
+    seats = _SeatMath(store.council("kv2026", PRAGUE))
+    changed, votes = seats.changed, seats.votes
+    sen = votes.get("sen", 0)
+    voters = lambda count: count * seats.per_ballot  # noqa: E731
+
+    # Where the votes of SEN could go, by the share of them that follows
+    with_sen = {
+        "pirati": lambda share: changed(sen=-sen * share, pirati=sen * share),
+        "prahaSobe": lambda share: changed(sen=-sen * share, prahaSobe=sen * share),
+        "joint": lambda share: seats.joint(changed(sen=-sen * share, pirati=sen * share)),
+    }
+    transfers = []
+    for recipient, move in with_sen.items():
+        steps, before = [], None
+        for percent in range(0, 101):
+            outcome = seats.outcome(recipient, move(percent / 100))
+            if outcome["seats"] != before:
+                steps.append({"share": percent, **outcome})
+                before = outcome["seats"]
+        transfers.append({"recipient": recipient, "steps": steps})
+
+    # Each way on its own: the first seat STAN and Spolu lose and the second,
+    # which is the one that ends their majority
+    alone = {
+        "new-pirati": lambda count: changed(pirati=count),
+        "new-praha-sobe": lambda count: changed(prahaSobe=count),
+        "stan-to-pirati": lambda count: changed(stan=-count, pirati=count),
+        "stan-to-praha-sobe": lambda count: changed(stan=-count, prahaSobe=count),
+    }
+    levers = [
+        {
+            "key": key,
+            "first": seats.fewest(key, move, seats.majority),
+            "second": seats.fewest(key, move, seats.majority - 1),
+        }
+        for key, move in alone.items()
+    ]
+
+    # Together with a share of SEN's voters on the Pirates' list
+    shares = [0, 25, 50, 75, 100]
+    new_voters = [0, 3000, 6000, 9000, 12000, 15000, 18000]
+    back_from_stan = [0, 2000, 4000, 6000, 8000, 10000]
+
+    def with_pirati(share: float, new: float = 0, back: float = 0) -> Dict[str, float]:
+        return changed(sen=-sen * share, pirati=sen * share + new + back, stan=-back)
+
+    combined = {
+        "shares": shares,
+        "new": {
+            "columns": new_voters,
+            "cells": [
+                [seats.stan_spolu(with_pirati(share / 100, new=voters(count))) for count in new_voters]
+                for share in shares
+            ],
+        },
+        "back": {
+            "columns": back_from_stan,
+            "cells": [
+                [seats.stan_spolu(with_pirati(share / 100, back=voters(count))) for count in back_from_stan]
+                for share in shares
+            ],
+        },
+        # What is still missing for STAN and Spolu to lose the majority
+        "remaining": [
+            {
+                "share": share,
+                "new": seats.fewest(
+                    "new-pirati",
+                    lambda count, share=share: with_pirati(share / 100, new=count),
+                    seats.majority - 1,
+                ),
+                "back": seats.fewest(
+                    "stan-to-pirati",
+                    lambda count, share=share: with_pirati(share / 100, back=count),
+                    seats.majority - 1,
+                ),
+            }
+            for share in (0, 50, 100)
+        ],
+    }
+
+    strongholds = sorted(
+        first["districts"][:15], key=lambda district: -(district["shares"].get("sen") or 0)
+    )[:3]
+    return {
+        **{name: first[name] for name in ("council", "years", "summary", "lists")},
+        **seats.summary(),
+        "actual": seats.outcome("actual", votes),
+        "joint": seats.outcome("joint", seats.joint(votes)),
+        "sen": {
+            "votes": sen,
+            "voters": round(sen / seats.per_ballot),
+            "strongholds": [
+                {"name": district["name"], "share": district["shares"]["sen"]} for district in strongholds
+            ],
+        },
+        "transfers": transfers,
+        "levers": levers,
+        "combined": combined,
+        "flows": first["flows"],
+        "flowsSmallLists": first["flowsSmallLists"],
+        "parliamentary": first["parliamentary"],
+    }
+
+
 ANALYSES: Dict[str, dict] = {
     "praha-2026-pirati-praha-sobe": {
         "build": _prague_2026,
@@ -628,6 +752,10 @@ ANALYSES: Dict[str, dict] = {
     },
     "praha-2026-volici-spolu-a-stan": {
         "build": _prague_2026_spolu_stan,
+        "elections": ("kv2026", "kv2022", "ps2025"),
+    },
+    "praha-2026-co-by-zmenilo-vysledek": {
+        "build": _prague_2026_next_time,
         "elections": ("kv2026", "kv2022", "ps2025"),
     },
 }
