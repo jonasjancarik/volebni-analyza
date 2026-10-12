@@ -38,39 +38,37 @@
   --font: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --plane: #0e0e0d;
-    --surface: #1a1a19;
-    --surface-2: #242422;
-    --ink: #ffffff;
-    --ink-2: #c3c2b7;
-    --ink-3: #8d8b84;
-    --line: #2c2c2a;
-    --line-strong: #403f3b;
-    --accent: #6da7ec;
-    --accent-soft: #17293f;
-    --focus-ring: rgba(109, 167, 236, 0.45);
-    --up: #3cc13c;
-    --down: #f0817a;
-    --warn-bg: #33290c;
-    --warn-ink: #f3d98a;
-    --pressed: #45443f;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-pop: 0 18px 48px rgba(0, 0, 0, 0.6);
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --plane: #0e0e0d;
+  --surface: #1a1a19;
+  --surface-2: #242422;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --ink-3: #8d8b84;
+  --line: #2c2c2a;
+  --line-strong: #403f3b;
+  --accent: #6da7ec;
+  --accent-soft: #17293f;
+  --focus-ring: rgba(109, 167, 236, 0.45);
+  --up: #3cc13c;
+  --down: #f0817a;
+  --warn-bg: #33290c;
+  --warn-ink: #f3d98a;
+  --pressed: #45443f;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 18px 48px rgba(0, 0, 0, 0.6);
 
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --series-6: #008300;
-    --series-7: #9085e9;
-    --series-8: #e66767;
-    --series-rest: #6f6d67;
-    --series-nonvoter: #4a4945;
-  }
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --series-rest: #6f6d67;
+  --series-nonvoter: #4a4945;
 }
 
 * {
@@ -1480,10 +1478,8 @@ table.data tbody tr.selected td {
   mix-blend-mode: multiply;
 }
 
-@media (prefers-color-scheme: dark) {
-  .sankey-link {
-    mix-blend-mode: screen;
-  }
+html[data-theme="dark"] .sankey-link {
+  mix-blend-mode: screen;
 }
 
 .sankey-node {
@@ -2411,4 +2407,39 @@ table.levers td.out {
 .github-link {
   display: inline-flex;
   align-items: center;
+}
+
+.theme-switch {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.theme-switch button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.theme-switch button:hover {
+  color: var(--ink);
+}
+
+.theme-switch button[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.theme-switch button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }

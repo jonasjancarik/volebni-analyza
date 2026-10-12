@@ -12,6 +12,7 @@ import { PrecinctDetail } from "../components/PrecinctDetail";
 import { Loading, Problem } from "../components/State";
 import { fmtInt, fmtNum, fmtPct, fmtPp, listName, plural, truncate } from "../format";
 import { useParam, useTooltip } from "../hooks";
+import { isDark } from "../theme";
 
 type Metric = "ucast" | "podil" | "vitez" | "zmena";
 
@@ -604,7 +605,7 @@ function PrecinctMap({ geojson, painted, dots, circles, selected, focusIds, onSe
 
   useEffect(() => {
     if (!container.current) return;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = isDark();
     const instance = new MapLibre({
       container: container.current,
       style: dark ? STYLES.dark : STYLES.light,
@@ -739,7 +740,7 @@ function PrecinctMap({ geojson, painted, dots, circles, selected, focusIds, onSe
   useEffect(() => {
     const instance = map.current;
     if (!ready || !instance) return;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = isDark();
     (instance.getSource("dots") as GeoJSONSource).setData(dots ?? NO_DOTS);
     instance.setPaintProperty("precinct-fill", "fill-opacity", fillOpacity(!!dots));
     // Without the fill, the outlines have to stand out against the base map by themselves

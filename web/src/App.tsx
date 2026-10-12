@@ -5,6 +5,7 @@ import { Loading, Problem } from "./components/State";
 import { TopBar } from "./components/TopBar";
 import { CouncilPage } from "./Council";
 import { Home } from "./Home";
+import { useIsDark } from "./theme";
 
 function ElectionGate({ children }: { children: (electionId: string) => React.ReactNode }) {
   const { electionId = "" } = useParams();
@@ -28,12 +29,14 @@ function ElectionGate({ children }: { children: (electionId: string) => React.Re
 }
 
 export function App() {
+  // Remounting on a theme change lets maps and charts pick up the new colours
+  const dark = useIsDark();
   return (
     <>
       <Routes>
         <Route path="/:electionId?/*" element={<TopBar />} />
       </Routes>
-      <main>
+      <main key={String(dark)}>
         <Routes>
           <Route path="/" element={<ElectionGate>{() => null}</ElectionGate>} />
           <Route path="/analyzy" element={<AnalysesPage />} />

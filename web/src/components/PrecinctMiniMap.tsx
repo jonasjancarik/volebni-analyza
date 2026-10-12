@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { useBoundaries } from "../api";
 import { resolveColor } from "../colors";
 import { bounds, STYLES } from "./mapBase";
+import { isDark } from "../theme";
 
 /** A small map of where one precinct of the council being viewed lies. */
 export function PrecinctMiniMap({ precinct }: { precinct: string }) {
@@ -17,7 +18,7 @@ export function PrecinctMiniMap({ precinct }: { precinct: string }) {
 
   useEffect(() => {
     if (!container.current || !geojson) return;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = isDark();
     const instance = new MapLibre({
       container: container.current,
       style: dark ? STYLES.dark : STYLES.light,

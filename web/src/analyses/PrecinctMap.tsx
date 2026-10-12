@@ -7,6 +7,7 @@ import { bounds, STYLES } from "../components/mapBase";
 import { Loading, Problem } from "../components/State";
 import { fmtNum } from "../format";
 import { useTooltip } from "../hooks";
+import { isDark } from "../theme";
 
 /** One thing the map can show: a number on a colour scale, or a kind with a colour of its own */
 export interface MapLayer<Row> {
@@ -67,7 +68,7 @@ export function PrecinctMap<Row extends { id: string }>({ election, code, rows, 
 
   useEffect(() => {
     if (!container.current || !geojson) return;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = isDark();
     const instance = new MapLibre({
       container: container.current,
       style: dark ? STYLES.dark : STYLES.light,

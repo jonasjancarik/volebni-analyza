@@ -8,6 +8,7 @@ import { Loading, Problem } from "../components/State";
 import { fmtNum, fmtPct } from "../format";
 import { useTooltip } from "../hooks";
 import { KINDS, kindColor, kindName, type Metric, MINUTES, type PrecinctPoint, SHARES } from "./centreShared";
+import { isDark } from "../theme";
 
 const KIND = "kind";
 // Pale near the centre, dark far from it
@@ -45,7 +46,7 @@ export default function CentreMap({ election, code, precincts }: Props) {
 
   useEffect(() => {
     if (!container.current || !geojson) return;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = isDark();
     const instance = new MapLibre({
       container: container.current,
       style: dark ? STYLES.dark : STYLES.light,
