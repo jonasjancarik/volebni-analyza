@@ -1,13 +1,17 @@
-"""Makes the music of the video, `media/soundtrack.wav`, from nothing but numpy:
-slow organ chords in A minor, a repeating four-note figure that grows with the video,
-a clock ticking under it and a low hit where each scene starts. Focused rather than
-cheerful, and without drums.
+"""Makes the music of the video from nothing but numpy: slow organ chords, a repeating
+four-note figure that grows with the video and a clock ticking under it. No drums.
+
+There are two moods. `open` (the default, `media/soundtrack.wav`) keeps to chords
+without a third, so it sounds neither glad nor sad, and stays light. `dark`
+(`media/soundtrack-dark.wav`) is in A minor with a deep pedal, a full organ at the
+height and a low hit where each scene starts.
 
 The figure and the clock move in half seconds, and every scene of the video starts on
 a half second. Change `SCENES` when the scenes change length.
 
-    uv run python video/soundtrack.py
+    uv run python video/soundtrack.py [--mood dark]
 """
+import argparse
 import wave
 from pathlib import Path
 
@@ -18,13 +22,36 @@ STEP = 0.5
 # Seconds at which the scenes start, and the end of the video (`cargo run --release -- timeline`)
 SCENES = [0, 5, 14, 24, 35, 46, 57, 68.5, 80.5, 92.5]
 LENGTH = 98.0
-# Eight seconds each: the pedal in the bass, the organ's notes, the four notes of the figure (MIDI numbers)
-CHORDS = [
-    (33, [45, 52, 57, 60], [57, 64, 69, 72]),  # A minor
-    (29, [41, 48, 57, 60], [57, 65, 69, 72]),  # F
-    (26, [38, 50, 57, 62], [57, 62, 65, 69]),  # D minor
-    (28, [40, 47, 55, 59], [55, 59, 64, 67]),  # E minor
-]
+# Chords are eight seconds each: the pedal in the bass, the organ's notes, the four notes
+# of the figure (MIDI numbers). The other numbers say how heavy the mood is: the pedal's
+# and the scene hits' loudness, how far the organ's high pipes open, the loudness of the
+# octave added at the height and of the clock, and the length of the room's echo.
+MOODS = {
+    "open": {
+        "file": "soundtrack.wav",
+        "chords": [
+            (38, [50, 57, 62, 64], [62, 64, 69, 76]),  # D with a second instead of a third
+            (31, [43, 50, 57, 62], [62, 67, 69, 74]),  # G with a second
+            (33, [45, 52, 57, 62], [62, 64, 69, 76]),  # A with a fourth
+            (28, [40, 52, 57, 59], [59, 64, 69, 71]),  # E with a fourth and a seventh
+        ],
+        "pedal": 0.03, "hit": 0.0, "bright": 0.35, "octave": 0.0, "clock": 0.6, "echo": 2.2,
+    },
+    "dark": {
+        "file": "soundtrack-dark.wav",
+        "chords": [
+            (33, [45, 52, 57, 60], [57, 64, 69, 72]),  # A minor
+            (29, [41, 48, 57, 60], [57, 65, 69, 72]),  # F
+            (26, [38, 50, 57, 62], [57, 62, 65, 69]),  # D minor
+            (28, [40, 47, 55, 59], [55, 59, 64, 67]),  # E minor
+        ],
+        "pedal": 0.07, "hit": 1.0, "bright": 1.0, "octave": 0.012, "clock": 1.0, "echo": 1.5,
+    },
+}
+parser = argparse.ArgumentParser()
+parser.add_argument("--mood", choices=list(MOODS), default="open")
+MOOD = MOODS[parser.parse_args().mood]
+CHORDS = MOOD["chords"]
 CHORD_SECONDS = 8.0
 ENDING = SCENES[-1]  # from here the first chord is held to the end
 # The loudest stretch: the last map and the scenarios
@@ -103,15 +130,15 @@ second = 0.0
 while second < LENGTH:
     seconds = LENGTH - second if second >= ENDING else min(CHORD_SECONDS, ENDING - second)
     pedal, notes, _ = chord_at(second)
-    bright = intensity(second + seconds / 2)
+    bright = intensity(second + seconds / 2) * MOOD["bright"]
     for index, note in enumerate(notes):
         sound = organ(note, seconds, bright)
         put(dry, second, sound, 0.016 + 0.014 * bright, pan=(index - 1.5) * 0.35)
         put(wet, second, sound, 0.014 + 0.010 * bright, pan=(1.5 - index) * 0.35)
-    put(dry, second, organ(pedal, seconds, 0.0), 0.07 * level(second, SCENES[2], LENGTH, 16.0, 1.0))
-    if second >= PEAK[0] and second < ENDING:
+    put(dry, second, organ(pedal, seconds, 0.0), MOOD["pedal"] * level(second, SCENES[2], LENGTH, 16.0, 1.0))
+    if MOOD["octave"] and second >= PEAK[0] and second < ENDING:
         for note in notes[2:]:
-            put(wet, second, organ(note + 12, seconds, 1.0), 0.012)
+            put(wet, second, organ(note + 12, seconds, 1.0), MOOD["octave"])
     second += seconds
 
 # The four-note figure, a note every half second; an octave above joins for the maps
@@ -122,7 +149,7 @@ for step in range(int(LENGTH / STEP)):
         continue
     _, _, notes = chord_at(second)
     note = notes[step % 4]
-    bright = intensity(second)
+    bright = intensity(second) * MOOD["bright"]
     accent = 1.0 if step % 4 == 0 else 0.75
     put(wet, second, figure_note(note, bright), (0.05 + 0.07 * bright) * volume * accent, pan=-0.25 if step % 2 else 0.25)
     high = level(second, SCENES[5], ENDING, 8.0, 1.0)
@@ -133,19 +160,19 @@ for step in range(int(LENGTH / STEP)):
 for step in range(int(LENGTH / STEP)):
     second = step * STEP
     strong = step % 2 == 0
-    put(dry, second, tick(strong), (0.05 if strong else 0.03) * level(second, 1.0, LENGTH - 1.0, 6.0, 4.0), pan=0.15 if strong else -0.15)
+    put(dry, second, tick(strong), MOOD["clock"] * (0.05 if strong else 0.03) * level(second, 1.0, LENGTH - 1.0, 6.0, 4.0), pan=0.15 if strong else -0.15)
 
 # A low hit where each scene starts
 for second in SCENES[1:]:
-    put(dry, second, hit(), 0.30)
-    put(wet, second, hit(), 0.12)
+    put(dry, second, hit(), 0.30 * MOOD["hit"])
+    put(wet, second, hit(), 0.12 * MOOD["hit"])
 
-# Reverb: the wet sounds played through four seconds of fading noise, a large room
+# Reverb: the wet sounds played through a few seconds of fading noise, a large room
 t = clock(4.5)
 size = samples + len(t)
 room = np.zeros((samples, 2))
 for channel in range(2):
-    impulse = rng.standard_normal(len(t)) * np.exp(-t * 1.5) * np.clip(t / 0.02, 0, 1)
+    impulse = rng.standard_normal(len(t)) * np.exp(-t * MOOD["echo"]) * np.clip(t / 0.02, 0, 1)
     impulse /= np.sqrt(np.sum(impulse**2))
     room[:, channel] = np.fft.irfft(np.fft.rfft(wet[:, channel], size) * np.fft.rfft(impulse, size), size)[:samples]
 
@@ -153,7 +180,7 @@ mix = dry + 0.6 * wet + 0.8 * room
 mix *= np.clip((LENGTH - np.arange(samples) / RATE) / 4.0, 0, 1)[:, None]  # the last chord fades away
 mix = np.tanh(mix * 1.1 / np.max(np.abs(mix))) / np.tanh(1.1) * 0.8  # a soft ceiling
 
-path = Path(__file__).resolve().parent / "media" / "soundtrack.wav"
+path = Path(__file__).resolve().parent / "media" / MOOD["file"]
 with wave.open(str(path), "wb") as out:
     out.setnchannels(2)
     out.setsampwidth(2)

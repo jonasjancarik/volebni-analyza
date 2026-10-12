@@ -8,7 +8,7 @@ majority. The music is made by a script, so there is nothing to license.
 | File | What |
 | --- | --- |
 | `build_data.py` | reads the stored analyses and the precinct boundaries; writes `src/data.rs` and the maps `media/map-*.png` |
-| `soundtrack.py` | makes the music `media/soundtrack.wav` with numpy: slow organ chords in A minor, a repeating four-note figure that grows with the video, a ticking clock and a low hit where each scene starts |
+| `soundtrack.py` | makes the music with numpy: slow organ chords, a repeating four-note figure that grows with the video and a ticking clock. The default mood, `media/soundtrack.wav`, uses chords without a third and stays light; `--mood dark` writes `media/soundtrack-dark.wav`, in A minor with a deep pedal and a low hit where each scene starts |
 | `src/lib.rs` | the video, the title and the closing card |
 | `src/charts.rs` | scenes drawn from numbers: result, seats, voter flows, turnout, scenarios |
 | `src/maps.rs` | scenes with a map: the Pirates a year apart, travel time, housing |

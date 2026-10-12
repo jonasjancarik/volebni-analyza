@@ -10,7 +10,7 @@ _frame_snapshots/*.diff.png
 
 # Made by build_data.py and soundtrack.py
 media/map-*.png
-media/soundtrack.wav
+media/soundtrack*.wav
 
 # A track made elsewhere, to render with --music
 media/suno*
