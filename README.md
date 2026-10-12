@@ -124,7 +124,8 @@ seats of the district's two blocs and how close the last seat was, compares
 how the same voters filled in their two ballots (for the council of the
 district and for the council of the city), and goes through the precincts: a
 map the reader can recolour, the Pirates' losses by how strong they were
-before, neighbourhoods, kinds of housing and a table of all precincts.
+before, neighbourhoods, kinds of housing, a table of all precincts, and whether
+turnout goes with the result (precincts by how much it rose and how high it is).
 Neighbourhoods come from a list in `src/web_analyses.py` (`PRAGUE_5_PARTS`)
 that `research/praha5_neighbourhoods.py` helps to rebuild from the address
 register. Kinds of housing need the buildings file; without it the article

@@ -79,6 +79,18 @@ export interface Prague5Analysis {
     /** Precincts in which a list got less for the council of Praha 5 than for that of the city */
     lowerLocally: Record<string, number>;
   };
+  /** Turnout and the result, without the precincts left out of turnout */
+  turnout: {
+    compared: number;
+    /** Precincts where turnout rose since the previous election */
+    rose: number;
+    /** Thirds of precincts from the smallest rise of turnout to the largest */
+    byRise: Area[];
+    /** Thirds of precincts from the lowest turnout to the highest */
+    byLevel: Area[];
+    /** Correlation across precincts, from -1 to 1 */
+    together: { rise: Record<string, number>; level: Record<string, number>; fallAndPirati: number };
+  };
   /** Precincts left out of the turnout of the groups */
   unusual: { id: string; registered: number; turnout: number }[];
   precincts: Precinct[];

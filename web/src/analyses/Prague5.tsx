@@ -393,6 +393,35 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
     inElections("pirati", data.parliamentaryVotes.pirati),
   ];
   const piratiVotes = data.parliamentaryVotes.pirati;
+
+  // Turnout
+  const { turnout } = data;
+  const moreBallots = district.ballots.now - district.ballots.then;
+  const voterRows = electionRows
+    .map((row) => ({ key: row.key, then: row.values[0] ?? 0, now: row.values[2] ?? 0 }))
+    .sort((a, b) => b.now - b.then - (a.now - a.then));
+  const votersOf = (key: string) => voterRows.find((row) => row.key === key)!;
+  const [stanVoters, piratiVoters] = [votersOf("stan"), votersOf("pirati")];
+  const signedTens = (people: number) => `${people < 0 ? "−" : "+"}${tens(Math.abs(people))}`;
+  const riseOf = (area: Area) => (area.turnout.now ?? 0) - (area.turnout.then ?? 0);
+  const riseTogether = Object.values(turnout.together.rise);
+  const [lowTurnout, highTurnout] = [turnout.byLevel[0], turnout.byLevel[turnout.byLevel.length - 1]];
+  const riseColumns: HeatColumn<Area>[] = [
+    { group: "Účast", head: years.previous, value: (row) => row.turnout.then ?? 0, format: pct },
+    { group: "Účast", head: years.current, value: (row) => row.turnout.now ?? 0, format: pct },
+    { group: "Účast", head: "změna", value: riseOf, format: bare, tint: "change" },
+    { group: "Piráti", head: years.previous, value: (row) => row.previousLocal.pirati ?? 0, format: pct, tint: colorOf("pirati") },
+    { group: "Piráti", head: years.current, value: (row) => row.local.pirati ?? 0, format: pct, tint: colorOf("pirati") },
+    ...["pirati", "stan", "praha5Sobe", "sen", "ano"].map(
+      (key): HeatColumn<Area> => ({
+        group: "Změna podílu",
+        head: label(key),
+        value: (row) => change(row, key),
+        format: bare,
+        tint: "change",
+      }),
+    ),
+  ];
   const piratiCity = voters(district.city.pirati, "now") ?? 0;
   const coalitionVoters = voters(coalition.share.now, "now") ?? 0;
   const turnoutDrop = (1 - district.ballots.now / district.ballots.mid) * 100;
@@ -467,6 +496,19 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       value: (row) => right(row) - right(row, true),
       format: bare,
       tint: "change",
+    },
+  ];
+
+  const levelColumns: HeatColumn<Area>[] = [
+    { group: "Účast", head: years.current, value: (row) => row.turnout.now ?? 0, format: pct },
+    { group: "Účast", head: `Sněmovna ${years.parliamentary}`, value: (row) => row.turnout.mid ?? 0, format: pct },
+    ...shareColumns<Area>(),
+    {
+      group: "Piráti",
+      head: `Sněmovna ${years.parliamentary}`,
+      value: (row) => row.parliamentary.pirati ?? 0,
+      format: pct,
+      tint: colorOf("pirati"),
     },
   ];
 
@@ -847,6 +889,95 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
       </section>
 
       <section className="prose">
+        <h2>Volební účast</h2>
+        <p>
+          Účast stoupla z {fmtNum(data.previousSummary.turnout)} na {fmtPct(data.summary.turnout)}, k volbám přišlo
+          o {fmtInt(moreBallots)} lidí víc než před čtyřmi lety. Vyšší byla {inCount(turnout.rose)} z{" "}
+          {turnout.compared} okrsků.
+        </p>
+      </section>
+
+      <Figure
+        title="Kolik voličů kandidátky získaly a ztratily"
+        sub={`Volby do zastupitelstva Prahy 5 v letech ${years.previous} a ${years.current}, hlasy přepočtené na voliče`}
+        note={`V roce ${years.previous} jsou u ODS, TOP 09 a KDU-ČSL sečtené jejich dvě tehdejší kandidátky, i když na jedné z nich byli také Zelení.`}
+      >
+        <HeatTable
+          rows={voterRows}
+          rowHead="Kandidátka"
+          rowLabel={(row) => label(row.key)}
+          columns={[
+            { head: years.previous, value: (row) => row.then, format: tens },
+            { head: years.current, value: (row) => row.now, format: tens },
+            { head: "Rozdíl", value: (row) => row.now - row.then, format: signedTens, tint: "change" },
+          ]}
+        />
+      </Figure>
+
+      <section className="prose">
+        <p>
+          Piráti ztratili asi {tens(piratiVoters.then - piratiVoters.now)} voličů,{" "}
+          {fmtPct((1 - piratiVoters.now / piratiVoters.then) * 100, 0)} těch z roku {years.previous}, přestože
+          k urnám přišlo víc lidí.
+          {stanVoters.now - stanVoters.then > moreBallots && (
+            <>
+              {" "}
+              STAN jich přibral {tens(stanVoters.now - stanVoters.then)}, víc, než kolik voličů celkem přibylo. Jeho
+              růst tedy nemůže stát jen na lidech, kteří minule nevolili.
+            </>
+          )}
+        </p>
+      </section>
+
+      <Figure
+        title="Okrsky podle toho, jak v nich stoupla účast"
+        sub={`Třetiny okrsků od nejmenšího růstu účasti po největší. Účast a podíly v procentech, změny v procentních bodech.`}
+      >
+        <HeatTable
+          rows={turnout.byRise}
+          rowHead="Růst účasti"
+          rowLabel={(row) => ["nejmenší", "střední", "největší"][turnout.byRise.indexOf(row)]}
+          columns={riseColumns}
+        />
+      </Figure>
+
+      <section className="prose">
+        <p>
+          Kde účast stoupla víc, nedopadly volby jinak. Piráti ztratili ve všech třech skupinách podobně, od{" "}
+          {fmtNum(Math.min(...turnout.byRise.map((third) => Math.abs(change(third, "pirati")))))} do{" "}
+          {fmtNum(Math.max(...turnout.byRise.map((third) => Math.abs(change(third, "pirati")))))} bodu, a STAN všude
+          přidal {fmtNum(Math.min(...turnout.byRise.map((third) => change(third, "stan"))))} až{" "}
+          {fmtNum(Math.max(...turnout.byRise.map((third) => change(third, "stan"))))} bodu.
+        </p>
+      </section>
+
+      <Figure
+        title="Okrsky podle výše účasti"
+        sub={`Třetiny okrsků od nejnižší účasti v roce ${years.current} po nejvyšší. Podíly hlasů do zastupitelstva Prahy 5 v procentech.`}
+      >
+        <HeatTable
+          rows={turnout.byLevel}
+          rowHead="Účast"
+          rowLabel={(row) => ["nízká", "střední", "vysoká"][turnout.byLevel.indexOf(row)]}
+          columns={levelColumns}
+        />
+      </Figure>
+
+      <section className="prose">
+        <p>
+          S výsledkem souvisí spíš to, jak vysoká účast v okrsku bývá. Piráti mají v okrscích s nízkou účastí{" "}
+          {fmtPct(lowTurnout.local.pirati ?? 0)} a v těch s vysokou {fmtPct(highTurnout.local.pirati ?? 0)}; Praha 5
+          Sobě {fmtNum(lowTurnout.local.praha5Sobe ?? 0)} a {fmtPct(highTurnout.local.praha5Sobe ?? 0)}. Je to
+          vlastnost míst, ne důsledek letošní účasti: v okrscích s nízkou účastí dostali Piráti nejvíc i loni do
+          Sněmovny ({fmtPct(lowTurnout.parliamentary.pirati ?? 0)}).
+        </p>
+        <p>
+          Od sněmovních voleb účast klesla všude, a to bez ohledu na to, jak silní tam Piráti byli. Jestli doma
+          zůstali častěji právě jejich voliči, se z okrsků nepozná.
+        </p>
+      </section>
+
+      <section className="prose">
         <h2>Proti sněmovním volbám</h2>
         <p>
           Do Sněmovny loni v Praze 5 volilo Piráty {hundreds(piratiVotes)} lidí ({fmtPct(district.parliamentary.pirati ?? 0)}).
@@ -927,6 +1058,12 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
             {fmtPct(data.unusual[0].turnout)}. Do účasti čtvrtí a zástavby se nepočítá, do podílů hlasů ano.
           </p>
         )}
+        <p className="note">
+          Souvislost účasti s výsledkem je měřená mezi okrsky, ne mezi voliči. Korelace změny účasti se změnou
+          podílu kandidátky je od {fmtNum(Math.min(...riseTogether), 2)} do {fmtNum(Math.max(...riseTogether), 2)},
+          korelace výše účasti s podílem Pirátů {fmtNum(turnout.together.level.pirati, 2)} a korelace poklesu účasti
+          od sněmovních voleb se sněmovním podílem Pirátů {fmtNum(turnout.together.fallAndPirati, 2)}.
+        </p>
         <p className="note">
           Odhad přesunů voličů mezi kandidátkami tu chybí: z {precincts.length} okrsků vychází jen hrubě a sestavy
           kandidátek se od roku {years.previous} změnily.{" "}

@@ -30,7 +30,7 @@ from election_comparison import (
 )
 
 # Bump when the figures of an analysis change, so that stored ones are recomputed
-ANALYSIS_VERSION = 2
+ANALYSIS_VERSION = 3
 
 PRAGUE = "554782"
 PRAGUE_REGION = "1"
@@ -1098,6 +1098,44 @@ def _prague_5_counts(frames: Dict[str, pd.DataFrame]) -> dict:
     }
 
 
+def _prague_5_turnout(frames: Dict[str, pd.DataFrame], unusual, on: Callable) -> dict:
+    """Whether turnout goes with the result: precincts in thirds by how much
+    their turnout rose since the previous election and by how high it is,
+    and how closely the two move together across precincts."""
+    local, then, mid = (frames[name] for name in ("local", "previousLocal", "parliamentary"))
+    ids = local.index.intersection(then.index).intersection(mid.index).difference(unusual)
+    ids = ids[(local.loc[ids, "votes"] > 0) & (then.loc[ids, "votes"] > 0) & (mid.loc[ids, "registered"] > 0)]
+
+    def turnout(frame: pd.DataFrame) -> pd.Series:
+        return frame.loc[ids, "ballots"] / frame.loc[ids, "registered"] * 100
+
+    def share(frame: pd.DataFrame, key: str) -> pd.Series:
+        return frame.loc[ids, key] / frame.loc[ids, "votes"] * 100
+
+    now, rise = turnout(local), turnout(local) - turnout(then)
+
+    def thirds(values: pd.Series) -> List[dict]:
+        third = pd.qcut(values, 3, labels=False)
+        return [on(third.index[third == index]) for index in range(3)]
+
+    same = [key for key in ("praha5Sobe", "stan", "sen", "ano", "pirati") if key in then.columns]
+    return {
+        "compared": len(ids),
+        "rose": int((rise > 0).sum()),
+        # From the precincts where turnout rose least to those where it rose most
+        "byRise": thirds(rise),
+        # From the lowest turnout to the highest
+        "byLevel": thirds(now),
+        # Correlation across precincts, from -1 to 1
+        "together": {
+            "rise": {key: float((share(local, key) - share(then, key)).corr(rise)) for key in same},
+            "level": {key: float(share(local, key).corr(now)) for key in local.columns.difference(COUNTS)},
+            # The fall of turnout since the parliamentary election against the Pirates' share in it
+            "fallAndPirati": float((turnout(mid) - now).corr(share(mid, "pirati"))),
+        },
+    }
+
+
 def _rounded(value, digits: int = 2):
     """A nested result with its numbers rounded; a precinct needs no more."""
     if isinstance(value, float):
@@ -1189,6 +1227,7 @@ def _prague_5_2026() -> dict:
         # From the weakest fifth for the Pirates in the previous election to the strongest
         "fifths": [on(fifth.index[fifth == index]) for index in range(5)],
         "counts": _prague_5_counts(frames),
+        "turnout": _prague_5_turnout(frames, unusual, on),
         "unusual": [
             {
                 "id": precinct,
