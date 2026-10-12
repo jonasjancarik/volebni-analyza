@@ -17,6 +17,8 @@ services:
     environment:
       # Public address of the original app; shows a "Původní verze" link when set
       VOLBY_LEGACY_URL: ${VOLBY_LEGACY_URL:-}
+      # Public address of this app; answers of the MCP server at /mcp then link to its pages
+      VOLBY_PUBLIC_URL: ${VOLBY_PUBLIC_URL:-}
       # output/ is read-only here, so computed voter flows go to their own volume
       VOLBY_CACHE_DIR: /app/cache
     volumes:

@@ -19,6 +19,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import web_mcp
 import web_store as store
 
 @asynccontextmanager
@@ -31,7 +32,8 @@ async def lifespan(_: FastAPI):
     worker = None
     if os.environ.get("VOLBY_PRECOMPUTE", "1") != "0":
         worker = subprocess.Popen([sys.executable, str(Path(__file__).with_name("web_store.py"))])
-    yield
+    async with web_mcp.server.session_manager.run():
+        yield
     if worker and worker.poll() is None:
         worker.terminate()
 
@@ -99,6 +101,10 @@ def flow_inputs(election_id: str, code: str, area: Optional[str] = None):
 @app.get("/api/elections/{election_id}/councils/{code}/candidates")
 def candidates(election_id: str, code: str):
     return store.candidates(election_id, code)
+
+
+# The same data as tools for AI assistants, at /mcp
+app.router.routes.extend(web_mcp.http_routes())
 
 
 DIST = Path(__file__).resolve().parent.parent / "web" / "dist"

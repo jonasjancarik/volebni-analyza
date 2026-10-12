@@ -96,6 +96,30 @@ ranges. It repeats the estimate in the browser (`web/src/method/model.ts`)
 from the model inputs served by `/api/elections/<election>/councils/<code>/comparison/inputs`,
 so a change to the estimate in `src/election_comparison.py` has to be mirrored there.
 
+### MCP server for AI assistants
+
+The API also offers the same data as tools for AI assistants over the Model
+Context Protocol (`src/web_mcp.py`): the list of elections, search for a
+council, its results, results by precinct, voter flows and candidates. The
+tools only read, and their answers leave out what only the charts and maps
+need.
+
+A running app serves them at `/mcp` (streamable HTTP, no sign-in), so an
+assistant connects to the address of the app:
+
+```bash
+claude mcp add --transport http volby http://localhost:8600/mcp
+```
+
+Without a running app, a client can start the server itself over stdio:
+
+```bash
+claude mcp add volby -- uv run --project /path/to/volebni-analyza python /path/to/volebni-analyza/src/web_mcp.py
+```
+
+Set `VOLBY_PUBLIC_URL` to the public address of the app to have the answers
+link to the matching page.
+
 ### Address points for the dot map
 
 The map of precincts can show votes as dots, one for a given number of votes.
