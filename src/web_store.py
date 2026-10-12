@@ -1019,11 +1019,6 @@ def precompute_comparisons() -> int:
     return ready
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
-    logger.info("Voter-flow estimates ready: %s", precompute_comparisons())
-
-
 def addresses(election_id: str, code: str) -> dict:
     """
     A random handful of addresses in every precinct, as flat [lng, lat, ...]

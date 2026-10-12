@@ -19,19 +19,20 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import web_analyses
 import web_mcp
 import web_store as store
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Prepares the voter-flow estimates, so that nobody waits for them; with
-    # the estimates already on disk this takes a moment. It runs as a separate
-    # process because the computation would slow down every request served
-    # meanwhile. VOLBY_PRECOMPUTE=0 leaves the estimates to be computed when
-    # first opened.
+    # Prepares the voter-flow estimates and the analyses, so that nobody waits
+    # for them; with everything already on disk this takes a moment. It runs
+    # as a separate process because the computation would slow down every
+    # request served meanwhile. VOLBY_PRECOMPUTE=0 leaves them to be computed
+    # when first opened.
     worker = None
     if os.environ.get("VOLBY_PRECOMPUTE", "1") != "0":
-        worker = subprocess.Popen([sys.executable, str(Path(__file__).with_name("web_store.py"))])
+        worker = subprocess.Popen([sys.executable, str(Path(__file__).with_name("web_prepare.py"))])
     async with web_mcp.server.session_manager.run():
         yield
     if worker and worker.poll() is None:
@@ -101,6 +102,11 @@ def flow_inputs(election_id: str, code: str, area: Optional[str] = None):
 @app.get("/api/elections/{election_id}/councils/{code}/candidates")
 def candidates(election_id: str, code: str):
     return store.candidates(election_id, code)
+
+
+@app.get("/api/analyses/{slug}")
+def analysis(slug: str):
+    return web_analyses.analysis(slug)
 
 
 # The same data as tools for AI assistants, at /mcp
