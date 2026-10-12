@@ -2,10 +2,11 @@ import { type ExpressionSpecification, type GeoJSONSource, Map as MapLibre, Navi
 import type { FeatureCollection, Point, Polygon } from "geojson";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type Boundaries, useAddresses, useBoundaries, useComparison } from "../api";
-import { NO_DATA, RAMPS, type Scale, divergingScale, resolveColor, sequentialScale } from "../colors";
+import { NO_DATA, RAMPS, SEQUENTIAL, type Scale, divergingScale, resolveColor, sequentialScale } from "../colors";
 import type { TabProps } from "../Council";
 import { circleShapes } from "../components/cartogram";
 import { type DotGroup, dotPoints, dotSteps } from "../components/dots";
+import { Dropdown } from "../components/Dropdown";
 import { bounds, STYLES } from "../components/mapBase";
 import { PrecinctDetail } from "../components/PrecinctDetail";
 import { Loading, Problem } from "../components/State";
@@ -51,7 +52,18 @@ function RampLegend({ title, scale, format }: { title: string; scale: Scale; for
   );
 }
 
-export function MapTab({ council, colors, focus }: TabProps) {
+/** A small preview of the colours a choice puts on the map */
+function Strip({ colors }: { colors: string[] }) {
+  return (
+    <span className="ramp-strip" aria-hidden>
+      {colors.map((color, i) => (
+        <span key={i} style={{ background: color }} />
+      ))}
+    </span>
+  );
+}
+
+export function MapTab({ council, colors, focus, combo }: TabProps) {
   const { election, lists, precincts, areas, previous } = council;
   const boundaries = useBoundaries(election.id, council.code);
   const [metricParam, setMetric] = useParam("m");
@@ -61,7 +73,6 @@ export function MapTab({ council, colors, focus }: TabProps) {
   const [view, setView] = useParam("z");
   const [perDotParam, setPerDot] = useParam("tecka");
   const [rampParam, setRamp] = useParam("barvy");
-  const [plusParam, setPlus] = useParam("plus");
   const [apartParam, setApart] = useParam("odsun");
   const asDots = view === DOTS;
   const asCircles = view === CIRCLES;
@@ -73,21 +84,6 @@ export function MapTab({ council, colors, focus }: TabProps) {
   const parliamentary = election.type === "parliamentary";
   const listWord = parliamentary ? "strany" : "kandidátky";
 
-  // The followed list first, then the lists added to it
-  const combo = useMemo(() => {
-    const extras = (plusParam ?? "")
-      .split(".")
-      .filter(Boolean)
-      .map(Number)
-      .filter((index) => Number.isInteger(index) && index >= 0 && index < lists.length && index !== focus);
-    return [focus, ...new Set(extras)];
-  }, [plusParam, focus, lists.length]);
-  const [picking, setPicking] = useState(combo.length > 1);
-  const toggleList = (index: number) => {
-    const extras = combo.slice(1);
-    const next = extras.includes(index) ? extras.filter((item) => item !== index) : [...extras, index];
-    setPlus(next.length ? next.join(".") : null);
-  };
   const comboName =
     combo.length === 1
       ? listName(lists[focus].name)
@@ -295,6 +291,12 @@ export function MapTab({ council, colors, focus }: TabProps) {
   }
 
   const sameLists = comparison.data?.sameLists ?? [];
+  const rampOptions = [
+    { id: "", label: "Od světle modré po tmavou", colors: SEQUENTIAL },
+    ...Object.entries(RAMPS).map(([id, item]) => ({ id, ...item })),
+  ];
+  const ownColorLabel =
+    combo.length > 1 ? `Každá ${parliamentary ? "strana" : "kandidátka"} svou barvou` : `Barva ${listWord}`;
   // Lists shown in the legend when each dot has the colour of its list
   const legendLists =
     sized && asDots && metric === "vitez"
@@ -377,60 +379,77 @@ export function MapTab({ council, colors, focus }: TabProps) {
           </div>
         )}
         {scaled && (
-          <label style={{ display: "grid", gap: 4 }}>
+          <div style={{ display: "grid", gap: 4 }}>
             <span className="field-label">Barvy</span>
-            <select
-              className="select block"
-              value={byList ? BY_LIST : (ramp ?? "")}
-              onChange={(event) => setRamp(event.target.value || null)}
+            <Dropdown
+              label="Barvy mapy"
+              button={
+                <>
+                  <Strip colors={byList ? combo.map((index) => colors[index]) : rampOptions.find((item) => item.id === (ramp ?? ""))!.colors} />
+                  <span className="dropdown-text">
+                    {byList ? ownColorLabel : rampOptions.find((item) => item.id === (ramp ?? ""))!.label}
+                  </span>
+                </>
+              }
             >
-              <option value="">Od světle modré po tmavou</option>
-              {Object.entries(RAMPS).map(([id, item]) => (
-                <option key={id} value={id}>
-                  {item.label}
-                </option>
-              ))}
-              {asDots && metric === "podil" && (
-                <option value={BY_LIST}>
-                  {combo.length > 1
-                    ? `Každá ${parliamentary ? "strana" : "kandidátka"} svou barvou`
-                    : `Barva ${listWord}`}
-                </option>
+              {(close) => (
+                <>
+                  {rampOptions.map((item) => (
+                    <div key={item.id} className="dropdown-option" role="option" aria-selected={!byList && (ramp ?? "") === item.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRamp(item.id || null);
+                          close();
+                        }}
+                      >
+                        <Strip colors={item.colors} />
+                        <span className="dropdown-text">{item.label}</span>
+                      </button>
+                    </div>
+                  ))}
+                  {asDots && metric === "podil" && (
+                    <div className="dropdown-option" role="option" aria-selected={byList}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRamp(BY_LIST);
+                          close();
+                        }}
+                      >
+                        <Strip colors={combo.map((index) => colors[index])} />
+                        <span className="dropdown-text">{ownColorLabel}</span>
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
-            </select>
-          </label>
+            </Dropdown>
+          </div>
         )}
         {metric === "podil" && (
-          <div style={{ display: "grid", gap: 10 }}>
-            <p className="note">
-              Mapa ukazuje sledovanou {parliamentary ? "stranu" : "kandidátku"},{" "}
-              <strong style={{ color: "var(--ink)" }}>{listName(lists[focus].name)}</strong>. Jinou vyberete nahoře vedle
-              názvu.
-            </p>
-            <details className="pick" open={picking} onToggle={(event) => setPicking(event.currentTarget.open)}>
-              <summary>
-                Sečíst s dalšími {parliamentary ? "stranami" : "kandidátkami"}
-                {combo.length > 1 && ` (${combo.length - 1})`}
-              </summary>
-              <div className="pick-list">
-                {lists.map(
-                  (list, index) =>
-                    index !== focus && (
-                      <label key={list.name}>
-                        <input type="checkbox" checked={combo.includes(index)} onChange={() => toggleList(index)} />
-                        <span className="swatch" style={{ background: colors[index] }} />
-                        {truncate(listName(list.name), 34)}
-                      </label>
-                    ),
-                )}
-              </div>
-            </details>
-            {combo.length > 1 && (
-              <p className="note">
-                Hlasy vybraných {parliamentary ? "stran" : "kandidátek"} se sčítají a mapa je ukazuje dohromady.
-              </p>
+          <p className="note">
+            {combo.length === 1 ? (
+              <>
+                Mapa ukazuje sledovanou {parliamentary ? "stranu" : "kandidátku"},{" "}
+                <strong style={{ color: "var(--ink)" }}>{listName(lists[focus].name)}</strong>. Nahoře vedle názvu
+                vyberete jinou, nebo jich zaškrtnete víc najednou.
+              </>
+            ) : (
+              <>
+                Mapa sčítá hlasy {parliamentary ? "stran" : "kandidátek"}, které jste vybrali nahoře vedle názvu:{" "}
+                <strong style={{ color: "var(--ink)" }}>
+                  {combo.map((index) => truncate(listName(lists[index].name), 30)).join(", ")}
+                </strong>
+                .
+              </>
             )}
-          </div>
+          </p>
+        )}
+        {metric !== "podil" && combo.length > 1 && (
+          <p className="note">
+            Víc vybraných {parliamentary ? "stran" : "kandidátek"} mapa sčítá jen v pohledu „Podíl {listWord}“.
+          </p>
         )}
         {metric === "zmena" && (
           <label style={{ display: "grid", gap: 4 }}>

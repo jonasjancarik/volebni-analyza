@@ -2,8 +2,9 @@ import { lazy, Suspense, useMemo } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { type Council, useCouncil } from "./api";
 import { listColors } from "./colors";
+import { Dropdown } from "./components/Dropdown";
 import { Loading, Problem } from "./components/State";
-import { listName, truncate } from "./format";
+import { listName, plural, truncate } from "./format";
 import { useParam } from "./hooks";
 import { CandidatesTab } from "./tabs/CandidatesTab";
 import { DataTab } from "./tabs/DataTab";
@@ -21,6 +22,8 @@ export interface TabProps {
   colorByName: Map<string, string>;
   /** Index of the list the user follows */
   focus: number;
+  /** The followed list and the lists picked along with it; the map adds their votes up */
+  combo: number[];
 }
 
 interface TabDef {
@@ -57,11 +60,24 @@ export function CouncilPage({ electionId }: { electionId: string }) {
   if (!data) return null;
 
   const colors = data.lists.map((list) => colorByName.get(list.name)!);
-  const fromParam = data.lists.findIndex((list) => list.number === focusParam);
-  const focus = fromParam === -1 ? defaultFocus(data) : fromParam;
+  // The address holds the numbers of the picked lists, the followed one first
+  const picked = [
+    ...new Set(
+      (focusParam ?? "")
+        .split(".")
+        .map((number) => data.lists.findIndex((list) => list.number === number))
+        .filter((index) => index !== -1),
+    ),
+  ];
+  const combo = picked.length ? picked : [defaultFocus(data)];
+  const focus = combo[0];
+  const setCombo = (indices: number[]) => setFocusParam(indices.map((index) => data.lists[index].number).join("."));
   const tabs = TABS.filter((item) => item.show(data));
   const active = tabs.find((item) => item.slug === tab) ?? tabs[0];
-  const props: TabProps = { council: data, colors, colorByName, focus };
+  // Only the map can show several lists as one
+  const several = active.slug === "mapa";
+  const parliamentary = data.election.type === "parliamentary";
+  const props: TabProps = { council: data, colors, colorByName, focus, combo };
   // Only the followed list travels between tabs; the rest belongs to one tab
   const keep = focusParam ? `?k=${focusParam}` : "";
 
@@ -82,22 +98,69 @@ export function CouncilPage({ electionId }: { electionId: string }) {
         <div className="council-title">
           <h1>{data.name}</h1>
           {data.lists.length > 1 && (
-            <label className="focus-picker">
+            <div className="focus-picker">
               <span className="field-label">
-                {data.election.type === "parliamentary" ? "Sledovaná strana" : "Sledovaná kandidátka"}
+                {several
+                  ? parliamentary
+                    ? "Strany na mapě"
+                    : "Kandidátky na mapě"
+                  : parliamentary
+                    ? "Sledovaná strana"
+                    : "Sledovaná kandidátka"}
               </span>
-              <select
-                className="select block"
-                value={data.lists[focus].number}
-                onChange={(event) => setFocusParam(event.target.value)}
+              <Dropdown
+                align="right"
+                label={parliamentary ? "Výběr strany" : "Výběr kandidátky"}
+                button={
+                  <>
+                    <span className="swatch" style={{ background: colors[focus] }} />
+                    <span className="dropdown-text">{truncate(listName(data.lists[focus].name), 44)}</span>
+                    {several && combo.length > 1 && (
+                      <span className="dropdown-more">
+                        + {combo.length - 1} {plural(combo.length - 1, "další", "další", "dalších")}
+                      </span>
+                    )}
+                  </>
+                }
               >
-                {data.lists.map((list) => (
-                  <option key={list.number} value={list.number}>
-                    {truncate(listName(list.name), 44)}
-                  </option>
-                ))}
-              </select>
-            </label>
+                {(close) => (
+                  <>
+                    {several && (
+                      <p className="dropdown-hint">
+                        Zaškrtněte víc {parliamentary ? "stran" : "kandidátek"} a mapa ukáže jejich hlasy dohromady.
+                        Kliknutím na název vyberete jen tu jednu.
+                      </p>
+                    )}
+                    {data.lists.map((list, index) => (
+                      <div key={list.number} className="dropdown-option" role="option" aria-selected={combo.includes(index)}>
+                        {several && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Přidat na mapu: ${listName(list.name)}`}
+                            checked={combo.includes(index)}
+                            // The last list left cannot be unticked; the map always shows something
+                            disabled={combo.length === 1 && combo[0] === index}
+                            onChange={() =>
+                              setCombo(combo.includes(index) ? combo.filter((item) => item !== index) : [...combo, index])
+                            }
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCombo([index]);
+                            close();
+                          }}
+                        >
+                          <span className="swatch" style={{ background: colors[index] }} />
+                          <span className="dropdown-text">{listName(list.name)}</span>
+                        </button>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </Dropdown>
+            </div>
           )}
         </div>
         <nav className="tabs" aria-label="Pohledy">
