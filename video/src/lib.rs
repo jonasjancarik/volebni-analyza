@@ -165,7 +165,7 @@ impl Video for AnalysisVideo<'_> {
     }
 
     fn audio(&self) -> AudioMap<'_> {
-        // One track. The one `soundtrack.py` makes has its beats on the starts of the scenes.
+        // One track. The one `soundtrack.py` makes moves in half seconds, and so do the starts of the scenes.
         AudioMap::from([AudioTrack::new(self.music, Second(0.)..Eof).fade_in(0.3).fade_out(2.5)])
     }
 

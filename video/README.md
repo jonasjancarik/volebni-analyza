@@ -8,7 +8,7 @@ majority. The music is made by a script, so there is nothing to license.
 | File | What |
 | --- | --- |
 | `build_data.py` | reads the stored analyses and the precinct boundaries; writes `src/data.rs` and the maps `media/map-*.png` |
-| `soundtrack.py` | makes the music `media/soundtrack.wav` with numpy: a pad over four chords, a plucked pattern, bass and light drums at 120 beats a minute, with a bell where each scene starts |
+| `soundtrack.py` | makes the music `media/soundtrack.wav` with numpy: slow organ chords in A minor, a repeating four-note figure that grows with the video, a ticking clock and a low hit where each scene starts |
 | `src/lib.rs` | the video, the title and the closing card |
 | `src/charts.rs` | scenes drawn from numbers: result, seats, voter flows, turnout, scenarios |
 | `src/maps.rs` | scenes with a map: the Pirates a year apart, travel time, housing |
@@ -38,7 +38,7 @@ writes one frame, `strip Flows -n 8` a contact sheet of a scene, `inspect` repor
 that runs off the picture, and `preview` plays the video.
 
 Every number on screen comes from `src/data.rs`, so the video follows the analyses when
-they are recomputed. Every scene starts on a half second, which is a beat of the music;
+they are recomputed. Every scene starts on a half second, which is a step of the music;
 when a scene changes length, keep it that way and update `SCENES` in `soundtrack.py`.
 The sentences are written by hand in the scenes; read them again
 when the figures change.
