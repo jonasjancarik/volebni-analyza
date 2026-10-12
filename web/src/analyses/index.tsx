@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useAnalysis } from "../api";
 import { Loading, Problem } from "../components/State";
 import { Prague2026 } from "./Prague2026";
+import { type CentreAnalysis, Prague2026Centre } from "./Prague2026Centre";
 import { Prague2026Next } from "./Prague2026Next";
 import { Prague2026Spolu } from "./Prague2026Spolu";
 import type { NextTimeAnalysis, PragueAnalysis, SpoluStanAnalysis } from "./types";
@@ -45,6 +46,15 @@ export const ANALYSES: AnalysisEntry[] = [
     lede: "Kolik by přinesla koalice se SEN, vyšší účast a návrat voličů od STAN, každé zvlášť i dohromady.",
     updated: "12. října 2026",
     body: (data) => <Prague2026Next data={data as NextTimeAnalysis} />,
+  },
+  {
+    slug: "praha-2026-centrum-sidliste-predmesti",
+    election: "kv2026",
+    kicker: "Komunální volby 2026 · Praha",
+    title: "Centrum, sídliště a předměstí",
+    lede: "Jak se podpora Pirátů a Prahy Sobě mění se vzdáleností od centra a s typem zástavby.",
+    updated: "12. října 2026",
+    body: (data) => <Prague2026Centre data={data as CentreAnalysis} />,
   },
 ];
 

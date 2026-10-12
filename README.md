@@ -111,7 +111,11 @@ and city district, where STAN's new voters came from, and the smallest shift
 that would end the two lists' majority. The third one weighs what would have
 changed the result: how many seats the voters of SEN would bring on another
 list depending on how many of them follow, what more voters or voters coming
-back from STAN would take, and the combinations of these.
+back from STAN would take, and the combinations of these. The fourth one looks at
+geography: support by distance from the centre (as the crow flies, from the
+middle of a precinct's addresses) and, in the outer city, by voters per
+address as a rough sign of family houses or housing estates. It needs
+`input/raw/address_points.npy` for the second part.
 
 An analysis has two halves that are kept apart on purpose:
 
