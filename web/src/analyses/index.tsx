@@ -2,8 +2,9 @@ import { Link, useParams } from "react-router-dom";
 import { useAnalysis } from "../api";
 import { Loading, Problem } from "../components/State";
 import { Prague2026 } from "./Prague2026";
+import { Prague2026Next } from "./Prague2026Next";
 import { Prague2026Spolu } from "./Prague2026Spolu";
-import type { PragueAnalysis, SpoluStanAnalysis } from "./types";
+import type { NextTimeAnalysis, PragueAnalysis, SpoluStanAnalysis } from "./types";
 
 interface AnalysisEntry {
   slug: string;
@@ -35,6 +36,15 @@ export const ANALYSES: AnalysisEntry[] = [
     lede: "Kteří voliči obou vítězných kandidátek jsou nejméně pevní a ve kterých částech Prahy jich je nejvíc.",
     updated: "12. října 2026",
     body: (data) => <Prague2026Spolu data={data as SpoluStanAnalysis} />,
+  },
+  {
+    slug: "praha-2026-co-by-zmenilo-vysledek",
+    election: "kv2026",
+    kicker: "Komunální volby 2026 · Praha",
+    title: "Co by příště změnilo výsledek",
+    lede: "Kolik by přinesla koalice se SEN, vyšší účast a návrat voličů od STAN, každé zvlášť i dohromady.",
+    updated: "12. října 2026",
+    body: (data) => <Prague2026Next data={data as NextTimeAnalysis} />,
   },
 ];
 

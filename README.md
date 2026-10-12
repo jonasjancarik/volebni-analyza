@@ -108,7 +108,10 @@ voters of the 2025 parliamentary election voted a year later. The second one
 asks where the voters of Spolu and STAN are least firmly theirs: how many of
 Spolu's parliamentary voters it keeps in the municipal election, by precinct
 and city district, where STAN's new voters came from, and the smallest shift
-that would end the two lists' majority.
+that would end the two lists' majority. The third one weighs what would have
+changed the result: how many seats the voters of SEN would bring on another
+list depending on how many of them follow, what more voters or voters coming
+back from STAN would take, and the combinations of these.
 
 An analysis has two halves that are kept apart on purpose:
 

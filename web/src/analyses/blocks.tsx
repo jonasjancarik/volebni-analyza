@@ -772,3 +772,109 @@ export function StayedHomeTable({ flows, parties, colorOf }: StayedHomeTableProp
   );
 }
 
+interface TransferStepsProps {
+  rows: {
+    label: string;
+    /** From which percent the value holds, and how many seats more than today it is */
+    steps: { share: number; value: number; gain: number }[];
+  }[];
+  /** A percent worth pointing at, with what it stands for */
+  mark?: { share: number; label: string };
+}
+
+/** What a growing share of one list's voters would bring, as a strip from 0 to 100 % for each variant. */
+export function TransferSteps({ rows, mark }: TransferStepsProps) {
+  return (
+    <div className="transfer">
+      {rows.map((row) => (
+        <div className="transfer-row" key={row.label}>
+          <div className="transfer-label">{row.label}</div>
+          <div className="transfer-track">
+            {row.steps.map((step, index) => {
+              const end = row.steps[index + 1]?.share ?? 100;
+              return (
+                <span
+                  key={step.share}
+                  className={`gain-${Math.min(step.gain, 2)}`}
+                  style={{ width: `${end - step.share}%` }}
+                  title={`Od ${step.share} % voličů: ${step.value} mandátů`}
+                >
+                  <strong className="num">{step.value}</strong>
+                  {end - step.share >= 14 && (
+                    <span className="small"> {step.share > 0 ? `od ${step.share} %` : "mandátů"}</span>
+                  )}
+                </span>
+              );
+            })}
+            {mark && <i className="transfer-mark" style={{ left: `${mark.share}%` }} />}
+          </div>
+        </div>
+      ))}
+      <div className="transfer-row">
+        <div />
+        <div className="transfer-axis num small muted">
+          <span>0 %</span>
+          {mark && (
+            <span className="transfer-mark-label" style={{ left: `${mark.share}%` }}>
+              {mark.label}
+            </span>
+          )}
+          <span>100 %</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface SeatGridProps {
+  title: string;
+  rowHead: string;
+  rows: number[];
+  columnHead: string;
+  columns: number[];
+  cells: number[][];
+  /** Seats that are a majority; fewer is the outcome the grid looks for */
+  majority: number;
+}
+
+/** Seats of two lists together for every combination of two changes; the cells without a majority stand out. */
+export function SeatGrid({ title, rowHead, rows, columnHead, columns, cells, majority }: SeatGridProps) {
+  const level = (value: number) => (value < majority ? "none" : value === majority ? "bare" : "safe");
+  return (
+    <div>
+      <h4 className="split-title">{title}</h4>
+      <div className="table-wrap">
+        <table className="data seat-grid">
+          <thead>
+            <tr>
+              <th rowSpan={2}>{rowHead}</th>
+              <th colSpan={columns.length} className="seat-grid-head">
+                {columnHead}
+              </th>
+            </tr>
+            <tr>
+              {columns.map((column) => (
+                <th key={column} className="r">
+                  {fmtInt(column)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={row}>
+                <td className="num">{fmtPct(row, 0)}</td>
+                {columns.map((column, position) => (
+                  <td key={column} className={`seat-cell ${level(cells[index][position])}`}>
+                    {cells[index][position]}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+

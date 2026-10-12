@@ -109,3 +109,37 @@ export interface SpoluStanAnalysis {
   /** The city-wide estimate narrowed to each district large enough for one */
   districtFlows: { code: string; name: string; rough: boolean; flows: KeyedFlows }[];
 }
+
+/** Seats of STAN and Spolu together for combinations of two changes */
+export interface SeatGridData {
+  columns: number[];
+  /** One row per share of SEN's voters, one cell per column */
+  cells: number[][];
+}
+
+export interface NextTimeAnalysis {
+  council: { election: string; code: string; name: string };
+  years: { current: string; previous: string; parliamentary: string };
+  summary: Summary;
+  lists: FollowedList[];
+  seats: number;
+  majority: number;
+  votesPerBallot: number;
+  actual: Scenario;
+  /** Pirates and Praha Sobě on one list, with the votes they have */
+  joint: Scenario;
+  sen: { votes: number; voters: number; strongholds: { name: string; share: number }[] };
+  /** Seats by the percent of SEN's voters that follow it to another list; a step for every change */
+  transfers: { recipient: string; steps: (Scenario & { share: number })[] }[];
+  /** Fewest voters for the first seat STAN and Spolu lose and for the second; null when out of reach */
+  levers: { key: string; first: Scenario | null; second: Scenario | null }[];
+  combined: {
+    shares: number[];
+    new: SeatGridData;
+    back: SeatGridData;
+    remaining: { share: number; new: Scenario | null; back: Scenario | null }[];
+  };
+  flows: KeyedFlows;
+  flowsSmallLists: KeyedFlows;
+  parliamentary: PragueAnalysis["parliamentary"];
+}
