@@ -1,0 +1,38 @@
+[package]
+name = "volby-video"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+fframes = { version = "=1.1.0", features = ["compile-time-svgtree", "cli"] }
+fframes_skia_renderer = { version = "=1.1.0", features = ["metal"] }
+fframes_native_player = { version = "=1.1.0", default-features = false, features = ["metal", "audio"] }
+
+[target.'cfg(not(windows))'.dependencies]
+fframes = { version = "=1.1.0", features = ["h264", "libav-agree-gpl"] }
+
+[lib]
+name = "volby_video"
+path = "src/lib.rs"
+doctest = false
+
+[[bin]]
+name = "volby-video"
+path = "src/main.rs"
+
+[workspace]
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+# macOS 27 refuses to load a proc-macro library that was stripped after linking
+# ("mis-aligned LINKEDIT string pool"), so nothing is stripped.
+[profile.release]
+strip = "none"
+
+[profile.release.build-override]
+strip = "none"

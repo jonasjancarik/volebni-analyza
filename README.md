@@ -174,6 +174,9 @@ works and spreads the dots at random inside each precinct.
 
 ### Travel times and buildings
 
+`video/` holds a short motion video made from the same figures; see
+`video/README.md` for how to render it.
+
 One analysis places every precinct by how long it takes to the centre of
 Prague and by the buildings its people live in. Both come from open data that
 two scripts download and reduce to small files:

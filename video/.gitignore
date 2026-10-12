@@ -1,0 +1,12 @@
+/target
+out.mp4
+frames/
+strip.png
+onion.png
+test_render/
+_frame_snapshots/*.actual.png
+_frame_snapshots/*.diff.png
+*.mp4
+
+# Made by build_data.py
+media/map-*.png
