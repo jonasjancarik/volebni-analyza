@@ -15,6 +15,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+import places
 import web_store as store
 from election_comparison import (
     FLOW_MODEL_VERSION,
@@ -29,7 +30,7 @@ from election_comparison import (
 )
 
 # Bump when the figures of an analysis change, so that stored ones are recomputed
-ANALYSIS_VERSION = 1
+ANALYSIS_VERSION = 2
 
 PRAGUE = "554782"
 PRAGUE_REGION = "1"
@@ -745,87 +746,60 @@ def _prague_2026_next_time() -> dict:
     }
 
 
-# Můstek, where the three metro lines of the centre meet
-CENTRE = (14.4245, 50.0835)
-OUTER_FROM_KM = 6
-DISTANCE_BANDS = (0, 2, 4, 6, 8, 10)
+# Minutes to the centre by public transport, the edges of the bands
+TIME_BANDS = (0, 10, 15, 20, 25, 30, 35, 40)
+# A coarser split for looking at kinds of housing at a similar travel time
+TIME_RINGS = (0, 20, 30)
+# Kinds of precincts in the order the article shows them
+KIND_ORDER = ("older", "panel", "newer", "houses", places.MIXED)
+# Fewer precincts than this say too little about a combination
+FEWEST_PRECINCTS = 10
 
 
 def _precinct_places(election: str, code: str) -> pd.DataFrame:
-    """Where the people of every precinct live: kilometres from the centre
-    as the crow flies, and how many addresses the precinct has.
-
-    The place of a precinct is the middle of its addresses, so that a forest
-    or a field inside it does not pull it away; without the address file it
-    is the middle of its outline and the number of addresses is unknown.
-    """
-    import shapely
-    from shapely.geometry import shape
-
-    features = store.boundaries(election, code)["features"]
-    ids = [feature["properties"]["id"] for feature in features]
-    shapes = shapely.make_valid(np.array([shape(feature["geometry"]) for feature in features]))
-    middle = shapely.centroid(shapes)
-    places = pd.DataFrame(
-        {"lng": shapely.get_x(middle), "lat": shapely.get_y(middle), "addresses": np.nan}, index=ids
+    """Travel time and kind of housing of every precinct, from the files the
+    scripts prepare."""
+    buildings = places.buildings_file(code)
+    if not buildings.exists():
+        raise store.NotFound("Pro tuto analýzu chybí data o budovách. Připraví je skript src/buildings.py.")
+    if not places.TRANSIT_MINUTES_FILE.exists():
+        raise store.NotFound("Pro tuto analýzu chybí jízdní řády. Připraví je skript src/transit_times.py.")
+    return places.precinct_places(
+        store.boundaries(election, code)["features"],
+        np.load(buildings),
+        np.load(places.TRANSIT_MINUTES_FILE),
     )
 
-    path = store.RAW_INPUT_DIR / store.ADDRESS_POINTS
-    if path.exists() and len(shapes):
-        everything = np.load(path, mmap_mode="r")
-        west, south, east, north = shapely.total_bounds(shapes)
-        longitude, latitude = everything[:, 0], everything[:, 1]
-        nearby = np.asarray(
-            everything[(longitude >= west) & (longitude <= east) & (latitude >= south) & (latitude <= north)],
-            dtype="float64",
-        )
-        address, precinct = shapely.STRtree(shapes).query(shapely.points(nearby), predicate="within")
-        found = pd.DataFrame(
-            {"id": np.array(ids)[precinct], "lng": nearby[address, 0], "lat": nearby[address, 1]}
-        )
-        by_precinct = found.groupby("id").agg(lng=("lng", "mean"), lat=("lat", "mean"), addresses=("lng", "size"))
-        places.update(by_precinct)
 
-    # Degrees to kilometres at the latitude of the centre
-    east_km = (places["lng"] - CENTRE[0]) * 111.32 * math.cos(math.radians(CENTRE[1]))
-    north_km = (places["lat"] - CENTRE[1]) * 110.57
-    places["km"] = np.hypot(east_km, north_km)
-    return places[["km", "addresses"]]
-
-
-def _with_turnout(part: pd.DataFrame) -> dict:
-    """A voter group with the turnout of each election, which needs the
-    electorate of each as well."""
+def _place_group(part: pd.DataFrame) -> dict:
+    """A voter group with the turnout of each election and where its
+    precincts are; an average voter's minutes and kilometres."""
     group = _voter_group(part)
     group["turnout"] = {
         when: float(part[f"voted_{when}"].sum() / part[f"registered_{when}"].sum() * 100)
         for when in WHEN
         if part[f"registered_{when}"].sum() > 0
     }
+    weights = part["registered_now"]
+    group["minutes"] = float(np.average(part["minutes"], weights=weights))
+    group["km"] = float(np.average(part["km"], weights=weights))
+    group["homes"] = {
+        kind: float(np.average(part[kind], weights=part["flats"])) * 100 for kind in places.KINDS
+    }
     return group
 
 
-def _thirds_by_housing(part: pd.DataFrame) -> List[dict]:
-    """Precincts in thirds by voters per address, from family houses, where
-    an address is one household, to housing estates, where it is a block."""
-    known = part[part["per_address"].notna()]
-    if len(known) < 30:
-        return []
-    third = pd.qcut(known["per_address"], 3, labels=False)
+def _bands(values: pd.Series, edges: Tuple[int, ...]) -> List[Tuple[int, Optional[int], pd.Series]]:
+    """Which rows fall between each pair of edges; the last band is open."""
+    upper = [*edges[1:], None]
     return [
-        {
-            "perAddress": [
-                float(known[third == index]["per_address"].min()),
-                float(known[third == index]["per_address"].max()),
-            ],
-            **_with_turnout(known[third == index]),
-        }
-        for index in range(3)
+        (low, high, (values >= low) & (values < (math.inf if high is None else high)))
+        for low, high in zip(edges, upper)
     ]
 
 
 def _prague_2026_centre() -> dict:
-    """Support by distance from the centre and by the kind of housing."""
+    """Support by travel time to the centre and by what people live in."""
     election, previous, parliamentary = "kv2026", "kv2022", "ps2025"
     first = analysis("praha-2026-pirati-praha-sobe")
     voters = _precinct_voters(
@@ -835,30 +809,56 @@ def _prague_2026_centre() -> dict:
         PRAGUE_REGION,
     )
     voters = voters[voters["registered_now"] > 0]
-    places = _precinct_places(election, PRAGUE)
+    where = _precinct_places(election, PRAGUE)
     precinct = voters.index.str.split("-").str[1]
     voters = voters.assign(
-        km=places["km"].reindex(precinct).to_numpy(),
-        addresses=places["addresses"].reindex(precinct).to_numpy(),
+        precinct=precinct,
+        **{column: where[column].reindex(precinct).to_numpy() for column in where.columns},
     )
-    voters = voters[voters["km"].notna()]
-    voters["per_address"] = voters["registered_now"] / voters["addresses"].where(voters["addresses"] > 0)
+    voters = voters[voters["minutes"].notna()]
 
-    edges = [*DISTANCE_BANDS, math.inf]
-    bands = []
-    for low, high in zip(edges, edges[1:]):
-        part = voters[(voters["km"] >= low) & (voters["km"] < high)]
+    kinds = []
+    for kind in KIND_ORDER:
+        part = voters[voters["kind"] == kind]
         if len(part):
-            bands.append({"from": low, "to": None if high == math.inf else high, **_with_turnout(part)})
+            kinds.append({"kind": kind, **_place_group(part)})
+
+    # Every kind of housing at a similar travel time, where there is enough of it
+    combined = []
+    for kind in KIND_ORDER:
+        for low, high, inside in _bands(voters["minutes"], TIME_RINGS):
+            part = voters[inside & (voters["kind"] == kind)]
+            if len(part) >= FEWEST_PRECINCTS:
+                combined.append({"kind": kind, "from": low, "to": high, **_place_group(part)})
+
+    def share(key: str, when: str = "now") -> pd.Series:
+        return (voters[f"{key}_{when}"] / voters[f"voted_{when}"].where(voters[f"voted_{when}"] > 0) * 100).round(2)
+
+    points = pd.DataFrame(
+        {
+            "id": voters["precinct"],
+            "kind": voters["kind"],
+            "minutes": voters["minutes"].round(1),
+            "km": voters["km"].round(2),
+            "registered": voters["registered_now"].astype(int),
+            "turnout": (voters["voted_now"] / voters["registered_now"] * 100).round(2),
+            **{key: share(key) for key in FOLLOWED},
+            "piratiMid": share("pirati", "mid"),
+        }
+    )
+    points = points.astype(object).where(points.notna(), None)
 
     return {
         **{name: first[name] for name in ("council", "years", "summary", "lists")},
-        "city": _with_turnout(voters),
-        "bands": bands,
-        "outerFrom": OUTER_FROM_KM,
-        # From family houses to housing estates
-        "outer": _thirds_by_housing(voters[voters["km"] >= OUTER_FROM_KM]),
-        "inner": _thirds_by_housing(voters[voters["km"] < OUTER_FROM_KM]),
+        "city": _place_group(voters),
+        "times": [
+            {"from": low, "to": high, **_place_group(voters[inside])}
+            for low, high, inside in _bands(voters["minutes"], TIME_BANDS)
+            if inside.any()
+        ],
+        "kinds": kinds,
+        "kindsByTime": combined,
+        "precincts": points.to_dict("records"),
     }
 
 
