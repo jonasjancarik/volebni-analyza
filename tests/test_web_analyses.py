@@ -5,7 +5,13 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from web_analyses import group_key, seat_allocation, seat_order, smallest_shift  # noqa: E402
+from web_analyses import (  # noqa: E402
+    _SeatMath,
+    group_key,
+    seat_allocation,
+    seat_order,
+    smallest_shift,
+)
 
 
 def test_seats_are_divided_by_dhondt():
@@ -44,3 +50,29 @@ def test_a_party_keeps_its_key_under_the_names_of_different_elections():
     assert group_key("SPOLU (ODS, KDU-ČSL, TOP 09)") == group_key("SPOLU pro Prahu") == "spolu"
     assert group_key("Česká pirátská strana") == "pirati"
     assert group_key("JSME PRAHA") is None
+
+
+def test_shift_scenarios_find_the_fewest_voters_that_end_the_majority():
+    # 11 seats, so a majority is 6; STAN and Spolu hold 6 between them
+    council = {
+        "seats": 11,
+        "summary": {"ballots": 10_000},
+        "lists": [
+            {"name": "STAROSTOVÉ A NEZÁVISLÍ", "votes": 31_000},
+            {"name": "SPOLU pro Prahu", "votes": 29_000},
+            {"name": "PRAHA SOBĚ", "votes": 24_000},
+            {"name": "Česká pirátská strana", "votes": 26_000},
+        ],
+    }
+    seats = _SeatMath(council)
+    assert seats.outcome("actual", seats.votes)["stanSpolu"] == 6
+
+    [moved] = seats.shifts({"to-pirati": lambda count: seats.changed(spolu=-count, pirati=count)})
+
+    assert moved["stanSpolu"] == 5
+    # One step less would not have been enough
+    less = seats.changed(spolu=-(moved["votes"] - 1000), pirati=moved["votes"] - 1000)
+    assert not seats.without_majority(less)
+    # 11 votes per ballot on average here
+    assert moved["voters"] == round(moved["votes"] / 11)
+

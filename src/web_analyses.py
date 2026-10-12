@@ -112,28 +112,33 @@ def smallest_shift(
     return None
 
 
-def _scenarios(council: dict) -> dict:
-    """What would have left STAN and Spolu without a majority of their own."""
-    seats = council["seats"]
-    majority = seats // 2 + 1
-    votes = {
-        group_key(item["name"]) or item["name"]: float(item["votes"]) for item in council["lists"]
-    }
-    per_ballot = sum(votes.values()) / council["summary"]["ballots"]
+class _SeatMath:
+    """Seats of one council under changed votes: what a scenario would give
+    and how many votes a change needs."""
 
-    def changed(**changes: float) -> Dict[str, float]:
-        result = dict(votes)
+    def __init__(self, council: dict):
+        self.seats = council["seats"]
+        self.majority = self.seats // 2 + 1
+        self.votes = {
+            group_key(item["name"]) or item["name"]: float(item["votes"]) for item in council["lists"]
+        }
+        self.per_ballot = sum(self.votes.values()) / council["summary"]["ballots"]
+
+    def changed(self, **changes: float) -> Dict[str, float]:
+        result = dict(self.votes)
         for key, change in changes.items():
             result[key] = result.get(key, 0) + change
         return result
 
+    @staticmethod
     def joint(result: Dict[str, float]) -> Dict[str, float]:
+        """Pirates and Praha Sobě on one list."""
         result = dict(result)
         result["joint"] = result.pop("pirati") + result.pop("prahaSobe")
         return result
 
-    def outcome(key: str, result: Dict[str, float], moved: Optional[int] = None) -> dict:
-        allocation = seat_allocation(result, seats)
+    def outcome(self, key: str, result: Dict[str, float], moved: Optional[int] = None) -> dict:
+        allocation = seat_allocation(result, self.seats)
         return {
             "key": key,
             "seats": {
@@ -143,37 +148,51 @@ def _scenarios(council: dict) -> dict:
             },
             "stanSpolu": allocation.get("stan", 0) + allocation.get("spolu", 0),
             "votes": moved,
-            "voters": round(moved / per_ballot) if moved else None,
+            "voters": round(moved / self.per_ballot) if moved else None,
         }
 
-    def without_majority(result: Dict[str, float]) -> bool:
-        allocation = seat_allocation(result, seats)
-        return allocation.get("stan", 0) + allocation.get("spolu", 0) < majority
+    def without_majority(self, result: Dict[str, float]) -> bool:
+        allocation = seat_allocation(result, self.seats)
+        return allocation.get("stan", 0) + allocation.get("spolu", 0) < self.majority
 
+    def shifts(self, moves: Dict[str, Callable[[float], Dict[str, float]]]) -> List[dict]:
+        """For each way of moving votes, the fewest that leave STAN and Spolu
+        without a majority of their own."""
+        outcomes = []
+        for key, move in moves.items():
+            moved = smallest_shift(move, self.without_majority, limit=self.votes["stan"])
+            if moved is not None:
+                outcomes.append(self.outcome(key, move(moved), moved))
+        return outcomes
+
+    def summary(self) -> dict:
+        return {"seats": self.seats, "majority": self.majority, "votesPerBallot": self.per_ballot}
+
+
+def _scenarios(council: dict) -> dict:
+    """What would have left STAN and Spolu without a majority of their own."""
+    math_ = _SeatMath(council)
+    votes, changed = math_.votes, math_.changed
     sen = votes.get("sen", 0)
     scenarios = [
-        outcome("actual", votes),
-        outcome("joint", joint(votes)),
-        outcome("sen-pirati", changed(sen=-sen, pirati=sen)),
-        outcome("sen-praha-sobe", changed(sen=-sen, prahaSobe=sen)),
-        outcome("joint-sen", joint(changed(sen=-sen, pirati=sen))),
+        math_.outcome("actual", votes),
+        math_.outcome("joint", math_.joint(votes)),
+        math_.outcome("sen-pirati", changed(sen=-sen, pirati=sen)),
+        math_.outcome("sen-praha-sobe", changed(sen=-sen, prahaSobe=sen)),
+        math_.outcome("joint-sen", math_.joint(changed(sen=-sen, pirati=sen))),
+        *math_.shifts(
+            {
+                "stan-to-praha-sobe": lambda count: changed(stan=-count, prahaSobe=count),
+                "stan-to-pirati": lambda count: changed(stan=-count, pirati=count),
+                "new-pirati": lambda count: changed(pirati=count),
+            }
+        ),
     ]
-    shifts: Dict[str, Callable[[float], Dict[str, float]]] = {
-        "stan-to-praha-sobe": lambda count: changed(stan=-count, prahaSobe=count),
-        "stan-to-pirati": lambda count: changed(stan=-count, pirati=count),
-        "new-pirati": lambda count: changed(pirati=count),
-    }
-    for key, move in shifts.items():
-        moved = smallest_shift(move, without_majority, limit=votes["stan"])
-        if moved is not None:
-            scenarios.append(outcome(key, move(moved), moved))
 
-    order = seat_order(votes, seats)
-    last_quotient, last_list, _ = order[seats - 1]
+    order = seat_order(votes, math_.seats)
+    last_quotient, last_list, _ = order[math_.seats - 1]
     return {
-        "seats": seats,
-        "majority": majority,
-        "votesPerBallot": per_ballot,
+        **math_.summary(),
         "lastSeat": last_list,
         # Lists that were closest to taking the last seat
         "nextInLine": [
@@ -181,9 +200,9 @@ def _scenarios(council: dict) -> dict:
                 "key": name,
                 "seat": seat,
                 "missingVotes": math.ceil(last_quotient * seat - votes[name]),
-                "missingVoters": round((last_quotient * seat - votes[name]) / per_ballot),
+                "missingVoters": round((last_quotient * seat - votes[name]) / math_.per_ballot),
             }
-            for _, name, seat in order[seats : seats + 3]
+            for _, name, seat in order[math_.seats : math_.seats + 3]
         ],
         "scenarios": scenarios,
     }
@@ -480,9 +499,135 @@ def _prague_2026() -> dict:
     }
 
 
+WHEN = ("then", "mid", "now")
+
+
+def _precinct_voters(earlier: dict, current: dict, parliamentary: str, region: str) -> pd.DataFrame:
+    """Voters of every group in every precinct in three elections: the
+    previous municipal one ("then"), the parliamentary one between them
+    ("mid") and the current municipal one ("now")."""
+    tables = (_municipal_table(earlier), _parliamentary_table(parliamentary, region), _municipal_table(current))
+    frames = []
+    for when, table in zip(WHEN, tables):
+        table = table.rename(columns=lambda name: group_key(name) or name)
+        table["voted"] = table["registered"] - table["nevolici"]
+        frames.append(table.add_suffix(f"_{when}"))
+    return frames[0].join(frames[1:], how="outer").fillna(0)
+
+
+def _voter_group(part: pd.DataFrame) -> dict:
+    """How many people voted for each followed list in a set of precincts."""
+    return {
+        "precincts": len(part),
+        "registered": int(part["registered_now"].sum()),
+        "voted": {when: float(part[f"voted_{when}"].sum()) for when in WHEN},
+        "voters": {
+            key: {
+                when: float(part[f"{key}_{when}"].sum())
+                for when in WHEN
+                if f"{key}_{when}" in part.columns
+            }
+            for key in FOLLOWED
+        },
+    }
+
+
+def _fifths_by_kept(voters: pd.DataFrame, key: str) -> List[dict]:
+    """Precincts in fifths by how many of a list's parliamentary voters it
+    kept in the municipal election a year later, from the fewest."""
+    present = (
+        (voters["registered_then"] > 0)
+        & (voters["registered_mid"] > 0)
+        & (voters["registered_now"] > 0)
+        & (voters[f"{key}_mid"] > 0)
+    )
+    part = voters[present]
+    change = (part["registered_now"] - part["registered_then"]).abs() / part["registered_then"]
+    part = part[change <= MAX_ELECTORATE_CHANGE]
+    fifth = pd.qcut(part[f"{key}_now"] / part[f"{key}_mid"], 5, labels=False)
+    return [_voter_group(part[fifth == index]) for index in range(5)]
+
+
+def _district_voters(voters: pd.DataFrame, names: Dict[str, str]) -> List[dict]:
+    rows = []
+    for code, part in voters.groupby(voters.index.str.split("-").str[0]):
+        group = _voter_group(part)
+        if group["registered"] > 0:
+            rows.append({"code": code, "name": names.get(code, code), **group})
+    rows.sort(key=lambda row: -row["registered"])
+    return rows
+
+
+def _district_flows(election: str, code: str, council: dict, then: pd.DataFrame) -> List[dict]:
+    """The app's estimate of the city-wide vote narrowed to each city
+    district that is large enough for one."""
+    rows = []
+    for area in council["areas"]:
+        if area["precincts"] < store.MIN_PRECINCTS_FOR_FLOWS:
+            continue
+        comparison = store.comparison(election, code, area["code"])
+        if not comparison["flows"]:
+            continue
+        registered = int(then[then["area"] == area["code"]]["registered"].sum())
+        rows.append(
+            {
+                "code": area["code"],
+                "name": area["name"],
+                "rough": comparison["rough"],
+                "flows": _keyed(comparison["flows"], comparison["matched"], registered, registered),
+            }
+        )
+    rows.sort(key=lambda row: -row["flows"]["registered"])
+    return rows
+
+
+def _prague_2026_spolu_stan() -> dict:
+    """Where the voters of Spolu and STAN in Prague are least firmly theirs."""
+    election, previous, parliamentary = "kv2026", "kv2022", "ps2025"
+    first = analysis("praha-2026-pirati-praha-sobe")
+    council = store.council(election, PRAGUE)
+    then = _precinct_frame(store.council(previous, PRAGUE))
+    voters = _precinct_voters(
+        store._municipality(previous, PRAGUE),
+        store._municipality(election, PRAGUE),
+        parliamentary,
+        PRAGUE_REGION,
+    )
+
+    seats = _SeatMath(council)
+    changed = seats.changed
+    scenarios = [
+        seats.outcome("actual", seats.votes),
+        *seats.shifts(
+            {
+                "spolu-to-praha-sobe": lambda count: changed(spolu=-count, prahaSobe=count),
+                "spolu-to-pirati": lambda count: changed(spolu=-count, pirati=count),
+                "stan-to-praha-sobe": lambda count: changed(stan=-count, prahaSobe=count),
+                "stan-to-pirati": lambda count: changed(stan=-count, pirati=count),
+            }
+        ),
+    ]
+
+    return {
+        **{name: first[name] for name in ("council", "years", "summary", "previousSummary", "lists")},
+        **seats.summary(),
+        "scenarios": scenarios,
+        "flows": first["flows"],
+        "parliamentary": first["parliamentary"],
+        "city": _voter_group(voters),
+        "fifths": _fifths_by_kept(voters, "spolu"),
+        "districts": _district_voters(voters, {area["code"]: area["name"] for area in council["areas"]}),
+        "districtFlows": _district_flows(election, PRAGUE, council, then),
+    }
+
+
 ANALYSES: Dict[str, dict] = {
     "praha-2026-pirati-praha-sobe": {
         "build": _prague_2026,
+        "elections": ("kv2026", "kv2022", "ps2025"),
+    },
+    "praha-2026-volici-spolu-a-stan": {
+        "build": _prague_2026_spolu_stan,
         "elections": ("kv2026", "kv2022", "ps2025"),
     },
 }
