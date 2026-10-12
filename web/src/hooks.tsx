@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 
@@ -16,6 +16,24 @@ export function useWidth<T extends HTMLElement>(initial = 600) {
   }, []);
   return [ref, width] as const;
 }
+
+/** Turns true once the element has scrolled into view, and stays true. */
+export function useSeen<T extends Element>(share = 0.4) {
+  const ref = useRef<T>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || seen) return;
+    const observer = new IntersectionObserver(([entry]) => entry.isIntersecting && setSeen(true), {
+      threshold: share,
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [seen, share]);
+  return [ref, seen] as const;
+}
+
+export const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 interface TooltipState {
   x: number;

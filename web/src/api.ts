@@ -147,6 +147,25 @@ export interface Comparison {
   precincts: ComparedPrecinct[];
 }
 
+export interface InputPrecinct {
+  id: string;
+  registered: number;
+  registeredPrevious: number;
+  /** Precincts of the same type share one transition matrix */
+  type: number;
+  /** Percent of registered voters in each of FlowInputs.sources */
+  previous: number[];
+  /** Percent of registered voters in each of FlowInputs.targets */
+  current: number[];
+}
+
+/** What the voter-flow estimate is computed from */
+export interface FlowInputs {
+  sources: string[];
+  targets: string[];
+  precincts: InputPrecinct[];
+}
+
 export interface Candidate {
   name: string;
   list: string;
@@ -225,6 +244,16 @@ export const useComparison = (election: string, code: string, area: string | nul
         `/elections/${election}/councils/${code}/comparison${area ? `?area=${encodeURIComponent(area)}` : ""}`,
       ),
     enabled,
+    ...forever,
+  });
+
+export const useFlowInputs = (election: string, code: string, area: string | null) =>
+  useQuery({
+    queryKey: ["flow-inputs", election, code, area],
+    queryFn: () =>
+      get<FlowInputs>(
+        `/elections/${election}/councils/${code}/comparison/inputs${area ? `?area=${encodeURIComponent(area)}` : ""}`,
+      ),
     ...forever,
   });
 

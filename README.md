@@ -88,6 +88,14 @@ set. A stored estimate is used only while the results of both elections and
 the model (`FLOW_MODEL_VERSION`) are the ones it was computed from. Set
 `VOLBY_PRECOMPUTE=0` to compute them only when a page asks for them.
 
+The voter-flow tab has a second view, "Jak odhad vzniká" (`?pohled=metoda`),
+that explains the method on the precincts of the council being viewed: what a
+single precinct leaves open, how precincts differ, the search for the
+transition table played back step by step, and the repeated fits behind the
+ranges. It repeats the estimate in the browser (`web/src/method/model.ts`)
+from the model inputs served by `/api/elections/<election>/councils/<code>/comparison/inputs`,
+so a change to the estimate in `src/election_comparison.py` has to be mirrored there.
+
 ### Running in Docker
 
 `docker compose up -d --build` serves the new app on `127.0.0.1:3023` (change

@@ -5,6 +5,7 @@ import type { TabProps } from "../Council";
 import { FlowBars } from "../components/FlowBars";
 import { Sankey } from "../components/Sankey";
 import { Loading, Problem } from "../components/State";
+import { MethodView } from "../method/MethodView";
 import { fmtInt, fmtNum, fmtPct, fmtRange, listName, plural } from "../format";
 import { useParam } from "../hooks";
 
@@ -12,9 +13,28 @@ export function FlowsTab({ council, colorByName, focus }: TabProps) {
   const [area, setArea] = useParam("uzemi");
   const comparison = useComparison(council.election.id, council.code, area);
   const areaName = council.areas.find((item) => item.code === area)?.name;
+  const [view, setView] = useParam("pohled");
+  const method = view === "metoda";
+  const data = comparison.data;
+  const colorOf = data?.flows ? flowColors(data, colorByName) : null;
+  const focusName = council.lists[focus]?.name;
+  const showView = (next: string | null) => {
+    setView(next);
+    window.scrollTo({ top: 0 });
+  };
 
   return (
     <div className="stack">
+      {colorOf && (
+        <div className="segmented" role="group" aria-label="Co chcete vidět" style={{ justifySelf: "start" }}>
+          <button aria-pressed={!method} onClick={() => setView(null)}>
+            Odhad přesunů
+          </button>
+          <button aria-pressed={method} onClick={() => setView("metoda")}>
+            Jak odhad vzniká
+          </button>
+        </div>
+      )}
       {council.areas.length > 1 && (
         <div className="toolbar">
           <label className="field-label" htmlFor="flows-area">
@@ -44,26 +64,58 @@ export function FlowsTab({ council, colorByName, focus }: TabProps) {
         <Loading text="Počítám odhad přesunů voličů. U velkých měst to trvá několik sekund." />
       )}
       {comparison.error && <Problem error={comparison.error} />}
-      {comparison.data && (
+      {data && colorOf && method && (
+        <MethodView
+          key={area ?? ""}
+          election={council.election.id}
+          code={council.code}
+          area={area}
+          placeName={areaName ?? council.name}
+          comparison={data}
+          colorOf={colorOf}
+          focusName={focusName}
+          onBack={() => showView(null)}
+        />
+      )}
+      {data && !(colorOf && method) && (
         <FlowsBody
           key={area ?? ""}
-          comparison={comparison.data}
-          colorByName={colorByName}
-          focusName={council.lists[focus]?.name}
+          comparison={data}
+          colorOf={colorOf}
+          focusName={focusName}
+          onShowMethod={() => showView("metoda")}
         />
       )}
     </div>
   );
 }
 
-interface BodyProps {
-  comparison: Comparison;
-  colorByName: Map<string, string>;
-  focusName: string | undefined;
+/** Colour of every group in the flows; lists of the previous election that did not run again take the colours that are left. */
+function flowColors(comparison: Comparison, colorByName: Map<string, string>): (group: string) => string {
+  const { flows, nonVoters, otherLists } = comparison;
+  const groups = [...(flows?.targets ?? []), ...(flows?.sources ?? [])].filter(
+    (group) => group !== nonVoters && group !== otherLists,
+  );
+  const taken = new Set(groups.map((group) => colorByName.get(group)));
+  const free = SERIES.filter((color) => !taken.has(color));
+  const extra = new Map<string, string>();
+  for (const group of groups) {
+    if (!colorByName.has(group) && !extra.has(group)) extra.set(group, free.shift() ?? REST);
+  }
+  return (group) =>
+    group === nonVoters ? NON_VOTER : group === otherLists ? REST : (colorByName.get(group) ?? extra.get(group) ?? REST);
 }
 
-function FlowsBody({ comparison, colorByName, focusName }: BodyProps) {
-  const { flows, previousYear, currentYear, matched, skipped, nonVoters, otherLists } = comparison;
+interface BodyProps {
+  comparison: Comparison;
+  /** Missing when there are no flows to colour */
+  colorOf: ((group: string) => string) | null;
+  focusName: string | undefined;
+  onShowMethod: () => void;
+}
+
+function FlowsBody({ comparison, colorOf, focusName, onShowMethod }: BodyProps) {
+  const { flows, previousYear, currentYear, matched, skipped, nonVoters } = comparison;
   const [showStayedHome, setShowStayedHome] = useState(false);
   const [baseParam, setBase] = useParam("zaklad");
   const base = baseParam === "zapsani" ? "registered" : "voted";
@@ -83,7 +135,7 @@ function FlowsBody({ comparison, colorByName, focusName }: BodyProps) {
       </div>
     );
   }
-  if (!flows) {
+  if (!flows || !colorOf) {
     return (
       <div className="banner neutral">
         Odhad přesunů voličů potřebuje aspoň {comparison.minPrecincts} okrsků, tady {plural(matched, "je", "jsou", "je")}{" "}
@@ -91,17 +143,6 @@ function FlowsBody({ comparison, colorByName, focusName }: BodyProps) {
       </div>
     );
   }
-
-  // Lists of the previous election that did not run again take the colours that are left
-  const groups = [...flows.targets, ...flows.sources].filter((group) => group !== nonVoters && group !== otherLists);
-  const taken = new Set(groups.map((group) => colorByName.get(group)));
-  const free = SERIES.filter((color) => !taken.has(color));
-  const extra = new Map<string, string>();
-  for (const group of groups) {
-    if (!colorByName.has(group) && !extra.has(group)) extra.set(group, free.shift() ?? REST);
-  }
-  const colorOf = (group: string) =>
-    group === nonVoters ? NON_VOTER : group === otherLists ? REST : (colorByName.get(group) ?? extra.get(group) ?? REST);
 
   const sourceIndex = Math.max(0, flows.sources.indexOf(source));
   const targetIndex = Math.max(0, flows.targets.indexOf(target));
@@ -330,6 +371,9 @@ function FlowsBody({ comparison, colorByName, focusName }: BodyProps) {
               `${fmtInt(skipped)} ${plural(skipped, "okrsek je vynechaný", "okrsky jsou vynechané", "okrsků je vynecháno")}, protože v roce ${previousYear} ${plural(skipped, "neexistoval nebo se mu", "neexistovaly nebo se jim", "neexistovalo nebo se jim")} výrazně změnil počet voličů. `}
             Hlasy jsou přepočtené na voliče a kandidátky pod 3 % jsou sloučené do skupiny Ostatní kandidátky.
           </p>
+          <button className="button" style={{ marginTop: 16 }} onClick={onShowMethod}>
+            Projít si krok za krokem, jak odhad vzniká
+          </button>
         </div>
       </section>
     </>
