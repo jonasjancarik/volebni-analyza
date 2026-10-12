@@ -51,8 +51,6 @@ export function TopBar() {
           <a
             className="nav-link github-link"
             href="https://github.com/jonasjancarik/volebni-analyza"
-            target="_blank"
-            rel="noreferrer"
             aria-label="Zdrojový kód na GitHubu"
             title="Zdrojový kód na GitHubu"
           >
