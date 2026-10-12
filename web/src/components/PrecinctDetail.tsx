@@ -1,7 +1,11 @@
+import { lazy, Suspense } from "react";
 import type { ComparedPrecinct, Council, Precinct } from "../api";
 import { fmtInt, fmtPct, fmtPp } from "../format";
 import { MapLink } from "./MapLink";
 import { ResultRows } from "./ResultRows";
+
+// The map library is large; it loads only when a precinct is opened
+const PrecinctMiniMap = lazy(() => import("./PrecinctMiniMap").then((module) => ({ default: module.PrecinctMiniMap })));
 
 interface Props {
   council: Council;
@@ -10,13 +14,13 @@ interface Props {
   focus: number;
   compared?: ComparedPrecinct;
   previousYear?: string;
-  /** Offer the precinct on the map; off where the map is already showing it */
-  mapLink?: boolean;
+  /** Show where the precinct lies; off where the map is already showing it */
+  map?: boolean;
   onClose: () => void;
 }
 
 /** Everything about one precinct: turnout and how its lists did against the whole council. */
-export function PrecinctDetail({ council, precinct, colors, focus, compared, previousYear, mapLink, onClose }: Props) {
+export function PrecinctDetail({ council, precinct, colors, focus, compared, previousYear, map, onClose }: Props) {
   const total = precinct.votes.reduce((sum, votes) => sum + votes, 0) || 1;
   const area = council.areas.find((item) => item.code === precinct.area);
   const wholeName = council.election.type === "parliamentary" ? "celý kraj" : council.areas.length ? "celé město" : "celá obec";
@@ -40,7 +44,6 @@ export function PrecinctDetail({ council, precinct, colors, focus, compared, pre
         <div>
           <h3>Okrsek {precinct.number}</h3>
           {area && <div className="small muted">{area.name}</div>}
-          {mapLink && <MapLink precinct={precinct.id} />}
         </div>
         <button className="icon-button" onClick={onClose} aria-label="Zavřít detail okrsku">
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
@@ -48,6 +51,14 @@ export function PrecinctDetail({ council, precinct, colors, focus, compared, pre
           </svg>
         </button>
       </div>
+      {map && (
+        <div className="detail-map">
+          <Suspense fallback={<div className="mini-map" />}>
+            <PrecinctMiniMap precinct={precinct.id} />
+          </Suspense>
+          <MapLink precinct={precinct.id} label="Otevřít na velké mapě" />
+        </div>
+      )}
       <div className="mini-stats num">
         <div>
           <div className="label">Účast</div>

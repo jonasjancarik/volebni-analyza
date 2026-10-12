@@ -238,7 +238,7 @@ export function PrecinctsTab({ council, colors, focus }: TabProps) {
                     )}
                   </td>
                   <td className="r">
-                    <MapLink precinct={row.id} short />
+                    <MapLink precinct={row.id} label="Mapa" />
                   </td>
                 </tr>
               ))}
@@ -264,7 +264,7 @@ export function PrecinctsTab({ council, colors, focus }: TabProps) {
               focus={focus}
               compared={data?.precincts.find((item) => item.id === selectedPrecinct.id)}
               previousYear={previous?.year}
-              mapLink
+              map
               onClose={() => setSelected(null)}
             />
           </aside>

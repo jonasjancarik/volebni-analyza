@@ -1,17 +1,13 @@
-import type { Feature } from "geojson";
-import { type LngLatBoundsLike, Map as MapLibre, NavigationControl, setWorkerUrl } from "maplibre-gl";
-import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import { Map as MapLibre, NavigationControl } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type Boundaries, useBoundaries, useComparison } from "../api";
 import { NO_DATA, type Scale, divergingScale, resolveColor, sequentialScale } from "../colors";
 import type { TabProps } from "../Council";
+import { bounds, STYLES } from "../components/mapBase";
 import { PrecinctDetail } from "../components/PrecinctDetail";
 import { Loading, Problem } from "../components/State";
 import { fmtInt, fmtNum, fmtPct, fmtPp, listName, plural, truncate } from "../format";
 import { useParam, useTooltip } from "../hooks";
-
-// Without this the production build would not include the map's worker file
-setWorkerUrl(workerUrl);
 
 type Metric = "ucast" | "podil" | "vitez" | "zmena";
 
@@ -23,32 +19,6 @@ const METRICS: { id: Metric; label: string }[] = [
 ];
 
 const TURNOUT = "__turnout";
-const STYLES = {
-  light: "https://tiles.openfreemap.org/styles/positron",
-  dark: "https://tiles.openfreemap.org/styles/dark",
-};
-
-function bounds(features: Feature[]): LngLatBoundsLike | null {
-  let west = Infinity;
-  let south = Infinity;
-  let east = -Infinity;
-  let north = -Infinity;
-  const visit = (coordinates: unknown) => {
-    const list = coordinates as unknown[];
-    if (typeof list[0] === "number") {
-      const [lng, lat] = list as number[];
-      west = Math.min(west, lng);
-      east = Math.max(east, lng);
-      south = Math.min(south, lat);
-      north = Math.max(north, lat);
-    } else list.forEach(visit);
-  };
-  for (const feature of features) {
-    if (feature.geometry && "coordinates" in feature.geometry) visit(feature.geometry.coordinates);
-  }
-  return Number.isFinite(west) ? [west, south, east, north] : null;
-}
-
 interface Painted {
   /** Colour and tooltip text of each precinct that has a value */
   values: Map<string, { color: string; text: string; sub?: string }>;

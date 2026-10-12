@@ -233,8 +233,21 @@ button {
   text-decoration: underline;
 }
 
-.detail-head .map-link {
-  margin-top: 6px;
+.detail-map {
+  margin-bottom: 16px;
+}
+
+.detail-map .map-link {
+  margin-top: 8px;
+}
+
+.mini-map {
+  position: relative;
+  height: 210px;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
 }
 
 .method-precinct {
