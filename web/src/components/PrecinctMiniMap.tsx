@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useBoundaries } from "../api";
 import { resolveColor } from "../colors";
-import { bounds, STYLES } from "./mapBase";
+import { bounds, STYLES, firstLabelLayer } from "./mapBase";
 import { isDark } from "../theme";
 
 /** A small map of where one precinct of the council being viewed lies. */
@@ -33,7 +33,7 @@ export function PrecinctMiniMap({ precinct }: { precinct: string }) {
     instance.touchZoomRotate.disableRotation();
     map.current = instance;
     instance.on("load", () => {
-      const firstLabel = instance.getStyle().layers?.find((layer) => layer.type === "symbol")?.id;
+      const firstLabel = firstLabelLayer(instance);
       const nobody = ["==", ["get", "id"], ""] as ["==", ["get", string], string];
       instance.addSource("precincts", { type: "geojson", data: geojson });
       instance.addLayer(

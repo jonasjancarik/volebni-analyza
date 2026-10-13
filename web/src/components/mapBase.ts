@@ -1,5 +1,5 @@
 import type { Feature } from "geojson";
-import { type LngLatBoundsLike, setWorkerUrl } from "maplibre-gl";
+import { type LngLatBoundsLike, type Map as MapLibre, setWorkerUrl } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 
 // Without this the production build would not include the map's worker file
@@ -29,4 +29,12 @@ export function bounds(features: Feature[]): LngLatBoundsLike | null {
     if (feature.geometry && "coordinates" in feature.geometry) visit(feature.geometry.coordinates);
   }
   return Number.isFinite(west) ? [west, south, east, north] : null;
+}
+
+// The layer to insert colored areas before: above buildings and roads (the dark style
+// puts a water label below them), but still below the place and street names.
+export function firstLabelLayer(map: MapLibre): string | undefined {
+  const layers = map.getStyle().layers ?? [];
+  const buildings = layers.findIndex((layer) => layer.id.includes("building"));
+  return layers.find((layer, index) => index > buildings && layer.type === "symbol" && !layer.id.includes("oneway"))?.id;
 }

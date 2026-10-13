@@ -7,7 +7,7 @@ import type { TabProps } from "../Council";
 import { circleShapes } from "../components/cartogram";
 import { type DotGroup, dotPoints, dotSteps } from "../components/dots";
 import { Dropdown } from "../components/Dropdown";
-import { bounds, STYLES } from "../components/mapBase";
+import { bounds, STYLES, firstLabelLayer } from "../components/mapBase";
 import { PrecinctDetail } from "../components/PrecinctDetail";
 import { Loading, Problem } from "../components/State";
 import { fmtInt, fmtNum, fmtPct, fmtPp, listName, plural, truncate } from "../format";
@@ -622,7 +622,7 @@ function PrecinctMap({ geojson, painted, dots, circles, selected, focusIds, onSe
 
     instance.on("load", () => {
       // Below the place names of the base map, so that they stay readable
-      const firstLabel = instance.getStyle().layers?.find((layer) => layer.type === "symbol")?.id;
+      const firstLabel = firstLabelLayer(instance);
       instance.addSource("precincts", { type: "geojson", data: geojson, promoteId: "id" });
       instance.addLayer(
         {

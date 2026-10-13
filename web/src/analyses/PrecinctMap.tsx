@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useBoundaries } from "../api";
 import { divergingScale, NO_DATA, resolveColor, sequentialScale } from "../colors";
-import { bounds, STYLES } from "../components/mapBase";
+import { bounds, STYLES, firstLabelLayer } from "../components/mapBase";
 import { Loading, Problem } from "../components/State";
 import { fmtNum } from "../format";
 import { useTooltip } from "../hooks";
@@ -90,7 +90,7 @@ export function PrecinctMap<Row extends { id: string }>({ election, code, rows, 
 
     instance.on("load", () => {
       // Below the place names of the base map, so that they stay readable
-      const firstLabel = instance.getStyle().layers?.find((item) => item.type === "symbol")?.id;
+      const firstLabel = firstLabelLayer(instance);
       instance.addSource("precincts", { type: "geojson", data: geojson, promoteId: "id" });
       instance.addLayer(
         {
