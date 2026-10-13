@@ -543,12 +543,13 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
       </section>
 
       <section className="prose">
-        <h2>Proč mají Piráti do Sněmovny strmější křivku</h2>
+        <h2>Proč je křivka Pirátů v komunálních volbách plošší</h2>
         <p>
-          Sněmovní křivka Pirátů má stejný tvar jako letošní součet obou kandidátek. V každém pásmu měli Piráti do
-          Sněmovny {fmtNum(Math.min(...midOverCamp) * 100, 0)} až {fmtPct(Math.max(...midOverCamp) * 100, 0)} toho,
-          co letos Praha Sobě a Piráti dohromady. Kde Praha Sobě na lístku není, sbírají Piráti hlasy lidí, kteří
-          v komunálních volbách volí jednu nebo druhou, a těch bydlí nejvíc u centra.
+          Do Sněmovny Praha Sobě nekandiduje a Piráti dostávají i hlasy lidí, kteří ji volí do zastupitelstva.
+          V komunálních volbách se o ně obě kandidátky dělí a Praha Sobě z nich má blízko centra víc: do {nearest.to}{" "}
+          minut připadá na Piráty {fmtPct(piratiOfCamp(nearest), 0)} hlasů obou kandidátek, nad {farthest.from} minut{" "}
+          {fmtPct(piratiOfCamp(farthest), 0)}. Proti sněmovním volbám tak Pirátům u centra ubude víc než na okraji
+          a jejich křivka se narovná.
         </p>
       </section>
 
@@ -585,9 +586,9 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
 
       <section className="prose">
         <p>
-          V komunálních volbách se tyto hlasy dělí a Praha Sobě z nich má blízko centra víc. Do {nearest.to} minut
-          připadá na Piráty {fmtPct(piratiOfCamp(nearest), 0)} hlasů obou kandidátek, nad {farthest.from} minut{" "}
-          {fmtPct(piratiOfCamp(farthest), 0)}. Pirátům tak zůstává křivka plošší, než jakou mají do Sněmovny.
+          Že jde o stejný okruh voličů, je vidět na součtu. Sněmovní křivka Pirátů má tvar letošního výsledku obou
+          kandidátek dohromady: v každém pásmu měli Piráti do Sněmovny {fmtNum(Math.min(...midOverCamp) * 100, 0)} až{" "}
+          {fmtPct(Math.max(...midOverCamp) * 100, 0)} toho, co letos Praha Sobě a Piráti společně.
         </p>
         <p>
           Stejně to vypadalo už v roce {years.previous}: Piráti tehdy měli {fmtNum(share(nearest, "pirati", "then"), 0)}{" "}
