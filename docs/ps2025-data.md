@@ -1,10 +1,8 @@
-# PS2025 Parliamentary Elections - Data Structure Analysis
+# Open data of the 2025 parliamentary election
 
-## 🎉 REAL DATA AVAILABLE - October 5, 2025
-
-**Source**: https://www.volby.cz/opendata/ps2025/ps2025_opendata.htm  
-**Data Generated**: 2025-10-05T02:25:53  
-**Status**: ✅ Complete election results available
+Notes on the files ČSÚ publishes for the 2025 election to the Chamber of Deputies, which `src/parliamentary_scraper.py` and
+`src/parliamentary_parsers.py` read. Source:
+<https://www.volby.cz/opendata/ps2025/ps2025_opendata.htm>
 
 ## 📊 Data Files Available
 
@@ -146,54 +144,6 @@
 - ❌ Party results in separate file
 - ❌ Bit string for party participation
 
-## 🔧 Implementation Requirements
-
-### 1. Update ElectionConfig
-```python
-"ps2025": ElectionConfig(
-    election_id="ps2025",
-    election_name="Volby do Poslanecké sněmovny 2025",
-    election_type="parliamentary",
-    election_date="20251005",  # ✅ UPDATED - actual date
-    base_url="https://www.volby.cz/pls/ps2025",
-    opendata_url="https://www.volby.cz/opendata/ps2025",
-    # Different file structure - no batch processing
-    municipality_registry_file="psrk.xml",     # ✅ Candidate registry
-    party_registry_file="psrkl.xml",            # ✅ Party list
-)
-```
-
-### 2. Create ParliamentaryScraper
-**Differences to handle**:
-- Parse `psrkl.xml` for party list
-- Parse `psrk.xml` for candidates
-- Parse `pst4.xml` for polling station turnout
-- Parse `pst4p.xml` for party results
-- Handle windows-1250 encoding
-- Decode `ZAKRSTRANA` bit strings
-- Map `VOLKRAJ` (1-14) to regional names
-
-### 3. XML Parsing Adjustments
-```python
-# Municipal elections
-ns = {"kv": "http://www.volby.cz/kv/"}
-root.findall("kv:OKRSEK", ns)
-
-# Parliamentary elections
-ns = {"ps": "http://www.volby.cz/ps/"}
-root.findall("ps:PS_T4_ROW", ns)
-```
-
-### 4. Encoding Handling
-```python
-# Municipal: UTF-8 (default)
-tree = ET.parse(xml_file)
-
-# Parliamentary: windows-1250
-with open(xml_file, 'r', encoding='windows-1250') as f:
-    tree = ET.parse(f)
-```
-
 ## 📁 Available Download Links
 
 ### Direct XML Files
@@ -215,35 +165,6 @@ curl -O https://www.volby.cz/opendata/ps2025/PS2025data20251005_xml.zip
 curl -O https://www.volby.cz/opendata/ps2025/PS2025ciselniky20251005_xml.zip
 ```
 
-## 🚀 Next Steps
-
-### Immediate (Can Do Now)
-1. ✅ Update election_date in config (20251005)
-2. ✅ Update registry file names in config
-3. ✅ Create ParliamentaryRegistry class
-4. ✅ Create ParliamentaryScraper class
-5. ✅ Test with downloaded data
-
-### Implementation Priority
-1. **Phase 1**: Parse party registry (`psrkl.xml`)
-2. **Phase 2**: Parse candidate registry (`psrk.xml`)
-3. **Phase 3**: Parse polling station data (`pst4.xml`)
-4. **Phase 4**: Parse party results (`pst4p.xml`)
-5. **Phase 5**: Aggregate to national level
-6. **Phase 6**: Add to Streamlit visualizations
-
-## 🎯 Success Criteria
-
-- [ ] Can load and parse `psrkl.xml` (party list)
-- [ ] Can load and parse `psrk.xml` (candidates)
-- [ ] Can load and parse `pst4.xml` (polling stations)
-- [ ] Can load and parse `pst4p.xml` (party results)
-- [ ] Can aggregate results by electoral district
-- [ ] Can calculate national seat allocation
-- [ ] Can display in Streamlit with district breakdown
-- [ ] Can handle preferential votes
-- [ ] Can compare with municipal elections
-
 ## 📊 Data Quality
 
 - ✅ Complete data for all 14 electoral districts
@@ -252,10 +173,3 @@ curl -O https://www.volby.cz/opendata/ps2025/PS2025ciselniky20251005_xml.zip
 - ✅ Mandate allocation included
 - ✅ Polling station level detail
 - ✅ Multiple format support (XML, Excel, CSV, JSON)
-
----
-
-**Status**: Data fully available and analyzed  
-**Next Action**: Implement ParliamentaryScraper  
-**Updated**: 2025-10-08
-

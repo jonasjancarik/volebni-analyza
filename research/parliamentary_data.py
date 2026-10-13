@@ -6,8 +6,8 @@ This script helps analyze the data structure of parliamentary elections
 to inform the implementation of parliamentary election support.
 
 Usage:
-    python research_parliamentary_data.py --election ps2021
-    python research_parliamentary_data.py --election ps2021 --download-samples
+    python research/parliamentary_data.py --election ps2021
+    python research/parliamentary_data.py --election ps2021 --download-samples
 """
 
 import requests
@@ -287,16 +287,16 @@ def main():
     logger.info("=" * 80)
     logger.info("\nTo download and analyze samples:")
     logger.info(
-        "  python research_parliamentary_data.py --election ps2021 --download-samples"
+        "  python research/parliamentary_data.py --election ps2021 --download-samples"
     )
     logger.info("\nTo compare structures:")
-    logger.info("  python research_parliamentary_data.py --compare")
+    logger.info("  python research/parliamentary_data.py --compare")
     logger.info("\nTo test different elections:")
     logger.info(
-        "  python research_parliamentary_data.py --election ps2017 --download-samples"
+        "  python research/parliamentary_data.py --election ps2017 --download-samples"
     )
     logger.info(
-        "  python research_parliamentary_data.py --election ps2013 --download-samples"
+        "  python research/parliamentary_data.py --election ps2013 --download-samples"
     )
 
 
