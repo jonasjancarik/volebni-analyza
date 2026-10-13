@@ -164,45 +164,62 @@ precinct types the data allow (`flows_across_settings`).
 
 ### Looking for counting errors
 
-`research/precinct_anomalies.py` goes through the precinct results of Prague
-for signs of counting errors, for every list on both ballots a voter in Prague
-gets. It reads the official results with the votes of every candidate in every
-precinct, which the precinct batches above do not hold; ČSÚ publishes them as
-two archives (about 23 MB) that the script downloads to
-`input/<election>/official/` on its first run.
+`research/precinct_anomalies.py` goes through the precinct results of a
+municipal election for signs of counting errors, for every list in every
+council. It reads the official results with the votes of every candidate in
+every precinct, which the precinct batches above do not hold; ČSÚ publishes
+them as two archives (about 23 MB) that the script downloads to
+`input/<election>/official/` on its first run. The whole country takes about a
+minute.
 
 ```bash
-uv run python research/precinct_anomalies.py                    # all city districts
+uv run python research/precinct_anomalies.py                    # every council
+uv run python research/precinct_anomalies.py --city 554782      # Prague and its districts
 uv run python research/precinct_anomalies.py --council 500143   # Praha 5, with the findings printed
 ```
 
-It writes six tables to `output/<election>/anomalies/` (a run for one district
-writes to a folder of its own there):
+It writes these tables to `output/<election>/anomalies/` (a run for one
+council or one city writes to a folder of its own there):
 
-- `kandidati.csv`: single candidates with a zero or a fraction of the votes of
-  their neighbours on the list in one precinct, or a multiple of them. These
-  are visible in the data as they are. A list left mostly empty in a
-  precinct (only the candidates with votes of their own filled in) is marked,
-  because its pile is then read from those few candidates.
-- `okrsky.csv`: precincts with unusually many or few votes counted per
-  returned envelope.
-- `listky.csv`: lists with far more or fewer votes on one ballot than the
-  other ballot of the same precinct suggests.
+- `prehled.csv`: every council, first those where putting the clear errors
+  right would change the seats or the people who hold them, then by how large
+  the largest finding is against the closest seat.
 - `mandaty.csv`: how many votes each list was from one more seat, from one
   fewer and from the five-percent threshold, next to the votes missing at its
   candidates and those added by a slip of the pen, and the seats it would have
   with both put right.
 - `poradi.csv`: for every list with a seat, how few votes at one candidate
-  would seat somebody else, and whether the clear errors put right would. The
-  ten-percent rule is applied with the list's average cut to a whole number,
-  which is what reproduces the official order of all lists in Prague.
-- `prehled.csv`: city districts, first those where putting the clear errors
-  right would change the seats, then by how large the largest finding is
-  against the closest seat.
+  would seat somebody else, and whether the clear errors put right would.
+- `kandidati.csv`: single candidates with a zero or a fraction of the votes of
+  their neighbours on the list in one precinct, or a multiple of them. These
+  are visible in the data as they are. A list left mostly empty in a precinct
+  (only the candidates with votes of their own filled in) is marked, because
+  its pile is then read from those few candidates.
+- `okrsky.csv`: precincts with unusually many or few votes counted per
+  returned envelope.
+- `listky.csv`: in cities with districts, lists with far more or fewer votes
+  on one ballot than the other ballot of the same precinct suggests.
 
-Only the first table is evidence. The others are hints: a precinct may differ
-for a reason of the place (a candidate who lives there, a new housing estate),
-and only a recount of the ballots can tell.
+What the script can be trusted with differs by part:
+
+- The seats and the order of candidates are arithmetic. They equal the
+  official ones in every council of the 2026 election except 17 villages where
+  a lot decided between equal votes; `prehled.csv` says so for each council.
+  Two details are not in the wording of the law and were found by comparing
+  with the official results: the average a candidate has to beat by a tenth is
+  cut to a whole number, and a withdrawn candidate does not count for the
+  five-percent threshold of a list shorter than the council.
+- Errors at candidates are looked for only where voters mark whole lists, so
+  that a list's candidates have nearly the same votes in a precinct, and where
+  there are at least ten precincts to learn a candidate's usual place from
+  (about a hundred cities and city districts in 2026). In villages and small
+  towns people vote for names, and a zero is a result. `prehled.csv` gives the
+  measure (`rovnomernost_hlasu_kandidatu`) and whether candidates were checked.
+- A council with more than one electoral district (Lišov in 2026) is left out.
+
+Only `kandidati.csv` is evidence. `okrsky.csv` and `listky.csv` are hints: a
+precinct may differ for a reason of the place (a candidate who lives there, a
+new housing estate), and only a recount of the ballots can tell.
 
 ### MCP server for AI assistants
 
