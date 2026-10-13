@@ -2,23 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "volebni-analyza",
-      "runtimeExecutable": "uv",
-      "runtimeArgs": [
-        "run",
-        "streamlit",
-        "run",
-        "streamlit_app.py",
-        "--server.address",
-        "0.0.0.0",
-        "--server.port",
-        "8501",
-        "--server.headless",
-        "true"
-      ],
-      "port": 8501
-    },
-    {
       "name": "volebni-analyza-api",
       "runtimeExecutable": "uv",
       "runtimeArgs": [

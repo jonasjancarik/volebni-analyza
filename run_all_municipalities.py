@@ -431,9 +431,8 @@ def main():
                 f"   • Summary report: {election_config.reports_dir / 'analysis_summary.md'}"
             )
             logger.info("=" * 80)
-            logger.info("\n🚀 Ready to use with Streamlit:")
-            logger.info(f"   streamlit run streamlit_app.py")
-            logger.info(f"   (Select '{election_config.election_name}' in the app)")
+            logger.info("\n🚀 Ready to use in the app:")
+            logger.info("   uv run uvicorn --app-dir src web_api:app --host 0.0.0.0 --port 8600")
 
             return 0
         else:
@@ -566,7 +565,7 @@ def generate_summary_report(result_file: str, election_config):
 
             f.write("\n## 🚀 Next Steps\n\n")
             f.write(
-                "1. **Explore data:** Use the Streamlit app to explore individual municipalities\n"
+                "1. **Explore data:** Use the web app to explore individual municipalities\n"
             )
             f.write(
                 "2. **Compare municipalities:** Use comparison features to analyze differences\n"

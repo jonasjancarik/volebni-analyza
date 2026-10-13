@@ -1,4 +1,4 @@
-# Frontend of the new app (web/), built into static files
+# Frontend (web/), built into static files
 FROM node:24-bookworm-slim AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
@@ -16,13 +16,9 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY streamlit_app.py ./
 COPY src ./src
-COPY .streamlit/config.toml ./.streamlit/config.toml
 COPY --from=web /web/dist ./web/dist
 
-# The image serves the new app; docker-compose.yml overrides the command for
-# the original Streamlit app.
-EXPOSE 8600 8501
+EXPOSE 8600
 CMD ["uv", "run", "--no-sync", "uvicorn", "--app-dir", "src", "web_api:app", \
      "--host", "0.0.0.0", "--port", "8600"]

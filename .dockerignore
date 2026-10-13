@@ -3,7 +3,10 @@ input/
 output/
 .git/
 .venv/
-.streamlit/secrets.toml
+.env
+.streamlit/
+docs/
+video/
 __pycache__/
 *.log
 research/

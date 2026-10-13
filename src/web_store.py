@@ -2,8 +2,6 @@
 """
 Data layer of the web app: reads the result files written by the scrapers and
 shapes them into the JSON the frontend works with.
-
-Nothing here depends on Streamlit; streamlit_app.py keeps its own loaders.
 """
 
 import hashlib
@@ -31,7 +29,7 @@ from election_comparison import (
 from election_config import ELECTIONS, ElectionConfig, get_election_config
 
 # Thresholds come from comparing the estimate with a Bayesian model
-# (research/bayesian_flows_check.py); the same values as in streamlit_app.py
+# (research/bayesian_flows_check.py)
 MIN_PRECINCTS_FOR_FLOWS = 50
 ROUGH_FLOWS_BELOW = 100
 

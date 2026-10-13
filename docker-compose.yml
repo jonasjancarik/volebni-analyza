@@ -1,5 +1,5 @@
 services:
-  # The new app: React frontend served by the API
+  # React frontend served by the API
   app:
     build:
       context: .
