@@ -463,6 +463,10 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
           <li>
             Podpora Prahy Sobě klesá s dobou cesty do centra skoro na polovinu, u Pirátů jen mírně.
           </li>
+          <li>
+            Do Sněmovny mají Piráti křivku stejně strmou jako letos obě kandidátky dohromady. V komunálních volbách
+            se o tyto hlasy dělí a Praha Sobě z nich má blízko centra víc; stejné to bylo už v roce {years.previous}.
+          </li>
           {olderMiddle && panelMiddle && (
             <li>
               Víc než vzdálenost rozhoduje, v čem lidé bydlí. Při stejném dojezdu {bandName(middleRing)} minut má Praha
@@ -472,11 +476,7 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
             </li>
           )}
           <li>
-            Do Sněmovny mají Piráti křivku stejně strmou jako letos obě kandidátky dohromady. V komunálních volbách
-            se o tyto hlasy dělí a Praha Sobě z nich má blízko centra víc; stejné to bylo už v roce {years.previous}.
-          </li>
-          <li>
-            Hlasy navíc u centra by proto Piráti brali hlavně Praze Sobě. Nejméně si obě kandidátky konkurují dál
+            Hlasy navíc u centra by Piráti brali hlavně Praze Sobě. Nejméně si obě kandidátky konkurují dál
             od centra a na sídlištích{panel && <>, kde žije {fmtPct((panel.registered / city.registered) * 100, 0)} voličů</>}.
           </li>
         </ul>
