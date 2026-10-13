@@ -46,6 +46,14 @@ export interface CentreAnalysis {
   kinds: KindGroup[];
   /** The same kinds at a similar travel time, where there are enough precincts */
   kindsByTime: KindAtTime[];
+  /** City districts where Praha Sobě's own list for the district council is strong, against the rest */
+  localBase: {
+    districts: { code: string; name: string; share: number }[];
+    strong: VoterGroup;
+    rest: VoterGroup;
+    /** The bands of travel time; a part with too few precincts is missing */
+    times: { from: number; to: number | null; strong: VoterGroup | null; rest: VoterGroup | null }[];
+  };
   precincts: PrecinctPoint[];
 }
 

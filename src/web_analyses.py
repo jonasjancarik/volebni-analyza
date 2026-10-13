@@ -9,6 +9,7 @@ charts show, so that the article cannot drift from the data.
 
 import logging
 import math
+import re
 import threading
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -30,7 +31,7 @@ from election_comparison import (
 )
 
 # Bump when the figures of an analysis change, so that stored ones are recomputed
-ANALYSIS_VERSION = 4
+ANALYSIS_VERSION = 5
 
 PRAGUE = "554782"
 PRAGUE_REGION = "1"
@@ -803,6 +804,28 @@ def _place_group(part: pd.DataFrame) -> dict:
     return group
 
 
+# A district council list of Praha Sobě alone, such as "PRAHA 7 SOBĚ"
+OWN_LOCAL_LIST = re.compile(r"^PRAHA \d+ SOBĚ$", re.IGNORECASE)
+# From this share of the district council vote the local list counts as strong
+STRONG_LOCAL_SHARE = 20
+
+
+def _strong_local_lists(election: str, council: dict) -> List[dict]:
+    """City districts where Praha Sobě ran alone for the district council
+    and got a strong result, with that result."""
+    rows = []
+    for area in council["areas"]:
+        try:
+            lists = store.council(election, area["code"])["lists"]
+        except store.NotFound:
+            continue
+        share = max((item["share"] for item in lists if OWN_LOCAL_LIST.match(item["name"].strip())), default=0)
+        if share >= STRONG_LOCAL_SHARE:
+            rows.append({"code": area["code"], "name": area["name"], "share": share})
+    rows.sort(key=lambda row: -row["share"])
+    return rows
+
+
 def _bands(values: pd.Series, edges: Tuple[int, ...]) -> List[Tuple[int, Optional[int], pd.Series]]:
     """Which rows fall between each pair of edges; the last band is open."""
     upper = [*edges[1:], None]
@@ -848,6 +871,25 @@ def _prague_2026_centre() -> dict:
     def share(key: str, when: str = "now") -> pd.Series:
         return (voters[f"{key}_{when}"] / voters[f"voted_{when}"].where(voters[f"voted_{when}"] > 0) * 100).round(2)
 
+    # The same bands in the districts where Praha Sobě is strong locally and in the rest
+    strong = _strong_local_lists(election, store.council(election, PRAGUE))
+    in_strong = pd.Series(voters.index.str.split("-").str[0].isin([row["code"] for row in strong]), index=voters.index)
+    local = []
+    for low, high, inside in _bands(voters["minutes"], TIME_BANDS):
+        if not inside.any():
+            continue
+        parts = {"strong": voters[inside & in_strong], "rest": voters[inside & ~in_strong]}
+        local.append(
+            {
+                "from": low,
+                "to": high,
+                **{
+                    name: _voter_group(part) if len(part) >= FEWEST_PRECINCTS else None
+                    for name, part in parts.items()
+                },
+            }
+        )
+
     points = pd.DataFrame(
         {
             "id": voters["precinct"],
@@ -872,6 +914,12 @@ def _prague_2026_centre() -> dict:
         ],
         "kinds": kinds,
         "kindsByTime": combined,
+        "localBase": {
+            "districts": strong,
+            "strong": _voter_group(voters[in_strong]),
+            "rest": _voter_group(voters[~in_strong]),
+            "times": local,
+        },
         "precincts": points.to_dict("records"),
     }
 

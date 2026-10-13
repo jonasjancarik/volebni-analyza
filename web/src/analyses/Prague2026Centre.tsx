@@ -338,6 +338,18 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
   const midOverCamp = times.map((band) => share(band, "pirati", "mid") / campShare(band));
   const kept = times.map((band) => (share(band, "pirati") / share(band, "pirati", "then")) * 100);
   const campColor = "var(--ink-2)";
+
+  // Districts where Praha Sobě is strong in the district council, as "1, 2, 5, 6 a 7"
+  const { localBase } = data;
+  const strongNumbers = localBase.districts.map((district) => Number(district.name.replace(/\D/g, ""))).sort((a, b) => a - b);
+  const strongNames = strongNumbers.map((number, index) => (index === 0 ? "" : index === strongNumbers.length - 1 ? " a " : ", ") + number).join("");
+  const weakestLocal = Math.min(...localBase.districts.map((district) => district.share));
+  const restSplit = localBase.times.flatMap((band) => (band.rest ? [piratiOfCamp(band.rest)] : []));
+  const splitColumns: { head: string; group: (band: (typeof localBase.times)[number], index: number) => VoterGroup | null }[] = [
+    { head: "Celá Praha", group: (_, index) => times[index] },
+    { head: `Praha ${strongNames}`, group: (band) => band.strong },
+    { head: "Zbytek Prahy", group: (band) => band.rest },
+  ];
   const lists = ["prahaSobe", "pirati", "stan", "spolu", "ano"];
 
   // The same travel time, another kind of housing
@@ -465,7 +477,8 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
           </li>
           <li>
             Do Sněmovny mají Piráti křivku stejně strmou jako letos obě kandidátky dohromady. V komunálních volbách
-            se o tyto hlasy dělí a Praha Sobě z nich má blízko centra víc; stejné to bylo už v roce {years.previous}.
+            se o tyto hlasy dělí a Praha Sobě z nich má víc v Praze {strongNames}, kde má silnou kandidátku i do
+            zastupitelstva městské části. Stejné to bylo už v roce {years.previous}.
           </li>
           {olderMiddle && panelMiddle && (
             <li>
@@ -597,10 +610,82 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
       <Figure
         title="Jak se hlasy obou kandidátek dělí"
         sub="Podíly v procentech hlasů podle doby cesty do centra"
-        note="Proč má Praha Sobě blízko centra větší díl, z těchto čísel poznat nejde. Část vysvětluje zástavba, o které je další kapitola."
       >
         <HeatTable rows={times} rowHead="Minut do centra" rowLabel={bandName} columns={campColumns} />
       </Figure>
+
+      {localBase.districts.length > 0 && (
+        <>
+          <section className="prose">
+            <p>
+              Vzdálenost sama to nevysvětluje. Větší díl má Praha Sobě v Praze {strongNames}, kde její kandidátka
+              do zastupitelstva městské části dostala aspoň {fmtNum(Math.floor(weakestLocal), 0)} % hlasů. Tyto části
+              leží blízko centra a žije v nich {fmtPct((localBase.strong.registered / city.registered) * 100, 0)}{" "}
+              voličů. Piráti tam mají {fmtPct(piratiOfCamp(localBase.strong), 0)} hlasů obou kandidátek, ve zbytku
+              Prahy {fmtPct(piratiOfCamp(localBase.rest), 0)}.
+            </p>
+          </section>
+
+          <Figure
+            title="Podíl Pirátů tam, kde je Praha Sobě místně silná, a jinde"
+            sub={`Kolik procent z hlasů obou kandidátek do pražského zastupitelstva ${years.current} mají Piráti. Prázdné pole znamená méně než deset okrsků.`}
+          >
+            <div className="table-wrap">
+              <table className="data matrix kind-matrix">
+                <thead>
+                  <tr>
+                    <th>Minut do centra</th>
+                    {splitColumns.map((column) => (
+                      <th key={column.head} className="col">
+                        {column.head}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {localBase.times.map((band, index) => (
+                    <tr key={band.from}>
+                      <td>{bandName(band)}</td>
+                      {splitColumns.map((column) => {
+                        const group = column.group(band, index);
+                        return group ? (
+                          <td
+                            key={column.head}
+                            className="heat"
+                            title={`${fmtInt(group.precincts)} okrsků`}
+                            style={{
+                              background: `color-mix(in srgb, ${colorOf("pirati")} ${Math.round(piratiOfCamp(group))}%, var(--surface-2))`,
+                            }}
+                          >
+                            {fmtPct(piratiOfCamp(group), 0)}
+                          </td>
+                        ) : (
+                          <td key={column.head} className="empty">
+                            –
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Figure>
+
+          <section className="prose">
+            <p>
+              Mimo tyto městské části připadá na Piráty v každém pásmu {fmtNum(Math.min(...restSplit), 0)} až{" "}
+              {fmtPct(Math.max(...restSplit), 0)} hlasů obou kandidátek, ať je to do centra čtvrt hodiny, nebo přes
+              čtyřicet minut. V celopražském průměru to vypadá jako vliv vzdálenosti jen proto, že části se silnou
+              místní Prahou Sobě jsou u centra.
+            </p>
+            <p>
+              Z výsledků nejde poznat, jestli silná místní kandidátka přivádí Praze Sobě hlasy i do pražského
+              zastupitelstva, nebo jestli obojí jen ukazuje, kde má nejvíc voličů.
+            </p>
+          </section>
+        </>
+      )}
 
       <section className="prose">
         <h2>V čem lidé bydlí</h2>
