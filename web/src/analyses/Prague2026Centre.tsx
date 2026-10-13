@@ -489,8 +489,8 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
             </li>
           )}
           <li>
-            Hlasy navíc u centra by Piráti brali hlavně Praze Sobě. Nejméně si obě kandidátky konkurují dál
-            od centra a na sídlištích{panel && <>, kde žije {fmtPct((panel.registered / city.registered) * 100, 0)} voličů</>}.
+            Hlasy navíc v Praze {strongNames} by Piráti brali hlavně Praze Sobě. Nejméně si obě kandidátky konkurují
+            na sídlištích{panel && <>, kde žije {fmtPct((panel.registered / city.registered) * 100, 0)} voličů</>}.
           </li>
         </ul>
       </section>
@@ -529,7 +529,8 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
 
       <section className="prose">
         <p>
-          Proti sněmovnímu výsledku ztrácejí Piráti nejvíc blízko centra, kde je nejsilnější Praha Sobě. STAN a Spolu
+          Proti sněmovnímu výsledku ztrácejí Piráti nejvíc blízko centra, kde je nejsilnější Praha Sobě; proč, je
+          v další kapitole. STAN a Spolu
           mají všude zhruba stejně, ANO se vzdáleností roste.
         </p>
       </section>
@@ -557,7 +558,7 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
           V komunálních volbách se o ně obě kandidátky dělí a Praha Sobě z nich má blízko centra víc: do {nearest.to}{" "}
           minut připadá na Piráty {fmtPct(piratiOfCamp(nearest), 0)} hlasů obou kandidátek, nad {farthest.from} minut{" "}
           {fmtPct(piratiOfCamp(farthest), 0)}. Proti sněmovním volbám tak Pirátům u centra ubude víc než na okraji
-          a jejich křivka se narovná.
+          a jejich křivka se narovná. Níž je vidět, že za tím stojí několik městských částí, ne vzdálenost sama.
         </p>
       </section>
 
@@ -829,10 +830,13 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
           Proti sněmovním volbám ztrácejí Piráti nejvíc u centra: do {nearest.to} minut mají{" "}
           {fmtNum(share(nearest, "pirati"), 0)} % místo {fmtPct(share(nearest, "pirati", "mid"), 0)}, nad{" "}
           {farthest.from} minut {fmtNum(share(farthest, "pirati"), 0)} % místo{" "}
-          {fmtPct(share(farthest, "pirati", "mid"), 0)}. Praha Sobě tam přitom má nejvíc a součet obou kandidátek
-          sněmovní křivku Pirátů kopíruje. Z toho usuzujeme, že hlasy, které by Piráti u centra získali navíc, by
-          z velké části ubyly Praze Sobě a společný výsledek by se nezměnil. Dál od centra a na sídlištích je Praha
-          Sobě slabá a Piráti tam drží skoro svůj průměr, takže si tam obě kandidátky konkurují nejméně.
+          {fmtPct(share(farthest, "pirati", "mid"), 0)}. Rozdíl dělá hlavně Praha {strongNames}, kde má Praha Sobě
+          silnou místní kandidátku a kde na Piráty připadá {fmtPct(piratiOfCamp(localBase.strong), 0)} hlasů obou
+          kandidátek místo {fmtPct(piratiOfCamp(localBase.rest), 0)} jinde. Součet obou přitom sněmovní křivku
+          Pirátů kopíruje. Z toho usuzujeme, že hlasy, které by Piráti v těchto částech získali navíc, by z velké
+          části ubyly Praze Sobě a společný výsledek by se nezměnil. Ve zbytku Prahy se hlasy dělí všude podobně
+          a na sídlištích je Praha Sobě slabá, zatímco Piráti tam drží skoro svůj průměr; tam si obě kandidátky
+          konkurují nejméně.
         </p>
         {panel && older && (
           <p>
