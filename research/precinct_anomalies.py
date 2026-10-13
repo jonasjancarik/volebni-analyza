@@ -4,7 +4,7 @@ Possible counting errors in the precinct results of Prague, for every list.
 Reads the official results with the votes of every candidate in every precinct
 (ČSÚ open data, downloaded on the first run) and looks at both ballots a voter
 in Prague gets: the one for the council of the city district and the one for
-the council of the city. Four things come out, each as a table in
+the council of the city. Five things come out, each as a table in
 output/<election>/anomalies/ (a run for one district writes to a folder of
 its own there):
 
@@ -18,6 +18,9 @@ its own there):
                  in the record look like.
   listky.csv     lists that got far more or fewer votes on one ballot than the
                  other ballot of the same voters suggests.
+  poradi.csv     who holds the seats of each list, how few votes at one
+                 candidate would seat somebody else, and the same with the
+                 clear errors at candidates put right.
   mandaty.csv    how many votes each list was from winning or losing a seat
                  and from the five-percent threshold, next to the votes its
                  clear candidate errors add up to and the seats it would have
@@ -34,6 +37,7 @@ Run from the repository root:
 
 import argparse
 import io
+import math
 import re
 import sys
 import zipfile
@@ -84,7 +88,8 @@ def rows(archive: Path, member: str, row_tag: str, keep: Callable[[dict], bool])
 def load(election: str) -> Dict[str, pd.DataFrame]:
     """Precinct forms, candidate votes, candidates, lists and councils of Prague."""
     folder = Path("input") / election / "official"
-    stored = folder / "prague.pkl"
+    # The number goes up whenever what is kept changes, so that an older file is not read
+    stored = folder / "prague-2.pkl"
     if stored.exists():
         return pd.read_pickle(stored)
     folder.mkdir(parents=True, exist_ok=True)
@@ -114,7 +119,7 @@ def load(election: str) -> Dict[str, pd.DataFrame]:
     for name, columns in {
         "forms": ["VOL_SEZNAM", "VYD_OBALKY", "ODEVZ_OBAL", "PLAT_LISTKY", "PL_HL_CELK"],
         "votes": VOTES + ["POC_HLASU", "POR_STR_HL"],
-        "candidates": ["POR_STR_HL", "PORCISLO", "POCHLASU"],
+        "candidates": ["POR_STR_HL", "PORCISLO", "POCHLASU", "PORADIMAND", "PORADINAHR"],
         "lists": ["POR_STR_HL", "HLASY_STR", "MAND_STR"],
         "councils": ["MANDATY"],
     }.items():
@@ -464,6 +469,100 @@ def seats_after(ballot: Ballot, margins: pd.DataFrame, columns: List[str]) -> pd
     return seats_of(ballot, votes).reindex(margins.cislo_kandidatky).to_numpy()
 
 
+# ---------------------------------------------------------------------------
+# Order of candidates within a list
+# ---------------------------------------------------------------------------
+
+
+def candidate_order(votes: pd.Series) -> list:
+    """Candidates of one list in the order they take its seats: those with at
+    least a tenth more votes than the list's average by their votes, then the
+    rest as printed on the ballot. `votes` is indexed by place on the ballot.
+
+    The average is cut to a whole number. The law does not say so, but it is
+    what gives the official order of every list in Prague; the exact average
+    gets three of them wrong."""
+    limit = 1.1 * math.floor(votes.sum() / len(votes))
+    ahead = votes[votes >= limit].sort_values(ascending=False, kind="stable")
+    return list(ahead.index) + [place for place in votes.index if place not in ahead.index]
+
+
+def closest_change(votes: pd.Series, seats: int) -> tuple:
+    """Fewest votes one candidate would have to gain or lose for the list's
+    seats to go to other people: (votes, place of that candidate, +1 or -1)."""
+    now = set(candidate_order(votes)[:seats])
+    best = (np.nan, None, 0)
+
+    def changes(place: int, shift: float) -> bool:
+        moved = votes.copy()
+        moved[place] += shift
+        return set(candidate_order(moved)[:seats]) != now
+
+    for place in votes.index:
+        sign = -1 if place in now else 1
+        most = int(votes[place]) if sign < 0 else int(votes.max()) + 1
+        if most < 1 or not changes(place, sign * most):
+            continue
+        low, high = 1, most
+        while low < high:
+            middle = (low + high) // 2
+            low, high = (low, middle) if changes(place, sign * middle) else (middle + 1, high)
+        if not best[0] <= low:
+            best = (low, place, sign)
+    return best
+
+
+def order_table(data: Dict[str, pd.DataFrame], findings: pd.DataFrame, margins: pd.DataFrame, codes: List[str]) -> pd.DataFrame:
+    """For every list with a seat: who holds its seats, how few votes would
+    change that, and the same once the clear errors at candidates are put right."""
+    candidates = data["candidates"]
+    candidates = candidates[(candidates.PLATNOST == "A") & candidates.KODZASTUP.isin(codes)]
+    corrections: Dict[tuple, float] = {}
+    if len(findings):
+        council = np.where(findings.listek == "ZHMP", PRAGUE, findings.cast)
+        clear = (findings.druh == "chybí") | findings.zjevny_preklep
+        for code, number, place, difference in zip(council[clear], findings.cislo_kandidatky[clear], findings.poradi[clear], findings.rozdil[clear]):
+            corrections[(code, number, place)] = corrections.get((code, number, place), 0) - difference
+    seats = margins.set_index(["cast", "cislo_kandidatky"])
+    found = []
+    for (code, number), part in candidates.groupby(["KODZASTUP", "POR_STR_HL"]):
+        if (code, number) not in seats.index or seats.at[(code, number), "mandaty"] == 0 and seats.at[(code, number), "mandaty_po_oprave_preklepu"] == 0:
+            continue
+        part = part.sort_values("PORCISLO").set_index("PORCISLO")
+        names = part.JMENO + " " + part.PRIJMENI
+        votes = part.POCHLASU.astype(float)
+        won = int(seats.at[(code, number), "mandaty"])
+        official = part[part.MANDAT == "A"].sort_values("PORADIMAND").index.tolist() + part[part.MANDAT != "A"].sort_values("PORADINAHR").index.tolist()
+        fixed = votes + pd.Series({place: corrections.get((code, number, place), 0.0) for place in votes.index})
+        won_fixed = int(seats.at[(code, number), "mandaty_po_oprave_preklepu"])
+
+        def described(count: float, place: Optional[int], sign: int) -> str:
+            return "" if place is None else f"{names[place]} {'+' if sign > 0 else '−'}{int(count)}"
+
+        before, after = set(candidate_order(votes)[:won]), set(candidate_order(fixed)[:won_fixed])
+        margin, margin_fixed = closest_change(votes, won) if won else (np.nan, None, 0), closest_change(fixed, won_fixed) if won_fixed else (np.nan, None, 0)
+        found.append(
+            {
+                "cast": code,
+                "listek": "ZHMP" if code == PRAGUE else "ZMČ",
+                "cislo_kandidatky": number,
+                "kandidatka": seats.at[(code, number), "kandidatka"],
+                "mandaty": won,
+                "poradi_souhlasi_s_csu": candidate_order(votes) == official,
+                # The fewest votes at one candidate that would seat other people
+                "nejmensi_zmena_hlasu": margin[0],
+                "nejmensi_zmena_u": described(*margin),
+                "opraveno_hlasu": int((fixed - votes).abs().sum()),
+                "mandaty_po_oprave": won_fixed,
+                "po_oprave_nove_zvoleni": ", ".join(names[place] for place in sorted(after - before)),
+                "po_oprave_nezvoleni": ", ".join(names[place] for place in sorted(before - after)),
+                "nejmensi_zmena_po_oprave": margin_fixed[0],
+                "nejmensi_zmena_po_oprave_u": described(*margin_fixed),
+            }
+        )
+    return pd.DataFrame(found)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("--council", help="Kód městské části; bez něj se projdou všechny")
@@ -512,12 +611,14 @@ def main() -> int:
         margins.loc[own.index, "mandaty_po_oprave_preklepu"] = seats_after(by_code[code], own, ["chybi_u_kandidatu", "odecist"])
     margins = margins.drop(columns="odecist")
     margins["nazev"] = margins.cast.map(names)
+    order = order_table(data, candidates, margins, list(by_code))
+    order.insert(1, "nazev", order.cast.map(names))
 
     # A run for one district keeps its tables apart from those of all districts
     folder = Path("output") / args.election / "anomalies" / (args.council or "")
     folder.mkdir(parents=True, exist_ok=True)
     in_areas = candidates[candidates.cast.isin(areas)] if len(candidates) else candidates
-    for name, table in (("kandidati", in_areas), ("okrsky", precincts), ("listky", between), ("mandaty", margins)):
+    for name, table in (("kandidati", in_areas), ("okrsky", precincts), ("listky", between), ("mandaty", margins), ("poradi", order)):
         table.to_csv(folder / f"{name}.csv", index=False)
 
     # Districts by how small the closest seat is against what was found there
@@ -529,6 +630,9 @@ def main() -> int:
         closest = min(own[["k_dalsimu_mandatu", "ke_ztrate_mandatu"]].min().min(), under.min() if len(under) else np.inf)
         moved = own[own.mandaty_po_oprave_preklepu != own.mandaty]
         change = ", ".join(f"{row.kandidatka} {row.mandaty_po_oprave_preklepu - row.mandaty:+d}" for row in moved.itertuples())
+        lists_order = order[order.cast == area]
+        people = lists_order[(lists_order.po_oprave_nove_zvoleni != "") | (lists_order.po_oprave_nezvoleni != "")]
+        tight = lists_order.sort_values("nejmensi_zmena_po_oprave").head(1)
         found = in_areas[(in_areas.cast == area) & (in_areas.listek == "ZMČ")] if len(in_areas) else in_areas
         lists = between[(between.cast == area) & (between.listek == "ZMČ")] if len(between) else between
         flagged = precincts[(precincts.cast == area) & (precincts.listek == "ZMČ") & (precincts.proc != "")]
@@ -551,10 +655,15 @@ def main() -> int:
                 "nalez_k_mandatu": round(largest / closest, 2) if closest and closest > 0 else np.nan,
                 # What adding the missing votes and undoing the slips of the pen would do to the seats
                 "zmena_mandatu_po_oprave": change,
+                "jini_zvoleni_po_oprave": "; ".join(f"{row.kandidatka}: +{row.po_oprave_nove_zvoleni} / −{row.po_oprave_nezvoleni}" for row in people.itertuples()),
+                # The closest call between two candidates of one list once the clear errors are put right
+                "nejtesnejsi_poradi_po_oprave": "" if tight.empty else f"{tight.kandidatka.iloc[0]}: {tight.nejmensi_zmena_po_oprave_u.iloc[0]}",
             }
         )
     summary = pd.DataFrame(summary)
-    summary = summary.sort_values(["zmena_mandatu_po_oprave", "nalez_k_mandatu"], key=lambda column: column != "" if column.dtype == object else column, ascending=False)
+    summary = summary.sort_values(
+        ["zmena_mandatu_po_oprave", "jini_zvoleni_po_oprave", "nalez_k_mandatu"], key=lambda column: column != "" if column.dtype == object else column, ascending=False
+    )
     summary.to_csv(folder / "prehled.csv", index=False)
 
     print("\nMěstské části: nejdřív ty, kde by oprava zjevných chyb změnila mandáty, pak podle největšího nálezu proti nejtěsnějšímu mandátu:")
@@ -564,6 +673,9 @@ def main() -> int:
         print("\nMandáty a kolik hlasů chybí u kandidátů každé kandidátky:")
         columns = ["kandidatka", "hlasy", "mandaty", "nad_5_procenty", "k_dalsimu_mandatu", "ke_ztrate_mandatu", "chybi_u_kandidatu", "navic_preklepem"]
         print(own[columns + ["mandaty_po_doplneni", "mandaty_po_oprave_preklepu"]].to_string(index=False))
+        print("\nPořadí uvnitř kandidátek: nejmenší změna hlasů jednoho kandidáta, která by zvolila někoho jiného:")
+        columns = ["kandidatka", "mandaty", "nejmensi_zmena_u", "opraveno_hlasu", "po_oprave_nove_zvoleni", "po_oprave_nezvoleni", "nejmensi_zmena_po_oprave_u"]
+        print(order[order.cast == args.council][columns].to_string(index=False))
         for title, table, columns in (
             ("Kandidáti mimo vzor své kandidátky", in_areas, ["okrsek", "listek", "kandidatka", "poradi", "kandidat", "hlasy", "obvykle", "druh", "okoli"]),
             ("Kandidátky mimo to, co odpovídá druhému lístku", between, ["okrsek", "listek", "kandidatka", "listku", "cekano_listku", "rozdil_hlasu", "odchylka"]),

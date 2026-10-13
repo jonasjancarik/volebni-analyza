@@ -176,7 +176,7 @@ uv run python research/precinct_anomalies.py                    # all city distr
 uv run python research/precinct_anomalies.py --council 500143   # Praha 5, with the findings printed
 ```
 
-It writes five tables to `output/<election>/anomalies/` (a run for one district
+It writes six tables to `output/<election>/anomalies/` (a run for one district
 writes to a folder of its own there):
 
 - `kandidati.csv`: single candidates with a zero or a fraction of the votes of
@@ -192,6 +192,10 @@ writes to a folder of its own there):
   fewer and from the five-percent threshold, next to the votes missing at its
   candidates and those added by a slip of the pen, and the seats it would have
   with both put right.
+- `poradi.csv`: for every list with a seat, how few votes at one candidate
+  would seat somebody else, and whether the clear errors put right would. The
+  ten-percent rule is applied with the list's average cut to a whole number,
+  which is what reproduces the official order of all lists in Prague.
 - `prehled.csv`: city districts, first those where putting the clear errors
   right would change the seats, then by how large the largest finding is
   against the closest seat.
