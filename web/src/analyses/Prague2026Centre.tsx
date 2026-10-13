@@ -745,12 +745,25 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
             Sobě; Piráti jsou tam stejně silní jako jinde.
           </p>
         )}
+        <p>
+          Proti sněmovním volbám ztrácejí Piráti nejvíc u centra: do {nearest.to} minut mají{" "}
+          {fmtNum(share(nearest, "pirati"), 0)} % místo {fmtPct(share(nearest, "pirati", "mid"), 0)}, nad{" "}
+          {farthest.from} minut {fmtNum(share(farthest, "pirati"), 0)} % místo{" "}
+          {fmtPct(share(farthest, "pirati", "mid"), 0)}. Praha Sobě tam přitom má nejvíc a součet obou kandidátek
+          sněmovní křivku Pirátů kopíruje. Z toho usuzujeme, že hlasy, které by Piráti u centra získali navíc, by
+          z velké části ubyly Praze Sobě a společný výsledek by se nezměnil. Dál od centra a na sídlištích je Praha
+          Sobě slabá a Piráti tam drží skoro svůj průměr, takže si tam obě kandidátky konkurují nejméně.
+        </p>
         {panel && older && (
           <p>
-            Účast je rezerva ve všech bytových domech, ne jen na sídlištích. Piráti dostali loni do Sněmovny v okrscích
-            starší zástavby {thousands(voters(older, "pirati", "mid"))} hlasů a na sídlištích{" "}
-            {thousands(voters(panel, "pirati", "mid"))}; letos je tam volilo {thousands(voters(older, "pirati", "now"))}{" "}
-            a {thousands(voters(panel, "pirati", "now"))} lidí.
+            Piráti dostali loni do Sněmovny v okrscích starší zástavby {thousands(voters(older, "pirati", "mid"))}{" "}
+            hlasů a na sídlištích {thousands(voters(panel, "pirati", "mid"))}; letos je tam volilo{" "}
+            {thousands(voters(older, "pirati", "now"))} a {thousands(voters(panel, "pirati", "now"))} lidí. Ten rozdíl
+            ale nezůstal celý doma. Obě kandidátky dohromady mají v každém pásmu {fmtNum(Math.min(...ratios), 0)} až{" "}
+            {fmtPct(Math.max(...ratios), 0)} loňských sněmovních hlasů Pirátů, přestože k volbám přišlo{" "}
+            {fmtPct(city.turnout.now ?? 0, 0)} lidí místo {fmtPct(city.turnout.mid ?? 0, 0)}. Rezerva v účasti tu je,
+            a to ve všech bytových domech, ne jen na sídlištích. Kolik z ní připadá na Piráty a kolik na Prahu Sobě,
+            z výsledků za okrsky poznat nejde.
           </p>
         )}
         <p>
