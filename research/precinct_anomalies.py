@@ -18,8 +18,10 @@ its own there):
                  in the record look like.
   listky.csv     lists that got far more or fewer votes on one ballot than the
                  other ballot of the same voters suggests.
-  mandaty.csv    how many votes each list was from winning or losing a seat,
-                 next to the votes its clear candidate errors add up to.
+  mandaty.csv    how many votes each list was from winning or losing a seat
+                 and from the five-percent threshold, next to the votes its
+                 clear candidate errors add up to and the seats it would have
+                 with those errors put right.
 
 The first table is evidence, the next two are hints: a precinct may differ for
 a reason of the place, and only a recount of the ballots can tell.
@@ -157,9 +159,13 @@ class Ballot:
 def piles(matrix: np.ndarray) -> np.ndarray:
     """Ballots marked for the whole list in each precinct: the usual vote of
     its candidates, leaving out those with next to none."""
-    upper = np.median(np.sort(matrix, axis=1)[:, matrix.shape[1] // 2 :], axis=1)
-    usual = np.where(matrix >= 0.5 * upper[:, None], matrix, np.nan)
-    return np.nan_to_num(np.nanmedian(usual, axis=1))
+    # Candidates with any votes are the measure: a record may leave most of a
+    # list empty and fill in only those who also got votes of their own
+    voted = np.where(matrix > 0, matrix, np.nan)
+    with np.errstate(all="ignore"):
+        upper = np.where((matrix > 0).sum(axis=1) >= SMALLEST_PILE, np.nanmedian(voted, axis=1), 0.0)
+        usual = np.where(matrix >= 0.5 * upper[:, None], matrix, np.nan)
+        return np.nan_to_num(np.nanmedian(usual, axis=1))
 
 
 def neighbours(matrix: np.ndarray, pile: np.ndarray, reach: int = 4) -> np.ndarray:
@@ -210,6 +216,7 @@ def candidate_findings(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         expected = around * usual
         standing = (relative - usual) / np.maximum(spread, 0.03)
         enough = (pile >= SMALLEST_PILE)[:, None]
+        mostly_empty = (matrix < 0.5 * pile[:, None]).mean(axis=1) > 0.5
         missing = enough & (matrix <= 0.5 * expected) & (expected - matrix >= 5)
         extra = enough & (matrix - expected >= np.maximum(10, 0.4 * pile[:, None])) & (standing >= 6)
         for kind, mask in (("chybí", missing), ("navíc", extra)):
@@ -232,6 +239,8 @@ def candidate_findings(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
                         "obvykle": round(float(expected[row, column])),
                         "rozdil": round(float(matrix[row, column] - expected[row, column])),
                         "druh": kind,
+                        # Then the pile is read from the few candidates who have votes, which is less certain
+                        "vetsina_kandidatky_prazdna": bool(mostly_empty[row]),
                         "okoli": " ".join(f"[{int(matrix[row, i])}]" if i == column else str(int(matrix[row, i])) for i in window),
                     }
                 )
@@ -240,6 +249,8 @@ def candidate_findings(data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         return result
     # A candidate ahead of the neighbours in several precincts is popular there, not mistyped
     result["stejny_kandidat_v_okrscich"] = result.groupby(["listek", "cislo_kandidatky", "poradi", "druh", "kandidatka"]).okrsek.transform("size")
+    # Several times the neighbours in a single precinct is a slip of the pen rather than a local favourite
+    result["zjevny_preklep"] = (result.druh == "navíc") & (result.stejny_kandidat_v_okrscich == 1) & (result.hlasy >= 3 * result.obvykle)
     return result.sort_values(["cast", "listek", "okrsek", "cislo_kandidatky", "poradi"]).reset_index(drop=True)
 
 
@@ -388,23 +399,43 @@ def ballot_findings(district: Ballot, city: Ballot) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def seat_margins(ballot: Ballot) -> pd.DataFrame:
-    """Votes each list was from one more seat and from one fewer (d'Hondt
-    among the lists the official result counts as over five percent)."""
-    lists = ballot.lists
-    over = lists[lists.PROCHLSTR >= 5]
-    # A list cannot win more seats than it has candidates
-    order = sorted(
+def threshold_base(ballot: Ballot, votes: pd.Series) -> pd.Series:
+    """Votes that make five percent for each list. A list with fewer
+    candidates than there are seats is measured against a smaller total."""
+    length = ballot.lengths.reindex(votes.index).fillna(ballot.seats).clip(upper=ballot.seats)
+    return 0.05 * votes.sum() * length / ballot.seats
+
+
+def seat_order(ballot: Ballot, votes: pd.Series) -> list:
+    """D'Hondt quotients of the lists over five percent, from the largest. A
+    list cannot win more seats than it has candidates."""
+    over = votes[votes >= threshold_base(ballot, votes)]
+    return sorted(
         (
-            (votes / divisor, number, divisor)
-            for number, votes in over.HLASY_STR.items()
+            (count / divisor, number, divisor)
+            for number, count in over.items()
             for divisor in range(1, min(ballot.seats, int(ballot.lengths.get(number, ballot.seats))) + 1)
         ),
         reverse=True,
     )
+
+
+def seats_of(ballot: Ballot, votes: pd.Series) -> pd.Series:
+    order = seat_order(ballot, votes)[: ballot.seats]
+    won = pd.Series([number for _, number, _ in order], dtype=int).value_counts()
+    return won.reindex(votes.index).fillna(0).astype(int)
+
+
+def seat_margins(ballot: Ballot) -> pd.DataFrame:
+    """Votes each list was from one more seat, from one fewer and from the
+    five-percent threshold."""
+    lists = ballot.lists
+    votes = lists.HLASY_STR.astype(float)
+    order = seat_order(ballot, votes)
     last = order[min(ballot.seats, len(order)) - 1][0]
     first_out = order[ballot.seats][0] if len(order) > ballot.seats else 0.0
-    seats = pd.Series([number for _, number, _ in order[: ballot.seats]]).value_counts()
+    mine = seats_of(ballot, votes)
+    above = votes - threshold_base(ballot, votes)
     table = pd.DataFrame(
         {
             "listek": ballot.name,
@@ -413,15 +444,24 @@ def seat_margins(ballot: Ballot) -> pd.DataFrame:
             "hlasy": lists.HLASY_STR,
             "procent": lists.PROCHLSTR,
             "mandaty": lists.MAND_STR,
+            # Below zero: votes the list was short of five percent
+            "nad_5_procenty": np.floor(above).astype(int),
         }
     )
-    mine = seats.reindex(lists.index).fillna(0)
     full = mine.to_numpy() >= ballot.lengths.reindex(lists.index).fillna(ballot.seats).to_numpy()
-    table["k_dalsimu_mandatu"] = np.where((lists.PROCHLSTR >= 5) & ~full, np.ceil(last * (mine + 1) - lists.HLASY_STR), np.nan)
-    table["ke_ztrate_mandatu"] = np.where((mine > 0) & (first_out > 0), np.ceil(lists.HLASY_STR - first_out * mine), np.nan)
-    # Whoever is first in line gains the seat as soon as the holder of the last one loses it
+    table["k_dalsimu_mandatu"] = np.where((above >= 0) & ~full, np.ceil(last * (mine + 1) - votes), np.nan)
+    table["ke_ztrate_mandatu"] = np.where((mine > 0) & (first_out > 0), np.ceil(votes - first_out * mine), np.nan)
+    # A list just over the threshold loses all its seats at once by falling under it
+    table["ke_ztrate_mandatu"] = np.where(mine > 0, np.fmin(table.ke_ztrate_mandatu, np.floor(above) + 1), table.ke_ztrate_mandatu)
     table["souhlasi_s_csu"] = (mine == lists.MAND_STR).all()
     return table.reset_index(drop=True)
+
+
+def seats_after(ballot: Ballot, margins: pd.DataFrame, columns: List[str]) -> pd.Series:
+    """Seats of each list once the given corrections are added to its votes."""
+    own = margins.set_index("cislo_kandidatky")
+    votes = own.hlasy.astype(float) + own[columns].sum(axis=1)
+    return seats_of(ballot, votes).reindex(margins.cislo_kandidatky).to_numpy()
 
 
 def main() -> int:
@@ -442,24 +482,35 @@ def main() -> int:
         areas = [args.council]
 
     candidates = candidate_findings(data)
-    ballots, between, margins = [], [], []
+    ballots, between, margins, by_code = [], [], [], {}
     for area in areas:
         district, city = Ballot(data, area, city=False), Ballot(data, area, city=True)
         ballots += [district, city]
         between.append(ballot_findings(district, city))
         margins.append(seat_margins(district).assign(cast=area))
+        by_code[area] = district
     precincts = precinct_table(ballots, data)
     between = pd.concat(between, ignore_index=True) if any(len(part) for part in between) else pd.DataFrame()
-    margins = pd.concat(margins + [seat_margins(Ballot(data, areas[0], city=True)).assign(cast=PRAGUE)], ignore_index=True)
+    by_code[PRAGUE] = Ballot(data, areas[0], city=True)
+    margins = pd.concat(margins + [seat_margins(by_code[PRAGUE]).assign(cast=PRAGUE)], ignore_index=True)
 
     # Clear candidate errors of each list, next to how close the list was to a seat
-    clear = candidates[candidates.druh == "chybí"] if len(candidates) else candidates
-    if len(clear):
-        key = np.where(clear.listek == "ZHMP", PRAGUE, clear.cast)
-        missing = (-clear.rozdil).groupby([key, clear.cislo_kandidatky]).sum()
-        margins["chybi_u_kandidatu"] = [int(missing.get((area, number), 0)) for area, number in zip(margins.cast, margins.cislo_kandidatky)]
-    else:
-        margins["chybi_u_kandidatu"] = 0
+    margins["chybi_u_kandidatu"] = 0
+    margins["navic_preklepem"] = 0
+    if len(candidates):
+        key = pd.Series(np.where(candidates.listek == "ZHMP", PRAGUE, candidates.cast), index=candidates.index)
+        pairs = list(zip(margins.cast, margins.cislo_kandidatky))
+        for column, rows_of in (("chybi_u_kandidatu", candidates.druh == "chybí"), ("navic_preklepem", candidates.zjevny_preklep)):
+            total = candidates[rows_of].rozdil.abs().groupby([key[rows_of], candidates[rows_of].cislo_kandidatky]).sum()
+            margins[column] = [int(total.get(pair, 0)) for pair in pairs]
+    margins["odecist"] = -margins.navic_preklepem
+    # Seats once the missing votes are added, and once the slips of the pen are taken away as well
+    margins["mandaty_po_doplneni"] = 0
+    margins["mandaty_po_oprave_preklepu"] = 0
+    for code, own in margins.groupby("cast"):
+        margins.loc[own.index, "mandaty_po_doplneni"] = seats_after(by_code[code], own, ["chybi_u_kandidatu"])
+        margins.loc[own.index, "mandaty_po_oprave_preklepu"] = seats_after(by_code[code], own, ["chybi_u_kandidatu", "odecist"])
+    margins = margins.drop(columns="odecist")
     margins["nazev"] = margins.cast.map(names)
 
     # A run for one district keeps its tables apart from those of all districts
@@ -473,12 +524,17 @@ def main() -> int:
     summary = []
     for area in areas:
         own = margins[(margins.cast == area)]
-        closest = own[["k_dalsimu_mandatu", "ke_ztrate_mandatu"]].min().min()
+        # A list just under five percent is as close to seats as one just short of a quotient
+        under = -own.nad_5_procenty[own.nad_5_procenty < 0]
+        closest = min(own[["k_dalsimu_mandatu", "ke_ztrate_mandatu"]].min().min(), under.min() if len(under) else np.inf)
+        moved = own[own.mandaty_po_oprave_preklepu != own.mandaty]
+        change = ", ".join(f"{row.kandidatka} {row.mandaty_po_oprave_preklepu - row.mandaty:+d}" for row in moved.itertuples())
         found = in_areas[(in_areas.cast == area) & (in_areas.listek == "ZMČ")] if len(in_areas) else in_areas
         lists = between[(between.cast == area) & (between.listek == "ZMČ")] if len(between) else between
         flagged = precincts[(precincts.cast == area) & (precincts.listek == "ZMČ") & (precincts.proc != "")]
         largest = max(
             float(own.chybi_u_kandidatu.max()),
+            float(own.navic_preklepem.max()),
             float(lists.rozdil_hlasu.abs().max()) if len(lists) else 0.0,
             float((flagged.listku_navic.abs() * Ballot(data, area, city=False).seats).max()) if len(flagged) else 0.0,
         )
@@ -493,17 +549,21 @@ def main() -> int:
                 "okrsku_s_priznakem": len(flagged),
                 "nejvetsi_nalez_hlasu": round(largest),
                 "nalez_k_mandatu": round(largest / closest, 2) if closest and closest > 0 else np.nan,
+                # What adding the missing votes and undoing the slips of the pen would do to the seats
+                "zmena_mandatu_po_oprave": change,
             }
         )
-    summary = pd.DataFrame(summary).sort_values("nalez_k_mandatu", ascending=False)
+    summary = pd.DataFrame(summary)
+    summary = summary.sort_values(["zmena_mandatu_po_oprave", "nalez_k_mandatu"], key=lambda column: column != "" if column.dtype == object else column, ascending=False)
     summary.to_csv(folder / "prehled.csv", index=False)
 
-    print("\nMěstské části podle toho, jak velký je největší nález proti nejtěsnějšímu mandátu (lístek do zastupitelstva části):")
+    print("\nMěstské části: nejdřív ty, kde by oprava zjevných chyb změnila mandáty, pak podle největšího nálezu proti nejtěsnějšímu mandátu:")
     print(summary.head(25 if not args.council else 1).to_string(index=False))
     if args.council:
         own = margins[margins.cast == args.council]
         print("\nMandáty a kolik hlasů chybí u kandidátů každé kandidátky:")
-        print(own[["kandidatka", "hlasy", "mandaty", "k_dalsimu_mandatu", "ke_ztrate_mandatu", "chybi_u_kandidatu"]].to_string(index=False))
+        columns = ["kandidatka", "hlasy", "mandaty", "nad_5_procenty", "k_dalsimu_mandatu", "ke_ztrate_mandatu", "chybi_u_kandidatu", "navic_preklepem"]
+        print(own[columns + ["mandaty_po_doplneni", "mandaty_po_oprave_preklepu"]].to_string(index=False))
         for title, table, columns in (
             ("Kandidáti mimo vzor své kandidátky", in_areas, ["okrsek", "listek", "kandidatka", "poradi", "kandidat", "hlasy", "obvykle", "druh", "okoli"]),
             ("Kandidátky mimo to, co odpovídá druhému lístku", between, ["okrsek", "listek", "kandidatka", "listku", "cekano_listku", "rozdil_hlasu", "odchylka"]),

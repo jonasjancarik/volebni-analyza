@@ -459,32 +459,27 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
 
       <section className="prose">
         <h2>Shrnutí</h2>
-        <p>
-          Podpora Prahy Sobě klesá s dobou cesty do centra na polovinu. U Pirátů je pokles v komunálních volbách
-          mírný, ve sněmovních strmý.
-        </p>
-        <p>
-          Ten rozdíl není nový, stejný byl už v roce {years.previous}. Do Sněmovny Praha Sobě nekandiduje a sněmovní
-          křivka Pirátů kopíruje letošní součet obou kandidátek: v každém pásmu mají kolem{" "}
-          {fmtPct(((Math.min(...midOverCamp) + Math.max(...midOverCamp)) / 2) * 100, 0)} toho, co letos obě dohromady.
-          V komunálních volbách si z těchto hlasů Praha Sobě bere blízko centra větší díl než na okraji.
-        </p>
-        {olderMiddle && panelMiddle && (
-          <p>
-            Víc než doba cesty ale rozhoduje, v čem lidé bydlí. Při stejném dojezdu {bandName(middleRing)} minut má
-            Praha Sobě ve starších bytových domech {fmtPct(share(olderMiddle, "prahaSobe"), 0)} a v panelových{" "}
-            {fmtPct(share(panelMiddle, "prahaSobe"), 0)}. Piráti mají v obou kolem{" "}
-            {fmtPct((share(olderMiddle, "pirati") + share(panelMiddle, "pirati")) / 2, 0)}.
-          </p>
-        )}
-        {panel && older && houses && (
-          <p>
-            V okrscích panelových domů žije {fmtPct((panel.registered / city.registered) * 100, 0)} voličů. Praha Sobě
-            s Piráty tam mají dohromady {fmtPct(campShare(panel), 0)}, ve starší zástavbě{" "}
-            {fmtPct(campShare(older), 0)}; silné je tam ANO. Čtvrti rodinných domů se liší hlavně účastí
-            a převahou STAN a Spolu.
-          </p>
-        )}
+        <ul className="takeaways">
+          <li>
+            Podpora Prahy Sobě klesá s dobou cesty do centra skoro na polovinu, u Pirátů jen mírně.
+          </li>
+          {olderMiddle && panelMiddle && (
+            <li>
+              Víc než vzdálenost rozhoduje, v čem lidé bydlí. Při stejném dojezdu {bandName(middleRing)} minut má Praha
+              Sobě ve starších bytových domech {fmtPct(share(olderMiddle, "prahaSobe"), 0)} a na sídlištích{" "}
+              {fmtPct(share(panelMiddle, "prahaSobe"), 0)}, Piráti v obou kolem{" "}
+              {fmtPct((share(olderMiddle, "pirati") + share(panelMiddle, "pirati")) / 2, 0)}.
+            </li>
+          )}
+          <li>
+            Do Sněmovny mají Piráti křivku stejně strmou jako letos obě kandidátky dohromady. V komunálních volbách
+            se o tyto hlasy dělí a Praha Sobě z nich má blízko centra víc; stejné to bylo už v roce {years.previous}.
+          </li>
+          <li>
+            Hlasy navíc u centra by proto Piráti brali hlavně Praze Sobě. Nejméně si obě kandidátky konkurují dál
+            od centra a na sídlištích{panel && <>, kde žije {fmtPct((panel.registered / city.registered) * 100, 0)} voličů</>}.
+          </li>
+        </ul>
       </section>
 
       <Figure
