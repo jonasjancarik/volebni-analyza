@@ -162,6 +162,39 @@ not the same, and the result moves with the number of precinct types more than
 with the choice of precincts. Its ranges therefore also cover every number of
 precinct types the data allow (`flows_across_settings`).
 
+### Looking for counting errors
+
+`research/precinct_anomalies.py` goes through the precinct results of Prague
+for signs of counting errors, for every list on both ballots a voter in Prague
+gets. It reads the official results with the votes of every candidate in every
+precinct, which the precinct batches above do not hold; ČSÚ publishes them as
+two archives (about 23 MB) that the script downloads to
+`input/<election>/official/` on its first run.
+
+```bash
+uv run python research/precinct_anomalies.py                    # all city districts
+uv run python research/precinct_anomalies.py --council 500143   # Praha 5, with the findings printed
+```
+
+It writes five tables to `output/<election>/anomalies/` (a run for one district
+writes to a folder of its own there):
+
+- `kandidati.csv`: single candidates with a zero or a fraction of the votes of
+  their neighbours on the list in one precinct, or a multiple of them. These
+  are visible in the data as they are.
+- `okrsky.csv`: precincts with unusually many or few votes counted per
+  returned envelope.
+- `listky.csv`: lists with far more or fewer votes on one ballot than the
+  other ballot of the same precinct suggests.
+- `mandaty.csv`: how many votes each list was from one more seat and from one
+  fewer, next to the votes missing at its candidates.
+- `prehled.csv`: city districts ordered by how large the largest finding is
+  against the closest seat, so that the ones worth reading come first.
+
+Only the first table is evidence. The others are hints: a precinct may differ
+for a reason of the place (a candidate who lives there, a new housing estate),
+and only a recount of the ballots can tell.
+
 ### MCP server for AI assistants
 
 The API also offers the same data as tools for AI assistants over the Model
