@@ -181,15 +181,20 @@ writes to a folder of its own there):
 
 - `kandidati.csv`: single candidates with a zero or a fraction of the votes of
   their neighbours on the list in one precinct, or a multiple of them. These
-  are visible in the data as they are.
+  are visible in the data as they are. A list left mostly empty in a
+  precinct (only the candidates with votes of their own filled in) is marked,
+  because its pile is then read from those few candidates.
 - `okrsky.csv`: precincts with unusually many or few votes counted per
   returned envelope.
 - `listky.csv`: lists with far more or fewer votes on one ballot than the
   other ballot of the same precinct suggests.
-- `mandaty.csv`: how many votes each list was from one more seat and from one
-  fewer, next to the votes missing at its candidates.
-- `prehled.csv`: city districts ordered by how large the largest finding is
-  against the closest seat, so that the ones worth reading come first.
+- `mandaty.csv`: how many votes each list was from one more seat, from one
+  fewer and from the five-percent threshold, next to the votes missing at its
+  candidates and those added by a slip of the pen, and the seats it would have
+  with both put right.
+- `prehled.csv`: city districts, first those where putting the clear errors
+  right would change the seats, then by how large the largest finding is
+  against the closest seat.
 
 Only the first table is evidence. The others are hints: a precinct may differ
 for a reason of the place (a candidate who lives there, a new housing estate),
