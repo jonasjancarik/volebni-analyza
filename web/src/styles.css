@@ -2046,6 +2046,18 @@ details.more > .more-body {
   margin-top: 12px;
 }
 
+/* The article's main points, a few lines each */
+.prose .takeaways {
+  margin: 0;
+  padding-left: 1.2em;
+  font-size: 16.5px;
+  line-height: 1.62;
+}
+
+.prose .takeaways li + li {
+  margin-top: 8px;
+}
+
 .figure {
   margin: 0;
 }

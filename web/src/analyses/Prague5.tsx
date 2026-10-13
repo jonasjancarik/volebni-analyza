@@ -363,29 +363,36 @@ export function Prague5({ data }: { data: Prague5Analysis }) {
 
       <section className="prose">
         <h2>Shrnutí</h2>
-        <p>
-          Piráti mají v zastupitelstvu páté městské části {pirati.seats} {seatsWord(pirati.seats)} místo{" "}
-          {pirati.previousSeats}. Jejich podíl klesl z {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}{" "}
-          a nižší je {inCount(fell)} z {precincts.length} okrsků
-          {barrandov && <>, nejvíc na Barrandově</>}.
-        </p>
-        <p>
-          Praha 5 Sobě, Piráti a SEN, které po volbách {years.previous} složily radu s nejtěsnější většinou, mají
-          dohromady {coalition.seats.now} mandátů místo {coalition.seats.then}. ODS, TOP 09, STAN a ANO, které
-          radnici vedou od prosince 2024, jich mají {townHall.seats.now} a většinu by složily samy.
-        </p>
-        {nextSobe && nextPirati && (
-          <p>
-            Poslední mandát připadl kandidátce {label(data.lastSeat.key)}. Pirátům k němu chybělo asi{" "}
-            {fmtInt(nextPirati.missingVoters)} voličů a Praze 5 Sobě {fmtInt(nextSobe.missingVoters)}; poměr sil by
-            to nezměnilo.
-          </p>
-        )}
-        <p>
-          STAN dostal do místního zastupitelstva {fmtPct(ballot("stan").local)} hlasů, do pražského od stejných voličů{" "}
-          {fmtPct(ballot("stan").city ?? 0)}.
-        </p>
-        <p>Vyšší účast výsledek neposunula: Piráti ztráceli stejně tam, kde stoupla hodně, i tam, kde skoro vůbec.</p>
+        <ul className="takeaways">
+          <li>
+            Piráti mají v zastupitelstvu páté městské části {pirati.seats} {seatsWord(pirati.seats)} místo{" "}
+            {pirati.previousSeats}. Jejich podíl klesl z {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}{" "}
+            a nižší je {inCount(fell)} z {precincts.length} okrsků
+            {barrandov && <>, nejvíc na Barrandově</>}.
+          </li>
+          <li>
+            Do místního zastupitelstva přitom ztratili méně než do pražského, kam v týchž okrscích klesli z{" "}
+            {fmtNum(district.previousCity.pirati ?? 0)} na {fmtPct(district.city.pirati ?? 0)}.
+          </li>
+          <li>
+            ODS, TOP 09, STAN a ANO, které radnici vedou od prosince 2024, mají {townHall.seats.now} mandátů a většinu
+            by složily samy. Praha 5 Sobě, Piráti a SEN jich mají dohromady {coalition.seats.now} místo{" "}
+            {coalition.seats.then}
+            {nextPirati && (
+              <>
+                ; Pirátům chybělo k dalšímu mandátu asi {fmtInt(nextPirati.missingVoters)} voličů, poměr sil by to ale
+                nezměnilo
+              </>
+            )}
+            .
+          </li>
+          <li>
+            STAN dostal do místního zastupitelstva {fmtPct(ballot("stan").local)} hlasů, do pražského od stejných
+            voličů {fmtPct(ballot("stan").city ?? 0)}. Část jeho pražských voličů tedy volí do zastupitelstva Prahy 5
+            někoho jiného.
+          </li>
+          <li>Vyšší účast výsledek neposunula: Piráti ztráceli stejně tam, kde stoupla hodně, i tam, kde skoro vůbec.</li>
+        </ul>
       </section>
 
       <section className="prose">

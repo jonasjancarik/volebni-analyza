@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { fmtInt, fmtNum, fmtPct, fmtRange, plural } from "../format";
+import { fmtInt, fmtNum, fmtPct, fmtRange } from "../format";
 import {
   CampSeats,
   cell,
@@ -42,7 +42,6 @@ export function Prague2026({ data }: { data: PragueAnalysis }) {
     seats: stan.seats + spolu.seats,
     previousSeats: (stan.previousSeats ?? 0) + (spolu.previousSeats ?? 0),
   };
-  const missing = rivals.seats - (majority - 1);
   const toPrahaSobe = scenario("stan-to-praha-sobe");
   const toPirati = scenario("stan-to-pirati");
   const newPirati = scenario("new-pirati");
@@ -148,26 +147,27 @@ export function Prague2026({ data }: { data: PragueAnalysis }) {
 
       <section className="prose">
         <h2>Shrnutí</h2>
-        <p>
-          Piráti a Praha Sobě mají dohromady {fmtPct(camp.share)} hlasů a {camp.seats} z {seats} mandátů, o{" "}
-          {camp.previousSeats - camp.seats} méně než před čtyřmi lety. STAN a Spolu jich mají {rivals.seats}, o{" "}
-          {rivals.seats - majority} víc, než potřebují k většině.
-        </p>
-        <p>
-          Do stavu, kdy by potřebovaly třetího partnera, {plural(missing, "chyběl", "chyběly", "chybělo")} {missing}{" "}
-          {plural(missing, "mandát", "mandáty", "mandátů")}: zhruba {hundreds(toPrahaSobe.voters ?? 0)} až{" "}
-          {hundreds(toPirati.voters ?? 0)} lidí, kteří by místo STAN volili Prahu Sobě nebo Piráty. Společná
-          kandidátka ani hlasy kandidátky SEN by nestačily.
-        </p>
-        <p>
-          Z voličů Pirátů z roku {years.previous} zůstalo straně {fmtPct(kept.share, 0)}.{" "}
-          {fmtPct(leftForPrahaSobe.share, 0)} přešlo k Praze Sobě, což společný součet nezměnilo, a{" "}
-          {fmtPct(leftForStan.share, 0)}, asi {thousands(leftForStan.people)} lidí, ke STAN.
-        </p>
-        <p>
-          Loni do Sněmovny přitom Piráty v Praze volilo {thousands(piratiVotes)} lidí.{" "}
-          {fmtRange(stayedHome.low, stayedHome.high)} z nich podle odhadu letos nepřišlo.
-        </p>
+        <ul className="takeaways">
+          <li>
+            STAN a Spolu mají {rivals.seats} mandátů z {seats}, o {rivals.seats - majority} víc, než potřebují
+            k většině. Piráti a Praha Sobě jich mají {camp.seats}, o {camp.previousSeats - camp.seats} méně než před
+            čtyřmi lety.
+          </li>
+          <li>
+            Rozhodl hlavně přesun voličů od Pirátů ke STAN: odešlo k němu {fmtPct(leftForStan.share, 0)} voličů Pirátů
+            z roku {years.previous}, asi {thousands(leftForStan.people)} lidí. Aby většina nevznikla, stačilo udržet
+            necelou polovinu z nich.
+          </li>
+          <li>
+            Piráti a Praha Sobě se dělí o stejný okruh voličů a ten se zmenšil. K Praze Sobě přešlo{" "}
+            {fmtPct(leftForPrahaSobe.share, 0)} voličů Pirátů, což společný součet nezměnilo; Pirátům jich zůstalo{" "}
+            {fmtPct(kept.share, 0)}. Společná kandidátka ani hlasy kandidátky SEN by na ztrátu většiny nestačily.
+          </li>
+          <li>
+            Největší rezerva je v účasti. Loni do Sněmovny volilo Piráty v Praze {thousands(piratiVotes)} lidí
+            a {fmtRange(stayedHome.low, stayedHome.high)} z nich podle odhadu letos nepřišlo.
+          </li>
+        </ul>
       </section>
 
       <section className="prose">

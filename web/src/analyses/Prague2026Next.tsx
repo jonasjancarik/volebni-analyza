@@ -102,19 +102,26 @@ export function Prague2026Next({ data }: { data: NextTimeAnalysis }) {
 
       <section className="prose">
         <h2>Shrnutí</h2>
-        <p>
-          Koalice se SEN by podle letošních hlasů přinesla jeden mandát snadno a druhý obtížně. S Piráty by na první
-          stačilo {fmtPct(pirati1, 0)} voličů SEN, asi {hundreds(senVoters(pirati1))} lidí
-          {pirati2 != null && <>, na druhý {fmtPct(pirati2, 0)}</>}.
-        </p>
-        <p>
-          Většinu STAN a Spolu by ale sama nezrušila. První mandát by ubral Spolu, druhý ANO, takže i se všemi hlasy
-          SEN by STAN a Spolu měly {withAllOfSen.stanSpolu} mandátů z {data.seats}.
-        </p>
-        <p>
-          Smysl dává jako polovina cesty. S polovinou voličů SEN by ke zbytku stačilo {people(half.back)} voličů zpět
-          od STAN místo {people(none.back)}, nebo {people(half.new)} nových voličů Pirátů místo {people(none.new)}.
-        </p>
+        <ul className="takeaways">
+          <li>
+            Koalice se SEN by podle letošních hlasů přinesla jeden mandát snadno a druhý obtížně. S Piráty by na
+            první stačilo {fmtPct(pirati1, 0)} voličů SEN, asi {hundreds(senVoters(pirati1))} lidí
+            {pirati2 != null && <>, na druhý {fmtPct(pirati2, 0)}</>}.
+          </li>
+          <li>
+            Většinu STAN a Spolu by sama nezrušila. I se všemi hlasy SEN by měly {withAllOfSen.stanSpolu} mandátů
+            z {data.seats}; k většině stačí {majority}.
+          </li>
+          <li>
+            Rozhodující mandát musí přijít od voličů STAN nebo z vyšší účasti a SEN potřebný počet zhruba půlí.
+            S polovinou voličů SEN by stačilo {people(half.back)} voličů zpět od STAN místo {people(none.back)}, nebo{" "}
+            {people(half.new)} nových voličů Pirátů místo {people(none.new)}.
+          </li>
+          <li>
+            Přepočty neříkají, jestli by voliči SEN společnou kandidátku volili, ani co by spojení udělalo
+            s dosavadními voliči Pirátů a Prahy Sobě.
+          </li>
+        </ul>
       </section>
 
       <section className="prose">

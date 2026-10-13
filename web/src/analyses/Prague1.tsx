@@ -190,27 +190,30 @@ export function Prague1({ data }: { data: Prague1Analysis }) {
 
       <section className="prose">
         <h2>Shrnutí</h2>
-        <p>
-          Piráti mají v zastupitelstvu první městské části {pirati.seats} {seatsWord(pirati.seats)} místo{" "}
-          {pirati.previousSeats}. Jejich podíl klesl z {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}{" "}
-          a nižší je {inCount(counts.fell.pirati)} z {precincts.length} okrsků. Do pražského zastupitelstva klesli
-          v týchž okrscích stejně, z {fmtNum(district.previousCity.pirati ?? 0)} na {fmtPct(district.city.pirati ?? 0)}.
-        </p>
-        <p>
-          Kandidátky, které po volbách {years.previous} složily radu, mají bez Pirátů {townHall.seats.now} mandátů
-          z {seats}, o {majority - townHall.seats.now === 1 ? "jeden" : majority - townHall.seats.now} méně než
-          většina. Praha 1 Sobě a STAN s KDU-ČSL jich mají {others.seats.now}.
-          {eitherWithPirati && <> S mandáty Pirátů by většinu měla kterákoli z obou stran.</>}
-        </p>
-        <p>
-          O posledním mandátu rozhodlo {fmtInt(closest.voters)} voličů: tolik chybělo kandidátce {label(closest.key)}{" "}
-          k pěti procentům. Kandidátky bez mandátu dostaly dohromady {fmtPct(data.withoutSeats)} hlasů.
-        </p>
-        <p>
-          STAN s KDU-ČSL dostal do místního zastupitelstva {fmtPct(ballot("stanKdu").local)}, STAN do pražského od
-          stejných voličů {fmtPct(ballot("stanKdu").city ?? 0)}. Praha 1 Sobě má místně{" "}
-          {fmtPct(ballot("praha1Sobe").local)}, Praha Sobě do pražského {fmtPct(ballot("praha1Sobe").city ?? 0)}.
-        </p>
+        <ul className="takeaways">
+          <li>
+            Piráti mají v zastupitelstvu první městské části {pirati.seats} {seatsWord(pirati.seats)} místo{" "}
+            {pirati.previousSeats}; jejich podíl klesl z {fmtNum(pirati.previousShare ?? 0)} na {fmtPct(pirati.share)}.
+            Do pražského zastupitelstva klesli v týchž okrscích stejně, místní výsledek tedy odpovídá tomu, jak strana
+            v centru dopadla celkově.
+          </li>
+          <li>
+            Kandidátky, které po volbách {years.previous} složily radu, mají bez Pirátů {townHall.seats.now} mandátů
+            z {seats}, většina je {majority}. Praha 1 Sobě a STAN s KDU-ČSL jich mají {others.seats.now}.
+            {eitherWithPirati && <> S mandáty Pirátů by většinu měla kterákoli z obou stran.</>}
+          </li>
+          <li>
+            O složení zastupitelstva rozhodovaly desítky voličů: kandidátce {label(closest.key)} chybělo k pěti
+            procentům {fmtInt(closest.voters)} voličů. Kandidátky bez mandátu dostaly dohromady{" "}
+            {fmtPct(data.withoutSeats, 0)} hlasů.
+          </li>
+          <li>
+            Prahu Sobě i STAN volí v centru do pražského zastupitelstva výrazně víc lidí než jejich místní kandidátky:
+            STAN s KDU-ČSL má místně {fmtPct(ballot("stanKdu").local)} a STAN do pražského{" "}
+            {fmtPct(ballot("stanKdu").city ?? 0)}, Praha 1 Sobě {fmtPct(ballot("praha1Sobe").local)} a Praha Sobě{" "}
+            {fmtPct(ballot("praha1Sobe").city ?? 0)}.
+          </li>
+        </ul>
       </section>
 
       <section className="prose">

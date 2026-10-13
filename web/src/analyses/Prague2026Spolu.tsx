@@ -147,24 +147,25 @@ export function Prague2026Spolu({ data }: { data: SpoluStanAnalysis }) {
 
       <section className="prose">
         <h2>Shrnutí</h2>
-        <p>
-          Nejsnáze se získávají hlasy, které strana nemá jisté, a těch má v Praze víc STAN než Spolu. Jádro Spolu
-          drží: z jeho voličů z roku {years.previous} mu zůstalo {fmtPct(spoluKept.share, 0)} a výměna s Prahou
-          Sobě a Piráty je vyrovnaná, asi {thousands(spoluToCamp)} lidí každým směrem.
-        </p>
-        <p>
-          Volní jsou lidé, kteří volí Spolu jen do Sněmovny. Loni dostalo Spolu v Praze{" "}
-          {thousands(spoluVotes)} hlasů, letos mělo {thousands(spolu.voters)} voličů. Největší část těch ostatních letos volila STAN.
-        </p>
-        <p>
-          STAN má proto nejméně ukotvené voliče: {fmtPct(100 - stanOwn.origin, 0)} z nich ho před čtyřmi lety
-          nevolilo a asi {thousands(stanFromPirati.people)} jsou bývalí voliči Pirátů. Pro většinu STAN a Spolu je
-          jedno, které z obou kandidátek hlasy ubudou.
-        </p>
-        <p>
-          Voliči Spolu jsou nejvolnější v okrscích, kde je silná Praha Sobě a Piráti a nízká účast. Nejpevnější jsou
-          v městských částech {names(byKept.slice(-2).reverse())}.
-        </p>
+        <ul className="takeaways">
+          <li>
+            Komunální voliči Spolu drží. Z těch z roku {years.previous} mu zůstalo {fmtPct(spoluKept.share, 0)}{" "}
+            a výměna s Prahou Sobě a Piráty je vyrovnaná, asi {thousands(spoluToCamp)} lidí každým směrem.
+          </li>
+          <li>
+            Volní jsou lidé, kteří volí Spolu jen do Sněmovny. Loni dostalo v Praze {thousands(spoluVotes)} hlasů,
+            letos mělo {thousands(spolu.voters)} voličů, a největší část těch ostatních letos volila STAN. Nejvíc
+            jich je v okrscích, kde je silná Praha Sobě a Piráti a nízká účast.
+          </li>
+          <li>
+            STAN má proto nejméně ukotvené voliče: {fmtPct(100 - stanOwn.origin, 0)} z nich ho před čtyřmi lety
+            nevolilo a asi {thousands(stanFromPirati.people)} jsou bývalí voliči Pirátů.
+          </li>
+          <li>
+            O volné voliče se tedy soupeří hlavně se STAN. Hlas, který ztratí STAN, zmenšuje většinu STAN a Spolu
+            stejně jako hlas, který ztratí Spolu.
+          </li>
+        </ul>
       </section>
 
       <section className="prose">
