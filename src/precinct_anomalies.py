@@ -53,7 +53,7 @@ import sys
 import warnings
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -76,6 +76,15 @@ SMALLEST_PILE = 5
 EVEN_VOTES = 0.9
 # A candidate's usual place against the neighbours is learned across precincts
 PRECINCTS_FOR_CANDIDATES = 10
+# Candidates with votes that a list left mostly empty needs to be read at all
+FEWEST_FILLED = 3
+# Whole-list ballots a list is expected to have for none at all to be unlikely
+LIKELY_PILE = 8
+# More voters than this naming the same candidates are not a household or a group of friends
+GROUP_OF_VOTERS = 7
+# A count is too high for personal support when this share of the precinct's
+# voters would have had to pick the candidate by name
+TOO_MANY_BY_NAME = 0.15
 # A list under this share of the votes joins the others when ballots are compared
 SMALL_LIST = 0.02
 # Precincts a council needs for its two ballots to be compared, and for its
@@ -212,15 +221,16 @@ class Ballot:
 # ---------------------------------------------------------------------------
 
 
-def piles(matrix: np.ndarray) -> np.ndarray:
+def piles(matrix: np.ndarray, fewest: int = SMALLEST_PILE) -> np.ndarray:
     """Ballots marked for the whole list in each precinct: the usual vote of
-    its candidates, leaving out those with next to none."""
+    its candidates, leaving out those with next to none. A row with fewer than
+    `fewest` candidates with any votes has no pile."""
     # Candidates with any votes are the measure: a record may leave most of a
     # list empty and fill in only those who also got votes of their own
     voted = np.where(matrix > 0, matrix, np.nan)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)  # a row without votes has no median and no pile
-        upper = np.where((matrix > 0).sum(axis=1) >= SMALLEST_PILE, np.nanmedian(voted, axis=1), 0.0)
+        upper = np.where((matrix > 0).sum(axis=1) >= fewest, np.nanmedian(voted, axis=1), 0.0)
         usual = np.where(matrix >= 0.5 * upper[:, None], matrix, np.nan)
         return np.nan_to_num(np.nanmedian(usual, axis=1))
 
@@ -241,17 +251,33 @@ def neighbours(matrix: np.ndarray, pile: np.ndarray, reach: int = 4) -> np.ndarr
     return np.where(np.isnan(around), pile[:, None], around)
 
 
-def breaks_of_pattern(matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Candidates of one list (columns) far from the pattern of their list in
-    a precinct (rows): (missing, extra, expected votes, list mostly empty).
+class Breaks(NamedTuple):
+    """Candidates of one list (columns) far from its pattern in a precinct (rows)."""
+
+    missing: np.ndarray
+    # Missing as well, if the same commission left other lists incomplete
+    possible: np.ndarray
+    extra: np.ndarray
+    expected: np.ndarray
+    mostly_empty: np.ndarray
+    pile: np.ndarray
+
+
+def breaks_of_pattern(matrix: np.ndarray, usual_pile: Optional[np.ndarray] = None) -> Breaks:
+    """Where the votes of one list's candidates break its pattern.
 
     The list is taken across all its precincts, so that a candidate who is
     usually ahead of the neighbours, or behind them at the end of the list, is
-    not flagged."""
+    not flagged. `usual_pile` is how many whole-list ballots the list would be
+    expected to have in each precinct, from its result around it. `extra`
+    holds every count far above the neighbours, also where the list has next
+    to no whole-list ballots and such a count is usually a local favourite."""
     count = matrix.shape[1]
-    pile = piles(matrix)
+    pile = piles(matrix, FEWEST_FILLED)
     around = neighbours(matrix, pile)
-    whole = (pile >= SMALLEST_PILE) & ((matrix >= 0.5 * pile[:, None]).mean(axis=1) > 0.95)
+    filled = (matrix >= 0.5 * pile[:, None]) & (pile > 0)[:, None]
+    share_filled = filled.mean(axis=1)
+    whole = (pile >= SMALLEST_PILE) & (share_filled > 0.95)
     relative = matrix / np.maximum(around, 1)
     if whole.sum() >= 10:
         # Where the candidate usually stands against the neighbours, and how much that varies
@@ -261,11 +287,76 @@ def breaks_of_pattern(matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.nd
         usual, spread = np.ones(count), np.full(count, 0.1)
     expected = around * usual
     standing = (relative - usual) / np.maximum(spread, 0.03)
-    enough = (pile >= SMALLEST_PILE)[:, None]
-    missing = enough & (matrix <= 0.5 * expected) & (expected - matrix >= 5)
-    extra = enough & (matrix - expected >= np.maximum(10, 0.4 * pile[:, None])) & (standing >= 6)
-    mostly_empty = (matrix < 0.5 * pile[:, None]).mean(axis=1) > 0.5
-    return missing, extra, expected, mostly_empty
+
+    # A list with votes at under half of its candidates. Either the record
+    # left the rest empty, or the list had no whole-list ballots here and a few
+    # voters picked the same candidates by name (their neighbours, the people
+    # of their district on a city's list). The candidates with votes have
+    # nearly the same count in both cases, so the count decides: it is an error
+    # when it is about what the list would be expected to have in whole-list
+    # ballots in a precinct of this size, without which it would have none.
+    mostly_empty = (pile > 0) & (share_filled < 0.5)
+    number = filled.sum(axis=1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # rows without a pile have nothing filled
+        low, high = np.nan_to_num(np.nanpercentile(np.where(filled, matrix, np.nan), [25, 75], axis=1))
+    alike = mostly_empty & (high <= 2 * low)
+    spread_out = (filled * np.arange(1, count + 1)).max(axis=1) > number + 2
+    # Seven voters or more naming the same five candidates or more all over a list are not a group of friends
+    strong = alike & spread_out & (number >= 5) & (pile >= GROUP_OF_VOTERS)
+    if usual_pile is not None:
+        # A few candidates at the top may have been voted for by name; then the count has to be close
+        leaders = ~spread_out & (number <= 5)
+        strong |= alike & (number >= FEWEST_FILLED) & (pile >= SMALLEST_PILE) & (usual_pile >= LIKELY_PILE) & (pile <= 2 * usual_pile) & (~leaders | (pile >= 0.5 * usual_pile))
+    # The same shape with a count that could be a group of voters: believed
+    # only where the commission left other lists incomplete beyond doubt
+    shape = alike & ~strong & (number >= 5) & spread_out & (pile >= FEWEST_FILLED)
+
+    regular = ~mostly_empty & (pile >= SMALLEST_PILE)
+    low_count = matrix <= 0.5 * expected
+    missing = (regular[:, None] & low_count & (expected - matrix >= 5)) | (strong[:, None] & low_count & (expected - matrix >= FEWEST_FILLED))
+    possible = shape[:, None] & low_count & (expected - matrix >= FEWEST_FILLED)
+    extra = (matrix - expected >= np.maximum(10, 0.4 * pile[:, None])) & (standing >= 6)
+    return Breaks(missing, possible, extra, expected, mostly_empty, pile)
+
+
+def slip_of_the_pen(votes: int, usual: float, pile: float, place: int, share: float) -> Tuple[str, bool]:
+    """Why a count several times the neighbours' reads as a slip of the pen,
+    and whether that is sure enough to count it as one.
+
+    Counts like 22 among twos or 165 among fifteens are far more common in
+    the records than chance would have them: a digit typed twice or one too
+    many. A candidate people in the precinct know gets such a count only by
+    accident, which for 54 among fours is likely enough to leave it open.
+    `share` is the part of the precinct's valid ballots that would have had to
+    name the candidate."""
+    targets = {round(usual), round(pile)} - {0}
+    digits = str(votes)
+    excess = votes - usual
+
+    def near(value: int, target: int) -> bool:
+        return abs(value - target) <= 0.15 * target
+
+    dropped = {int(digits[:at] + digits[at + 1 :]) for at in range(len(digits))} if len(digits) > 1 else set()
+    swapped = {int(digits[:at] + digits[at + 1] + digits[at] + digits[at + 2 :]) for at in range(len(digits) - 1) if digits[at] != digits[at + 1]}
+    if any(target >= 10 and near(value, target) for target in targets for value in dropped):
+        return "číslice navíc", True
+    if any(target < 10 and votes == 11 * target for target in targets) and excess >= 15:
+        return "zdvojená číslice", True
+    if any(target >= 10 and near(value, target) for target in targets for value in swapped):
+        return "přehozené číslice", True
+    if votes == place and place >= 10:
+        return "číslo kandidáta místo hlasů", True
+    if share >= TOO_MANY_BY_NAME and excess >= 40:
+        return "příliš mnoho hlasů na jeden okrsek", True
+    if any(value == target for target in targets for value in dropped):
+        return "možná číslice navíc", False
+    return "", False
+
+
+# Other candidates of a precinct with clearly missing votes that make a list
+# left mostly empty there believable
+OTHERS_MISSING = 3
 
 
 def candidate_findings(results: Results, codes: List[str]) -> pd.DataFrame:
@@ -282,16 +373,33 @@ def candidate_findings(results: Results, codes: List[str]) -> pd.DataFrame:
         }
         length = candidates.groupby("POR_STR_HL").PORCISLO.max()
         list_names = results.lists[code].set_index("POR_STR_HL").ZKRATKAO30
+        ballots = results.forms[code].set_index("precinct").PLAT_LISTKY
+        read = []
         for number, part in votes.groupby("POR_STR_HL"):
             count = int(length.get(number, 0))
             if count < FEWEST_CANDIDATES:
                 continue
             matrix = part[VOTES].to_numpy(dtype=float)[:, :count]
-            missing, extra, expected, mostly_empty = breaks_of_pattern(matrix)
-            for kind, mask in (("chybí", missing), ("navíc", extra)):
+            valid = ballots.reindex(part.precinct).fillna(0).to_numpy(dtype=float)
+            # Whole-list ballots the list would be expected to have, from its
+            # result in the same district of a city, where lists differ a lot
+            usual_pile = np.zeros(len(part))
+            districts = part.OBEC.to_numpy()
+            for district in np.unique(districts):
+                inside = districts == district
+                usual_pile[inside] = matrix[inside].sum() / count / max(valid[inside].sum(), 1) * valid[inside]
+            read.append((number, part, matrix, valid, breaks_of_pattern(matrix, usual_pile)))
+        # Precincts where the commission left lists incomplete beyond doubt
+        clearly = pd.Series(0, index=ballots.index, dtype=int)
+        for _, part, _, _, breaks in read:
+            clearly = clearly.add(pd.Series(breaks.missing.sum(axis=1), index=part.precinct.to_numpy()), fill_value=0)
+        for number, part, matrix, valid, breaks in read:
+            count = matrix.shape[1]
+            believed = (clearly.reindex(part.precinct).fillna(0).to_numpy() >= OTHERS_MISSING)[:, None]
+            for kind, mask in (("chybí", breaks.missing | (breaks.possible & believed)), ("navíc", breaks.extra)):
                 for row, column in zip(*np.nonzero(mask)):
-                    name, valid = names.get((number, column + 1), ("?", "A"))
-                    if valid != "A":  # a withdrawn candidate has no votes anywhere
+                    name, standing = names.get((number, column + 1), ("?", "A"))
+                    if standing != "A":  # a withdrawn candidate has no votes anywhere
                         continue
                     record = part.iloc[row]
                     window = range(max(0, column - 3), min(count, column + 4))
@@ -305,20 +413,31 @@ def candidate_findings(results: Results, codes: List[str]) -> pd.DataFrame:
                             "poradi": column + 1,
                             "kandidat": name,
                             "hlasy": int(matrix[row, column]),
-                            "obvykle": round(float(expected[row, column])),
-                            "rozdil": round(float(matrix[row, column] - expected[row, column])),
+                            "obvykle": round(float(breaks.expected[row, column])),
+                            "rozdil": round(float(matrix[row, column] - breaks.expected[row, column])),
                             "druh": kind,
                             # Then the pile is read from the few candidates who have votes, which is less certain
-                            "vetsina_kandidatky_prazdna": bool(mostly_empty[row]),
+                            "vetsina_kandidatky_prazdna": bool(breaks.mostly_empty[row]),
+                            "hromadka": float(breaks.pile[row]),
+                            "platne_listky": int(valid[row]),
                             "okoli": " ".join(f"[{int(matrix[row, i])}]" if i == column else str(int(matrix[row, i])) for i in window),
                         }
                     )
     columns = ["zastupitelstvo", "obec", "okrsek", "cislo_kandidatky", "kandidatka", "poradi", "kandidat", "hlasy", "obvykle", "rozdil", "druh"]
-    result = pd.DataFrame(found, columns=columns + ["vetsina_kandidatky_prazdna", "okoli"])
+    result = pd.DataFrame(found, columns=columns + ["vetsina_kandidatky_prazdna", "hromadka", "platne_listky", "okoli"])
     # A candidate ahead of the neighbours in several precincts is popular there, not mistyped
     result["stejny_kandidat_v_okrscich"] = result.groupby(["zastupitelstvo", "cislo_kandidatky", "poradi", "druh"]).okrsek.transform("size")
-    # Several times the neighbours in a single precinct is a slip of the pen rather than a local favourite
-    result["zjevny_preklep"] = (result.druh == "navíc") & (result.stejny_kandidat_v_okrscich == 1) & (result.hlasy >= 3 * result.obvykle)
+    # Several times the neighbours in a single precinct, with a reason to read it as a slip of the pen
+    several = (result.druh == "navíc") & (result.stejny_kandidat_v_okrscich == 1) & (result.hlasy >= 3 * result.obvykle.clip(lower=1))
+    read = [
+        slip_of_the_pen(row.hlasy, row.obvykle, row.hromadka, row.poradi, row.rozdil / row.platne_listky if row.platne_listky else 0.0) if is_several else ("", False)
+        for row, is_several in zip(result.itertuples(), several)
+    ]
+    result["duvod_preklepu"] = [reason for reason, _ in read]
+    result["zjevny_preklep"] = [sure for _, sure in read]
+    # Where a list has next to no whole-list ballots, a count above the others
+    # is a candidate people know; it stays only when it reads as a slip
+    result = result[(result.druh == "chybí") | (result.hromadka >= SMALLEST_PILE) | (result.duvod_preklepu != "")]
     return result.sort_values(["zastupitelstvo", "obec", "okrsek", "cislo_kandidatky", "poradi"]).reset_index(drop=True)
 
 

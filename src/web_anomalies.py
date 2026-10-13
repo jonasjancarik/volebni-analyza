@@ -182,6 +182,7 @@ def records_2026() -> dict:
                 "votes": int(row.hlasy),
                 "usual": int(row.obvykle),
                 "around": row.okoli,
+                "reason": row.duvod_preklepu,
             }
             for row in slips.itertuples()
         ],

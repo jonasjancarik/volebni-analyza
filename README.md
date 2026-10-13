@@ -282,9 +282,18 @@ council or one city writes to a folder of its own there):
   would seat somebody else, and whether the clear errors put right would.
 - `kandidati.csv`: single candidates with a zero or a fraction of the votes of
   their neighbours on the list in one precinct, or a multiple of them. These
-  are visible in the data as they are. A list left mostly empty in a precinct
-  (only the candidates with votes of their own filled in) is marked, because
-  its pile is then read from those few candidates.
+  are visible in the data as they are. Two kinds can be mistaken for real
+  voting and are counted on stricter terms. A list with votes at only a few of
+  its candidates may be a record left incomplete, or a few voters naming the
+  same people; it counts when the votes match the whole-list ballots the list
+  would be expected to have in a precinct of that size, when seven voters or
+  more would have had to name the same candidates, or when the commission left
+  other lists incomplete beyond doubt. A count several times the neighbours'
+  may be a candidate people there know; it counts as a slip of the pen
+  (`zjevny_preklep`, with the reason in `duvod_preklepu`) when it reads as a
+  digit typed twice or one too many, equals the candidate's number on the
+  ballot, or would need more than 15 % of the precinct's voters to name the
+  candidate.
 - `okrsky.csv`: precincts with unusually many or few votes counted per
   returned envelope.
 - `listky.csv`: in cities with districts, lists with far more or fewer votes

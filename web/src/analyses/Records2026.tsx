@@ -67,7 +67,8 @@ export interface RecordsAnalysis {
   };
   changed: CouncilCase[];
   tight: { council: string; list: string; seats: number; before: string; after: string; votes: number; corrected: number }[];
-  slips: ({ council: string; precinct: string; list: string } & RecordExample)[];
+  /** `reason` says in the reader's words why the count reads as a slip of the pen */
+  slips: ({ council: string; precinct: string; list: string; reason: string } & RecordExample)[];
   pirates: {
     council: string;
     list: string;
@@ -425,6 +426,7 @@ export function Records2026({ data }: { data: RecordsAnalysis }) {
                   </td>
                   <td>
                     <RecordRow around={row.around} />
+                    <div className="small muted">{row.reason}</div>
                   </td>
                 </tr>
               ))}
@@ -498,9 +500,18 @@ export function Records2026({ data }: { data: RecordsAnalysis }) {
         <p>
           Kontrola vidí jen chyby, které porušují vzor uvnitř jedné kandidátky. Nevidí celou hromádku lístků
           započtenou jiné straně ani lístky neprávem vyřazené jako neplatné. Odhad chybějících hlasů vychází ze
-          sousedních kandidátů a u kandidátek, kde je vyplněno jen pár řádků, je hrubý. Údaj několikanásobně vyšší
-          než u sousedů se počítá jako překlep jen tehdy, když se u kandidáta objevuje v jediném okrsku; i tak může
-          výjimečně jít o skutečnou místní podporu.
+          sousedních kandidátů.
+        </p>
+        <p>
+          Dva druhy nálezů se dají splést se skutečným hlasováním, a proto se počítají jen za přísnějších
+          podmínek. Kandidátka, kde má hlasy jen několik kandidátů, může být neúplný zápis, ale také pár voličů,
+          kteří zakroužkovali stejná jména, třeba své sousedy. Jako chyba se bere, jen když počet hlasů odpovídá
+          tomu, kolik lístků by strana v tak velkém okrsku měla dostat, když by stejná jména muselo zakroužkovat
+          sedm a více voličů, nebo když táž komise prokazatelně nechala neúplné i jiné kandidátky. Údaj
+          několikanásobně vyšší než u sousedů může patřit kandidátovi, kterého v okrsku lidé znají. Jako překlep
+          se počítá, jen když se u kandidáta objevuje v jediném okrsku a zároveň vypadá jako číslice napsaná
+          dvakrát nebo navíc (22 mezi dvojkami, 165 mezi patnáctkami), shoduje se s pořadovým číslem kandidáta,
+          nebo by kandidáta muselo jmenovitě zakroužkovat víc než 15 % voličů okrsku.
         </p>
         <p className="small muted">
           Data:{" "}

@@ -17,6 +17,7 @@ from precinct_anomalies import (  # noqa: E402
     closest_change,
     piles,
     seats_of,
+    slip_of_the_pen,
     threshold,
 )
 
@@ -130,37 +131,51 @@ def test_candidate_with_a_fraction_of_the_neighbours_is_missing_votes():
     matrix = usual_precincts()
     matrix[3, 8] = 2
 
-    missing, extra, expected, _ = breaks_of_pattern(matrix)
+    breaks = breaks_of_pattern(matrix)
 
-    assert list(zip(*np.nonzero(missing))) == [(3, 8)]
-    assert not extra.any()
-    assert expected[3, 8] == 23
+    assert list(zip(*np.nonzero(breaks.missing))) == [(3, 8)]
+    assert not breaks.extra.any()
+    assert breaks.expected[3, 8] == 23
 
 
 def test_usual_lead_and_usual_tail_are_not_flagged():
-    missing, extra, _, mostly_empty = breaks_of_pattern(usual_precincts())
+    breaks = breaks_of_pattern(usual_precincts())
 
-    assert not missing.any() and not extra.any() and not mostly_empty.any()
+    assert not breaks.missing.any() and not breaks.extra.any() and not breaks.mostly_empty.any()
 
 
 def test_empty_end_of_a_list_is_missing_votes():
     matrix = usual_precincts()
     matrix[5, -5:] = 0
 
-    missing, _, _, mostly_empty = breaks_of_pattern(matrix)
+    breaks = breaks_of_pattern(matrix)
 
-    assert missing[5, -5:].all() and missing.sum() == 5
-    assert not mostly_empty[5]
+    assert breaks.missing[5, -5:].all() and breaks.missing.sum() == 5
+    assert not breaks.mostly_empty[5]
 
 
 def test_ten_times_the_neighbours_is_extra():
     matrix = usual_precincts()
     matrix[7, 23] = 165
 
-    missing, extra, _, _ = breaks_of_pattern(matrix)
+    breaks = breaks_of_pattern(matrix)
 
-    assert list(zip(*np.nonzero(extra))) == [(7, 23)]
-    assert not missing.any()
+    assert list(zip(*np.nonzero(breaks.extra))) == [(7, 23)]
+    assert not breaks.missing.any()
+
+
+# Whole-list ballots a list with a tenth of the votes would be expected to
+# have in the twelve precincts of usual_precincts()
+USUAL = np.array([20.0 + index for index in range(12)])
+# The same for a list with a fraction of a percent
+RARE = np.full(12, 2.0)
+
+
+def small_list(candidates: int = 41) -> np.ndarray:
+    """A list with next to no whole-list ballots: a vote for its leader here and there."""
+    matrix = np.zeros((12, candidates))
+    matrix[:, 0] = 1
+    return matrix
 
 
 def test_list_filled_in_only_for_candidates_with_own_votes():
@@ -168,11 +183,11 @@ def test_list_filled_in_only_for_candidates_with_own_votes():
     matrix = usual_precincts()
     matrix[2] = [11, 12, 12, 10, 10, 10, 9, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 8] + [0] * 21
 
-    missing, _, _, mostly_empty = breaks_of_pattern(matrix)
+    breaks = breaks_of_pattern(matrix, USUAL)
 
-    assert piles(matrix)[2] == 10
-    assert mostly_empty[2]
-    assert missing[2].sum() == 35
+    assert breaks.pile[2] == 10
+    assert breaks.mostly_empty[2]
+    assert breaks.missing[2].sum() == 35
 
 
 def test_few_scattered_votes_are_not_a_pile():
@@ -180,7 +195,114 @@ def test_few_scattered_votes_are_not_a_pile():
     matrix[0, :3] = [4, 2, 1]
 
     assert piles(matrix)[0] == 0
-    assert not breaks_of_pattern(matrix)[0].any()
+    assert not breaks_of_pattern(matrix, np.array([10.0])).missing.any()
+
+
+def test_four_candidates_with_the_expected_pile_are_a_list_left_empty():
+    """Praha 5, precinct 5029: four candidates of SPD have 13 votes each and
+    the other 37 none, where the list would be expected to have about as many
+    whole-list ballots."""
+    matrix = usual_precincts(candidates=41)
+    matrix[4] = 0
+    matrix[4, [1, 2, 8, 27]] = 13
+
+    breaks = breaks_of_pattern(matrix, USUAL)
+
+    assert breaks.mostly_empty[4] and breaks.pile[4] == 13
+    assert breaks.missing[4].sum() == 37
+
+
+def test_leaders_voted_for_by_name_are_left_alone():
+    """Praha 5, precinct 5036: the first three candidates of a list with a
+    fraction of a percent have 8, 6 and 8 votes, the rest none. With next to
+    no whole-list ballots expected, these may be votes for names."""
+    matrix = small_list()
+    matrix[3, :3] = [8, 6, 8]
+
+    breaks = breaks_of_pattern(matrix, RARE)
+
+    assert not breaks.missing.any() and not breaks.possible.any()
+
+
+def test_three_leaders_far_under_the_expected_pile_are_left_alone():
+    """The leaders may have been named by a few voters where the list happened
+    to have no whole-list ballots; only a count near the expected one says otherwise."""
+    matrix = usual_precincts()
+    matrix[4] = 0
+    matrix[4, :3] = [6, 5, 6]
+
+    assert not breaks_of_pattern(matrix, USUAL).missing[4].any()
+
+
+def test_same_small_count_all_over_a_list_needs_other_lists_left_incomplete():
+    """Praha 5, precinct 5053: eleven candidates all over a small list have 4
+    or 5 votes, the other thirty none. A few voters may have named the same
+    people; it counts where the commission left another list empty for certain."""
+    matrix = small_list()
+    matrix[6, [0, 2, 3, 5, 6, 7, 9, 16, 18, 19, 28]] = [5, 4, 5, 4, 4, 5, 4, 4, 4, 4, 5]
+
+    breaks = breaks_of_pattern(matrix, RARE)
+
+    assert not breaks.missing.any()
+    assert breaks.possible[6].sum() == 30 and breaks.possible.sum() == 30
+
+
+def test_twelve_candidates_with_fourteen_votes_are_no_group_of_friends():
+    """Praha 6, precinct 6078: a dozen candidates all over a list have 14 to
+    16 votes each and the other 53 none. Fourteen voters do not name the same
+    twelve people; the list had about that many whole-list ballots."""
+    matrix = small_list(candidates=65)
+    matrix[6, [0, 1, 2, 4, 6, 9, 15, 22, 30, 41, 50, 60]] = [16, 15, 14, 14, 14, 15, 14, 14, 16, 14, 14, 15]
+
+    breaks = breaks_of_pattern(matrix, RARE)
+
+    assert breaks.missing[6].sum() == 53
+
+
+def test_the_first_ten_with_the_same_small_count_may_be_votes_for_names():
+    """Voters who mark the first ten names give exactly this, with no error in the record."""
+    matrix = small_list(candidates=65)
+    matrix[6, :10] = 4
+
+    breaks = breaks_of_pattern(matrix, RARE)
+
+    assert not breaks.missing.any() and not breaks.possible.any()
+
+
+def test_half_a_list_empty_is_an_error_even_far_under_the_expected_pile():
+    """Brno, precinct 13009: the first 25 candidates of a list have 25 votes
+    each and the other 30 none, where it would be expected to have about 70
+    whole-list ballots. What the true count is cannot be said; the empty half is an error."""
+    matrix = usual_precincts(candidates=55) * 3
+    matrix[9] = 0
+    matrix[9, :25] = 25
+
+    breaks = breaks_of_pattern(matrix, USUAL * 3)
+
+    assert breaks.missing[9].sum() == 30
+
+
+def test_slips_of_the_pen_are_told_from_local_favourites():
+    # A digit typed twice or one too many
+    assert slip_of_the_pen(22, usual=2, pile=2, place=12, share=0.06) == ("zdvojená číslice", True)
+    assert slip_of_the_pen(165, usual=15, pile=15, place=24, share=0.37) == ("číslice navíc", True)
+    assert slip_of_the_pen(150, usual=16, pile=16, place=1, share=0.4) == ("číslice navíc", True)
+    assert slip_of_the_pen(81, usual=18, pile=18, place=57, share=0.17) == ("přehozené číslice", True)
+    assert slip_of_the_pen(35, usual=2, pile=2, place=35, share=0.14) == ("číslo kandidáta místo hlasů", True)
+    # More than every seventh voter of the precinct would have had to name the candidate
+    assert slip_of_the_pen(89, usual=20, pile=20, place=7, share=0.3) == ("příliš mnoho hlasů na jeden okrsek", True)
+
+
+def test_counts_that_may_be_a_local_favourite_are_not_counted_as_slips():
+    # Thrice the neighbours, but nothing says it is not a candidate people there know
+    assert slip_of_the_pen(38, usual=11, pile=11, place=11, share=0.09) == ("", False)
+    assert slip_of_the_pen(70, usual=20, pile=18, place=7, share=0.115) == ("", False)
+    # A digit before a small count happens by accident often enough
+    assert slip_of_the_pen(54, usual=4, pile=4, place=22, share=0.12) == ("možná číslice navíc", False)
+    # Ten votes of one's own are common; 11 among ones need not be a doubled digit
+    assert slip_of_the_pen(11, usual=1, pile=1, place=37, share=0.076) == ("možná číslice navíc", False)
+    # A fifth of a hundred voters knowing one candidate is a village, not an error
+    assert slip_of_the_pen(32, usual=7, pile=7, place=16, share=0.22) == ("", False)
 
 
 def test_evidence_shows_the_first_candidate_left_out():

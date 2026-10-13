@@ -31,7 +31,7 @@ from election_comparison import (
 )
 
 # Bump when the figures of an analysis change, so that stored ones are recomputed
-ANALYSIS_VERSION = 5
+ANALYSIS_VERSION = 6
 
 PRAGUE = "554782"
 PRAGUE_REGION = "1"
