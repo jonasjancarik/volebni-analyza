@@ -1833,15 +1833,32 @@ details.more > .more-body {
   font-weight: 600;
 }
 
+/* The line runs across the window; the text keeps the page's margins */
 .footer {
   border-top: 1px solid var(--line);
-  padding: 22px 0 40px;
+  margin-top: 56px;
+  padding: 24px 0 44px;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--ink-3);
+}
+
+.footer-inner {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 8px 24px;
   flex-wrap: wrap;
+}
+
+.footer a {
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+
+.footer a:hover {
+  color: var(--ink);
 }
 
 /* ---------- Small screens ---------- */

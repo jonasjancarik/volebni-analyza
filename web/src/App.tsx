@@ -48,9 +48,16 @@ export function App() {
           />
         </Routes>
       </main>
-      <footer className="page footer">
-        <span>Zdroj dat: Český statistický úřad, volby.cz</span>
-        <span>Adresu stránky můžete komukoli poslat, otevře se mu stejný pohled.</span>
+      <footer className="footer">
+        <div className="page footer-inner">
+          <span>
+            Zdroj dat: Český statistický úřad,{" "}
+            <a href="https://www.volby.cz" target="_blank" rel="noreferrer">
+              volby.cz
+            </a>
+          </span>
+          <span>Adresu stránky můžete komukoli poslat, otevře se mu stejný pohled.</span>
+        </div>
       </footer>
     </>
   );
