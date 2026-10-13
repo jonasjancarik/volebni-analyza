@@ -30,6 +30,9 @@ const camp = (group: VoterGroup) => voters(group, "pirati", "now") + voters(grou
 const campShare = (group: VoterGroup) => (camp(group) / group.voted.now) * 100;
 /** Both lists' voters now against the Pirates' votes in the parliamentary election, in percent */
 const campOverPirati = (group: VoterGroup) => (camp(group) / voters(group, "pirati", "mid")) * 100;
+/** The Pirates' part of both lists' voters, in percent */
+const piratiOfCamp = (group: VoterGroup, when: When = "now") =>
+  (voters(group, "pirati", when) / (voters(group, "pirati", when) + voters(group, "prahaSobe", when))) * 100;
 const pct = (value: number) => fmtNum(value);
 const inThousands = (value: number) => fmtNum(value / 1000, 0);
 
@@ -37,29 +40,65 @@ interface Series {
   name: string;
   color: string;
   values: number[];
-  dashed?: boolean;
+  /** A stroke pattern for a line that is not this year's council election */
+  dash?: string;
 }
 
-/** Shares along an ordered row of places, a line for each list. */
+const DOTS = "2 4";
+const stroke = (item: Series) => (item.dash === DOTS ? "dotted" : item.dash ? "dashed" : "solid");
+
+/** Shares along an ordered row of places, a line for each list. Lines can be hidden in the legend. */
 function BandLines({ labels, series, axis }: { labels: string[]; series: Series[]; axis: string }) {
   const [ref, width] = useWidth<HTMLDivElement>(720);
-  const height = 280;
+  const [hidden, setHidden] = useState<string[]>([]);
+  const [focused, setFocused] = useState<string | null>(null);
+  const [band, setBand] = useState<number | null>(null);
+  const tooltip = useTooltip();
+  const height = 300;
   const [left, right, top, bottom] = [34, 14, 10, 46];
-  const highest = Math.ceil(Math.max(...series.flatMap((item) => item.values)) / 5) * 5;
-  const x = (index: number) => left + (index / (labels.length - 1)) * (width - left - right);
+  const shown = series.filter((item) => !hidden.includes(item.name));
+  const highest = Math.max(5, Math.ceil(Math.max(0, ...shown.flatMap((item) => item.values)) / 5) * 5);
+  const step = (width - left - right) / (labels.length - 1);
+  const x = (index: number) => left + index * step;
   const y = (value: number) => top + (1 - value / highest) * (height - top - bottom);
-  const ticks = Array.from({ length: highest / 5 + 1 }, (_, index) => index * 5).filter((tick) => tick % 10 === 0);
+  const ticks = Array.from({ length: highest / 5 + 1 }, (_, index) => index * 5).filter(
+    (tick) => highest <= 15 || tick % 10 === 0,
+  );
+  const toggle = (name: string) =>
+    setHidden(hidden.includes(name) ? hidden.filter((item) => item !== name) : [...hidden, name]);
+  const leave = () => {
+    setBand(null);
+    tooltip.hide();
+  };
   return (
     <div ref={ref}>
       <div className="legend" style={{ marginBottom: 10 }}>
-        {series.map((item) => (
-          <span className="legend-item" key={item.name}>
-            <span style={{ width: 18, borderTop: `3px ${item.dashed ? "dashed" : "solid"} ${item.color}` }} />
-            {item.name}
-          </span>
-        ))}
+        {series.map((item) => {
+          const off = hidden.includes(item.name);
+          return (
+            <button
+              key={item.name}
+              className="legend-item text-button line-key"
+              aria-pressed={!off}
+              style={{ opacity: off ? 0.4 : 1 }}
+              onClick={() => toggle(item.name)}
+              onMouseEnter={() => setFocused(off ? null : item.name)}
+              onMouseLeave={() => setFocused(null)}
+            >
+              <span style={{ width: 18, borderTop: `3px ${stroke(item)} ${item.color}` }} />
+              {item.name}
+            </button>
+          );
+        })}
       </div>
-      <svg className="chart" width={width} height={height} role="img" aria-label="Podíl hlasů podle doby cesty do centra">
+      <svg
+        className="chart"
+        width={width}
+        height={height}
+        role="img"
+        aria-label="Podíl hlasů podle doby cesty do centra"
+        onMouseLeave={leave}
+      >
         {ticks.map((tick) => (
           <g key={tick}>
             <line className={tick === 0 ? "axis-line" : "grid-line"} x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} />
@@ -69,31 +108,66 @@ function BandLines({ labels, series, axis }: { labels: string[]; series: Series[
           </g>
         ))}
         {labels.map((name, index) => (
-          <text key={name} className="label" x={x(index)} y={height - bottom + 18} textAnchor="middle">
+          <text
+            key={name}
+            className="label"
+            x={x(index)}
+            y={height - bottom + 18}
+            textAnchor="middle"
+            fontWeight={band === index ? 650 : undefined}
+          >
             {name}
           </text>
         ))}
         <text x={(left + width - right) / 2} y={height - 6} textAnchor="middle">
           {axis}
         </text>
-        {series.map((item) => (
-          <g key={item.name}>
+        {band != null && <line className="axis-line" x1={x(band)} x2={x(band)} y1={top} y2={height - bottom} />}
+        {shown.map((item) => (
+          <g key={item.name} opacity={focused && focused !== item.name ? 0.2 : 1}>
             <polyline
               fill="none"
               stroke={item.color}
-              strokeWidth={2.5}
-              strokeDasharray={item.dashed ? "6 5" : undefined}
+              strokeWidth={focused === item.name ? 3.5 : 2.5}
+              strokeDasharray={item.dash}
               strokeLinejoin="round"
               points={item.values.map((value, index) => `${x(index)},${y(value)}`).join(" ")}
             />
             {item.values.map((value, index) => (
-              <circle key={index} cx={x(index)} cy={y(value)} r={3.5} fill={item.color}>
-                <title>{`${item.name}, ${labels[index]} minut: ${fmtPct(value)}`}</title>
-              </circle>
+              <circle key={index} cx={x(index)} cy={y(value)} r={band === index ? 5 : 3.5} fill={item.color} />
             ))}
           </g>
         ))}
+        {labels.map((name, index) => (
+          <rect
+            key={name}
+            x={x(index) - step / 2}
+            y={0}
+            width={step}
+            height={height}
+            fill="transparent"
+            onMouseMove={(event) => {
+              setBand(index);
+              tooltip.show(
+                event,
+                <>
+                  <div className="t-title">{name} minut do centra</div>
+                  {[...shown]
+                    .sort((a, b) => b.values[index] - a.values[index])
+                    .map((item) => (
+                      <div className="t-line" key={item.name}>
+                        <span style={{ width: 14, borderTop: `3px ${stroke(item)} ${item.color}` }} />
+                        <span>{item.name}</span>
+                        <span className="num">{fmtPct(item.values[index])}</span>
+                      </div>
+                    ))}
+                </>,
+              );
+            }}
+          />
+        ))}
       </svg>
+      {tooltip.element}
     </div>
   );
 }
@@ -260,6 +334,10 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
   const [older, panel, houses] = [kind("older"), kind("panel"), kind("houses")];
   const apartments = kinds.filter((item) => item.kind !== "houses" && item.kind !== "mixed");
   const ratios = times.map(campOverPirati);
+  // How the Pirates' parliamentary share compares with both lists' share now, band by band
+  const midOverCamp = times.map((band) => share(band, "pirati", "mid") / campShare(band));
+  const kept = times.map((band) => (share(band, "pirati") / share(band, "pirati", "then")) * 100);
+  const campColor = "var(--ink-2)";
   const lists = ["prahaSobe", "pirati", "stan", "spolu", "ano"];
 
   // The same travel time, another kind of housing
@@ -283,6 +361,43 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
       tint: colorOf("pirati"),
     },
     { head: "Obě proti sněmovním hlasům Pirátů", value: campOverPirati, format: (value) => fmtPct(value, 0) },
+  ];
+
+  const campColumns: HeatColumn<TimeBand>[] = [
+    {
+      group: `Sněmovna ${years.parliamentary}`,
+      head: "Piráti",
+      value: (row) => share(row, "pirati", "mid"),
+      format: pct,
+      tint: colorOf("pirati"),
+    },
+    { group: `Zastupitelstvo ${years.current}`, head: "Obě dohromady", value: campShare, format: pct, tint: campColor },
+    {
+      group: `Zastupitelstvo ${years.current}`,
+      head: label("prahaSobe"),
+      value: (row) => share(row, "prahaSobe"),
+      format: pct,
+      tint: colorOf("prahaSobe"),
+    },
+    {
+      group: `Zastupitelstvo ${years.current}`,
+      head: label("pirati"),
+      value: (row) => share(row, "pirati"),
+      format: pct,
+      tint: colorOf("pirati"),
+    },
+    {
+      group: "Kolik z hlasů obou kandidátek mají Piráti",
+      head: years.previous,
+      value: (row) => piratiOfCamp(row, "then"),
+      format: (value) => fmtPct(value, 0),
+    },
+    {
+      group: "Kolik z hlasů obou kandidátek mají Piráti",
+      head: years.current,
+      value: (row) => piratiOfCamp(row),
+      format: (value) => fmtPct(value, 0),
+    },
   ];
 
   const kindColumns: HeatColumn<KindGroup>[] = [
@@ -348,6 +463,12 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
           Podpora Prahy Sobě klesá s dobou cesty do centra na polovinu. U Pirátů je pokles v komunálních volbách
           mírný, ve sněmovních strmý.
         </p>
+        <p>
+          Ten rozdíl není nový, stejný byl už v roce {years.previous}. Do Sněmovny Praha Sobě nekandiduje a sněmovní
+          křivka Pirátů kopíruje letošní součet obou kandidátek: v každém pásmu mají kolem{" "}
+          {fmtPct(((Math.min(...midOverCamp) + Math.max(...midOverCamp)) / 2) * 100, 0)} toho, co letos obě dohromady.
+          V komunálních volbách si z těchto hlasů Praha Sobě bere blízko centra větší díl než na okraji.
+        </p>
         {olderMiddle && panelMiddle && (
           <p>
             Víc než doba cesty ale rozhoduje, v čem lidé bydlí. Při stejném dojezdu {bandName(middleRing)} minut má
@@ -381,7 +502,7 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
 
       <Figure
         title="Podíl hlasů podle doby cesty do centra"
-        sub={`Volby do zastupitelstva ${years.current}; přerušovaně výsledek Pirátů ve sněmovních volbách ${years.parliamentary}`}
+        sub={`Volby do zastupitelstva ${years.current}; přerušovaně výsledek Pirátů ve sněmovních volbách ${years.parliamentary}. Najetím na graf uvidíte čísla za jedno pásmo, kliknutím v legendě čáru skryjete.`}
       >
         <BandLines
           labels={times.map(bandName)}
@@ -392,7 +513,7 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
               name: `Piráti do Sněmovny ${years.parliamentary}`,
               color: colorOf("pirati"),
               values: times.map((band) => share(band, "pirati", "mid")),
-              dashed: true,
+              dash: "6 5",
             },
           ]}
         />
@@ -420,6 +541,70 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
           není zvláštnost komunálních voleb: bydlí tam méně lidí, kteří je volí i celostátně.
         </p>
       </section>
+
+      <section className="prose">
+        <h2>Proč mají Piráti do Sněmovny strmější křivku</h2>
+        <p>
+          Sněmovní křivka Pirátů má stejný tvar jako letošní součet obou kandidátek. V každém pásmu měli Piráti do
+          Sněmovny {fmtNum(Math.min(...midOverCamp) * 100, 0)} až {fmtPct(Math.max(...midOverCamp) * 100, 0)} toho,
+          co letos Praha Sobě a Piráti dohromady. Kde Praha Sobě na lístku není, sbírají Piráti hlasy lidí, kteří
+          v komunálních volbách volí jednu nebo druhou, a těch bydlí nejvíc u centra.
+        </p>
+      </section>
+
+      <Figure
+        title="Piráti do Sněmovny a obě kandidátky do zastupitelstva"
+        sub={`Podíl hlasů podle doby cesty do centra. Tečkovaně výsledek Pirátů v komunálních volbách ${years.previous}.`}
+      >
+        <BandLines
+          labels={times.map(bandName)}
+          axis="minut do centra MHD v ranní špičce"
+          series={[
+            { name: `Obě dohromady ${years.current}`, color: campColor, values: times.map(campShare) },
+            {
+              name: `${label("prahaSobe")} ${years.current}`,
+              color: colorOf("prahaSobe"),
+              values: times.map((band) => share(band, "prahaSobe")),
+            },
+            {
+              name: `Piráti do Sněmovny ${years.parliamentary}`,
+              color: colorOf("pirati"),
+              values: times.map((band) => share(band, "pirati", "mid")),
+              dash: "6 5",
+            },
+            {
+              name: `Piráti ${years.previous}`,
+              color: colorOf("pirati"),
+              values: times.map((band) => share(band, "pirati", "then")),
+              dash: DOTS,
+            },
+            { name: `Piráti ${years.current}`, color: colorOf("pirati"), values: times.map((band) => share(band, "pirati")) },
+          ]}
+        />
+      </Figure>
+
+      <section className="prose">
+        <p>
+          V komunálních volbách se tyto hlasy dělí a Praha Sobě z nich má blízko centra víc. Do {nearest.to} minut
+          připadá na Piráty {fmtPct(piratiOfCamp(nearest), 0)} hlasů obou kandidátek, nad {farthest.from} minut{" "}
+          {fmtPct(piratiOfCamp(farthest), 0)}. Pirátům tak zůstává křivka plošší, než jakou mají do Sněmovny.
+        </p>
+        <p>
+          Stejně to vypadalo už v roce {years.previous}: Piráti tehdy měli {fmtNum(share(nearest, "pirati", "then"), 0)}{" "}
+          → {fmtPct(share(farthest, "pirati", "then"), 0)} a na hlasech obou kandidátek se podíleli{" "}
+          {fmtNum(piratiOfCamp(nearest, "then"), 0)} a {fmtPct(piratiOfCamp(farthest, "then"), 0)}. Od té doby ztratili
+          všude podobně, v každém pásmu jim zůstalo {fmtNum(Math.min(...kept), 0)} až {fmtPct(Math.max(...kept), 0)}{" "}
+          tehdejšího podílu. Tvar křivky se nezměnil, jen je celá níž.
+        </p>
+      </section>
+
+      <Figure
+        title="Jak se hlasy obou kandidátek dělí"
+        sub="Podíly v procentech hlasů podle doby cesty do centra"
+        note="Proč má Praha Sobě blízko centra větší díl, z těchto čísel poznat nejde. Část vysvětluje zástavba, o které je další kapitola."
+      >
+        <HeatTable rows={times} rowHead="Minut do centra" rowLabel={bandName} columns={campColumns} />
+      </Figure>
 
       <section className="prose">
         <h2>V čem lidé bydlí</h2>

@@ -33,3 +33,19 @@
 .scatter-dot {
   transition: opacity 0.12s;
 }
+
+/* A line of the chart's legend that can be switched off */
+.legend .line-key {
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.tooltip .t-line {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
