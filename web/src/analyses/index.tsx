@@ -95,7 +95,8 @@ export function AnalysisCards({ entries }: { entries: AnalysisEntry[] }) {
     <div className="analysis-grid">
       {entries.map((entry) => (
         <Link key={entry.slug} to={`/analyzy/${entry.slug}`} className="place-card analysis-card">
-          <div className="kicker">{entry.kicker}</div>
+          {/* Only the place: the cards stand under the name of their election */}
+          <div className="kicker">{entry.kicker.split(" · ").pop()}</div>
           <h3>{entry.title}</h3>
           <p>{entry.lede}</p>
         </Link>
