@@ -645,6 +645,9 @@ export function HeatTable<Row>({ rows, rowHead, rowLabel, columns }: HeatTablePr
     if (previous && column.group && previous.name === column.group) previous.span += 1;
     else groups.push({ name: column.group ?? "", span: 1 });
   }
+  // Where one group of columns ends and another begins, the table leaves a gap
+  const starts = columns.map((column, index) => index > 0 && column.group !== columns[index - 1].group);
+  const gap = (index: number) => (starts[index] ? " starts" : "");
   const top = columns.map((column) => Math.max(...rows.map((row) => Math.abs(column.value(row))), 1e-9));
   const reach = Math.max(...columns.flatMap((column, index) => (column.tint === "change" ? [top[index]] : [])), 1e-9);
   const style = (column: HeatColumn<Row>, index: number, value: number) =>
@@ -658,8 +661,12 @@ export function HeatTable<Row>({ rows, rowHead, rowLabel, columns }: HeatTablePr
             <tr>
               <th rowSpan={2}>{rowHead}</th>
               {groups.map((group, index) => (
-                <th key={index} className="group" colSpan={group.span > 1 ? group.span : undefined}>
-                  {group.name}
+                <th
+                  key={index}
+                  className={`group${index > 0 ? " starts" : ""}`}
+                  colSpan={group.span > 1 ? group.span : undefined}
+                >
+                  {group.name && <span>{group.name}</span>}
                 </th>
               ))}
             </tr>
@@ -667,7 +674,7 @@ export function HeatTable<Row>({ rows, rowHead, rowLabel, columns }: HeatTablePr
           <tr>
             {!grouped && <th>{rowHead}</th>}
             {columns.map((column, index) => (
-              <th key={index} className="col">
+              <th key={index} className={`col${gap(index)}`}>
                 {column.head}
               </th>
             ))}
@@ -682,7 +689,7 @@ export function HeatTable<Row>({ rows, rowHead, rowLabel, columns }: HeatTablePr
                 return (
                   <td
                     key={index}
-                    className={column.tint ? "heat" : "heat plain"}
+                    className={`${column.tint ? "heat" : "heat plain"}${gap(index)}`}
                     style={column.tint ? style(column, index, value) : undefined}
                   >
                     {column.format(value)}

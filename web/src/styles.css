@@ -2269,6 +2269,22 @@ table.matrix th[rowspan] {
   vertical-align: bottom;
 }
 
+/* A line under the heading shows which columns it covers */
+table.matrix th.group span {
+  display: block;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+/* Room between one group of columns and the next */
+table.matrix .starts {
+  border-left: 16px solid var(--surface);
+}
+
+table.matrix th.starts {
+  border-left-color: transparent;
+}
+
 /* The coloured cell of the last column keeps its room on the right */
 table.matrix td.heat:last-child,
 table.matrix th.col:last-child,

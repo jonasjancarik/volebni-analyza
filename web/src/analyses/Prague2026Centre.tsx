@@ -352,7 +352,7 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
 
   const timeColumns: HeatColumn<TimeBand>[] = [
     { head: "Zapsaní voliči (tis.)", value: (row) => row.registered, format: inThousands },
-    ...shareColumns<TimeBand>(`Podíl hlasů ${years.current}`),
+    ...shareColumns<TimeBand>(`Zastupitelstvo ${years.current}`),
     {
       group: `Sněmovna ${years.parliamentary}`,
       head: "Piráti",
@@ -405,7 +405,7 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
     { head: "Minut do centra", value: (row) => row.minutes, format: (value) => fmtNum(value, 0) },
     { group: "Účast", head: years.parliamentary, value: (row) => row.turnout.mid ?? 0, format: pct },
     { group: "Účast", head: years.current, value: (row) => row.turnout.now ?? 0, format: pct, tint: "var(--series-1)" },
-    ...shareColumns<KindGroup>(`Podíl hlasů ${years.current}`),
+    ...shareColumns<KindGroup>(`Zastupitelstvo ${years.current}`),
   ];
 
   const spokes = (group: Place) => [
