@@ -98,7 +98,6 @@ export function AnalysisCards({ entries }: { entries: AnalysisEntry[] }) {
           <div className="kicker">{entry.kicker}</div>
           <h3>{entry.title}</h3>
           <p>{entry.lede}</p>
-          <span className="more-link">Číst analýzu</span>
         </Link>
       ))}
     </div>
