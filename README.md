@@ -135,6 +135,17 @@ shows how many votes each list was short of one more seat (one list missed the
 five-percent threshold, and a seat, by about 13 voters) and lists every
 precinct in a table instead of grouping them.
 
+The seventh one is about the whole country: errors in the records of precinct
+commissions that show in the official results (a candidate with no votes among
+neighbours with dozens, or with ten times theirs), where putting them right
+would change the seats or the people who hold them, and where a few votes
+decide. Its figures come from `src/web_anomalies.py`, which turns the tables of
+`src/precinct_anomalies.py` (see "Looking for counting errors" below) into what
+the article shows; the notes on single cities in `Records2026.tsx` were written
+after reading their records one by one. It needs the official results with
+the votes of every candidate, which it downloads to
+`input/<election>/official/` when first computed (about a minute).
+
 The figures of both districts come from `src/web_districts.py`: `_District`
 holds what any district's analysis shows, and each district adds its lists,
 its groups of lists and its neighbourhoods. Neighbourhoods are lists of
@@ -164,7 +175,7 @@ precinct types the data allow (`flows_across_settings`).
 
 ### Looking for counting errors
 
-`research/precinct_anomalies.py` goes through the precinct results of a
+`src/precinct_anomalies.py` goes through the precinct results of a
 municipal election for signs of counting errors, for every list in every
 council. It reads the official results with the votes of every candidate in
 every precinct, which the precinct batches above do not hold; ČSÚ publishes
@@ -173,9 +184,9 @@ them as two archives (about 23 MB) that the script downloads to
 minute.
 
 ```bash
-uv run python research/precinct_anomalies.py                    # every council
-uv run python research/precinct_anomalies.py --city 554782      # Prague and its districts
-uv run python research/precinct_anomalies.py --council 500143   # Praha 5, with the findings printed
+uv run python src/precinct_anomalies.py                    # every council
+uv run python src/precinct_anomalies.py --city 554782      # Prague and its districts
+uv run python src/precinct_anomalies.py --council 500143   # Praha 5, with the findings printed
 ```
 
 It writes these tables to `output/<election>/anomalies/` (a run for one

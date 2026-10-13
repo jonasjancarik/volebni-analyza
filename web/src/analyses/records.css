@@ -1,0 +1,37 @@
+/* Votes of neighbouring candidates as the record has them, the odd one marked */
+.record-row {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+
+.record-row mark {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--ink);
+  font-weight: 650;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.record-case + .record-case {
+  margin-top: 4px;
+}
+
+.record-case .people {
+  margin: 12px 0 0;
+  padding-left: 1.2em;
+  line-height: 1.55;
+}
+
+.record-case h4 {
+  font-size: 13px;
+  font-weight: 640;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ink-3, var(--ink-2));
+  margin: 18px 0 8px;
+}
+
+.seat-change {
+  font-weight: 650;
+}

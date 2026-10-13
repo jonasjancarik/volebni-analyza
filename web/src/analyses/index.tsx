@@ -9,6 +9,7 @@ import type { CentreAnalysis } from "./centreShared";
 import { Prague2026Centre } from "./Prague2026Centre";
 import { Prague2026Next } from "./Prague2026Next";
 import { Prague2026Spolu } from "./Prague2026Spolu";
+import { Records2026, type RecordsAnalysis } from "./Records2026";
 import type { NextTimeAnalysis, PragueAnalysis, SpoluStanAnalysis } from "./types";
 
 interface AnalysisEntry {
@@ -24,6 +25,15 @@ interface AnalysisEntry {
 }
 
 export const ANALYSES: AnalysisEntry[] = [
+  {
+    slug: "chyby-v-zapisech-okrsku-2026",
+    election: "kv2026",
+    kicker: "Komunální volby 2026 · Celá republika",
+    title: "Chyby v zápisech okrskových komisí",
+    lede: "V oficiálních výsledcích jsou tisíce údajů, které nemohou odpovídat odevzdaným lístkům. Ve čtyřech městech by jejich oprava změnila rozdělení mandátů.",
+    updated: "13. října 2026",
+    body: (data) => <Records2026 data={data as RecordsAnalysis} />,
+  },
   {
     slug: "praha-2026-pirati-praha-sobe",
     election: "kv2026",

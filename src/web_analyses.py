@@ -936,6 +936,12 @@ def _district(builder: str) -> Callable[[], dict]:
     return build
 
 
+def _records_2026() -> dict:
+    import web_anomalies
+
+    return web_anomalies.records_2026()
+
+
 ANALYSES: Dict[str, dict] = {
     "praha-2026-pirati-praha-sobe": {
         "build": _prague_2026,
@@ -960,6 +966,10 @@ ANALYSES: Dict[str, dict] = {
     "praha-1-2026-okrsky": {
         "build": _district("prague_1_2026"),
         "elections": ("kv2026", "kv2022", "ps2025"),
+    },
+    "chyby-v-zapisech-okrsku-2026": {
+        "build": _records_2026,
+        "elections": ("kv2026",),
     },
 }
 

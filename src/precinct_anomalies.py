@@ -40,9 +40,9 @@ differ for a reason of the place, and only a recount of the ballots can tell.
 
 Run from the repository root:
 
-    uv run python research/precinct_anomalies.py                    # every council
-    uv run python research/precinct_anomalies.py --city 554782      # Prague and its districts
-    uv run python research/precinct_anomalies.py --council 500143   # Praha 5, with the findings printed
+    uv run python src/precinct_anomalies.py                    # every council
+    uv run python src/precinct_anomalies.py --city 554782      # Prague and its districts
+    uv run python src/precinct_anomalies.py --council 500143   # Praha 5, with the findings printed
 """
 
 import argparse
@@ -50,6 +50,7 @@ import io
 import math
 import re
 import sys
+import warnings
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -217,7 +218,8 @@ def piles(matrix: np.ndarray) -> np.ndarray:
     # Candidates with any votes are the measure: a record may leave most of a
     # list empty and fill in only those who also got votes of their own
     voted = np.where(matrix > 0, matrix, np.nan)
-    with np.errstate(all="ignore"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # a row without votes has no median and no pile
         upper = np.where((matrix > 0).sum(axis=1) >= SMALLEST_PILE, np.nanmedian(voted, axis=1), 0.0)
         usual = np.where(matrix >= 0.5 * upper[:, None], matrix, np.nan)
         return np.nan_to_num(np.nanmedian(usual, axis=1))
@@ -233,7 +235,8 @@ def neighbours(matrix: np.ndarray, pile: np.ndarray, reach: int = 4) -> np.ndarr
         source = slice(max(0, step), width + min(0, step))
         target = slice(max(0, -step), width + min(0, -step))
         shifted[layer][:, target] = usual[:, source]
-    with np.errstate(all="ignore"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # a candidate with no usual neighbour gets the pile below
         around = np.nanmedian(shifted, axis=0)
     return np.where(np.isnan(around), pile[:, None], around)
 

@@ -1,5 +1,5 @@
 """
-The arithmetic of research/precinct_anomalies.py on results of the 2026
+The arithmetic of src/precinct_anomalies.py on results of the 2026
 municipal elections that were checked by hand against the official ones.
 """
 
@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "research"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from precinct_anomalies import (  # noqa: E402
     breaks_of_pattern,
@@ -181,3 +181,23 @@ def test_few_scattered_votes_are_not_a_pile():
 
     assert piles(matrix)[0] == 0
     assert not breaks_of_pattern(matrix)[0].any()
+
+
+def test_evidence_shows_the_first_candidate_left_out():
+    from web_anomalies import _evidence
+
+    row = {"okrsek": "29", "cislo_kandidatky": 3, "kandidatka": "List", "druh": "chybí", "vetsina_kandidatky_prazdna": False, "zjevny_preklep": False}
+    found = pd.DataFrame(
+        [
+            {**row, "poradi": 41, "kandidat": "Last", "hlasy": 0, "obvykle": 11, "rozdil": -11, "okoli": "3 3 3 [0]"},
+            {**row, "poradi": 34, "kandidat": "First", "hlasy": 4, "obvykle": 12, "rozdil": -8, "okoli": "12 12 12 [4] 4 4 3"},
+            {**row, "okrsek": "6", "druh": "navíc", "poradi": 4, "kandidat": "Liked", "hlasy": 46, "obvykle": 30, "rozdil": 16, "okoli": "28 [46] 25"},
+        ]
+    )
+
+    missing, extra = _evidence(found)
+
+    assert (missing["candidates"], missing["votes"], missing["example"]["name"]) == (2, -19, "First")
+    assert missing["counted"]
+    # A count above the neighbours that is not several times theirs is shown, not counted
+    assert extra["kind"] == "extra" and not extra["counted"]
