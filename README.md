@@ -225,6 +225,18 @@ after reading their records one by one. It needs the official results with
 the votes of every candidate, which it downloads to
 `input/<election>/official/` when first computed (about a minute).
 
+The eighth one is a map for the Pirates' work on the ground in Prague, with
+three layers. The first shows how many of the Pirates' parliamentary voters
+of 2025 stayed at home in 2026: the drop in voters of the precinct times the
+Pirates' parliamentary share there, after taking out people who voted on a
+voting card (the parliamentary list of a precinct is longer by them). The
+second shows the Pirates' voters of 2022 who voted STAN: the share the
+voter-flow estimate gives the precinct's type times the Pirates' voters there.
+The third shows how many voters the list with the Pirates was short of one more
+seat in the council of each city district. Precincts with a turnout under
+25 % (mostly the address of a town hall) and those whose electorate changed
+by more than 35 % have no estimate.
+
 The figures of both districts come from `src/web_districts.py`: `_District`
 holds what any district's analysis shows, and each district adds its lists,
 its groups of lists and its neighbourhoods. Neighbourhoods are lists of

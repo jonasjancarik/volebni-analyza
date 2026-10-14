@@ -23,10 +23,12 @@ from election_comparison import (
     MAX_ELECTORATE_CHANGE,
     NON_VOTERS,
     OTHER_LISTS,
+    _fit_by_type,
     estimate_flows,
     group_columns,
     match_precincts,
     precinct_table,
+    precinct_type_labels,
     precinct_type_options,
 )
 
@@ -924,6 +926,155 @@ def _prague_2026_centre() -> dict:
     }
 
 
+# A list with the Pirates on it, alone or with partners, such as "Piráti a Starostové"
+PIRATE_LIST = re.compile(r"pir[aá]t", re.IGNORECASE)
+# Below this turnout a precinct is left out of the count of people who stayed at home
+LOWEST_TURNOUT = 25
+
+
+def _ex_pirates_at_stan(election: str) -> pd.Series:
+    """The app's estimate of the Pirates' voters of the previous election who
+    voted STAN, narrowed to every precinct: the share the estimate gives the
+    precinct's type times the Pirates' voters there."""
+    flows = store.comparison(election, PRAGUE)["flows"]
+    current = store._municipality(election, PRAGUE)
+    previous = store._results(store.previous_election_id(election))["municipalities"][PRAGUE]
+    before, after, _ = store._matched_tables(current, previous, None, store.RENAMED_LISTS.get((election, PRAGUE)))
+    sources, targets = flows["sources"], flows["targets"]
+    x = before[sources].div(before["registered"], axis=0).to_numpy()
+    y = after[targets].div(after["registered"], axis=0).to_numpy()
+    labels = precinct_type_labels(x, flows["precinctTypes"])
+    matrices = np.array(_fit_by_type(x, y, after["registered"].to_numpy(dtype=float), labels))
+    source = next(name for name in sources if group_key(name) == "pirati")
+    target = next(name for name in targets if group_key(name) == "stan")
+    rate = matrices[labels, sources.index(source), targets.index(target)]
+    return pd.Series(before[source].to_numpy() * rate, index=before.index)
+
+
+def _pirate_seat_margins(election: str, council: dict) -> Dict[str, dict]:
+    """For every city district where the Pirates ran: their list, its seats
+    and how many voters it was short of one more."""
+    margins = {}
+    for area in council["areas"]:
+        try:
+            local = store.council(election, area["code"])
+        except store.NotFound:
+            continue
+        ours = [item for item in local["lists"] if PIRATE_LIST.search(item.get("fullName") or item["name"])]
+        if not ours:
+            continue
+        mine = max(ours, key=lambda item: item["votes"])
+        votes = {item["number"]: float(item["votes"]) for item in local["lists"]}
+        total, seats = sum(votes.values()), local["seats"]
+        order = seat_order(votes, seats)
+        won = sum(1 for _, number, _ in order[:seats] if number == mine["number"])
+        if mine["votes"] >= 0.05 * total:
+            # Its next quotient has to pass the last one that won a seat
+            missing = math.ceil(order[seats - 1][0] * (won + 1) - mine["votes"])
+        else:
+            # Votes added to the list raise the total the threshold is taken from
+            missing = math.ceil((0.05 * total - mine["votes"]) / 0.95)
+        margins[area["code"]] = {
+            "name": mine["name"],
+            "share": mine["share"],
+            "seats": won,
+            "councilSeats": seats,
+            "missingVotes": missing,
+            "missingVoters": round(missing / (total / local["summary"]["ballots"])),
+        }
+    return margins
+
+
+def _prague_2026_targets() -> dict:
+    """Where work on the ground could bring the Pirates most: people who vote
+    for them for Parliament and stayed at home, their former voters who went
+    to STAN, and district councils where they were close to another seat."""
+    election, previous, parliamentary = "kv2026", "kv2022", "ps2025"
+    first = analysis("praha-2026-pirati-praha-sobe")
+    council = store.council(election, PRAGUE)
+    voters = _precinct_voters(
+        store._municipality(previous, PRAGUE),
+        store._municipality(election, PRAGUE),
+        parliamentary,
+        PRAGUE_REGION,
+    )
+    voters = voters[voters["registered_now"] > 0]
+    area = voters.index.str.split("-").str[0]
+    precinct = voters.index.str.split("-").str[1]
+
+    # People who voted for Parliament on a voting card are added to the
+    # precinct's list there, so a list longer than a year later counts them.
+    # They do not live in the precinct and cannot vote in its municipal election.
+    cards = (voters["registered_mid"] - voters["registered_now"]).clip(lower=0)
+    residents_voted = (voters["voted_mid"] - cards).clip(lower=0)
+    # Precincts redrawn since, and those where hardly anyone votes: mostly the
+    # address of a town hall, where people with no other home are registered
+    lived_in = voters["voted_now"] / voters["registered_now"] * 100 >= LOWEST_TURNOUT
+    comparable = lived_in & (
+        (voters["registered_mid"] - voters["registered_now"]).abs() / voters["registered_now"] <= MAX_ELECTORATE_CHANGE
+    )
+    # As often as anyone else in the precinct; the city-wide estimate says more often
+    stayed_home = (
+        voters["pirati_mid"] / voters["voted_mid"].where(voters["voted_mid"] > 0) * (residents_voted - voters["voted_now"]).clip(lower=0)
+    ).where(comparable)
+    at_stan = _ex_pirates_at_stan(election).reindex(precinct).where(lived_in.to_numpy())
+    try:
+        kind = _precinct_places(election, PRAGUE)["kind"].reindex(precinct).to_numpy()
+    except store.NotFound:
+        kind = None
+
+    def share(key: str, when: str = "now") -> pd.Series:
+        return voters[f"{key}_{when}"] / voters[f"voted_{when}"].where(voters[f"voted_{when}"] > 0) * 100
+
+    rows = pd.DataFrame(
+        {
+            "id": precinct,
+            "area": area,
+            "kind": kind,
+            "registered": voters["registered_now"].astype(int),
+            "turnout": (voters["voted_now"] / voters["registered_now"] * 100).round(2),
+            "turnoutMid": (voters["voted_mid"] / voters["registered_mid"].where(voters["registered_mid"] > 0) * 100).round(2),
+            "stayedHome": stayed_home.round(1),
+            "atStan": at_stan.round(1).to_numpy(),
+            "pirati": share("pirati").round(2),
+            "prahaSobe": share("prahaSobe").round(2),
+            "piratiMid": share("pirati", "mid").round(2),
+            "piratiThen": share("pirati", "then").round(2),
+        }
+    )
+    rows = rows.astype(object).where(rows.notna(), None)
+
+    names = {item["code"]: item["name"] for item in council["areas"]}
+    margins = _pirate_seat_margins(election, council)
+    districts = []
+    for code, part in voters.groupby(area):
+        group = _voter_group(part)
+        pirati, praha_sobe = group["voters"]["pirati"]["now"], group["voters"]["prahaSobe"]["now"]
+        districts.append(
+            {
+                "code": code,
+                "name": names.get(code, code),
+                "registered": group["registered"],
+                "stayedHome": float(stayed_home[part.index].sum()),
+                "atStan": float(np.nansum(at_stan.to_numpy()[area == code])),
+                "piratiOfCamp": pirati / (pirati + praha_sobe) * 100 if pirati + praha_sobe > 0 else None,
+                "list": margins.get(code),
+            }
+        )
+    districts.sort(key=lambda row: -row["registered"])
+
+    return {
+        **{name: first[name] for name in ("council", "years", "summary")},
+        "stayedHome": float(stayed_home.sum()),
+        "unusual": int((~comparable).sum()),
+        "atStan": float(np.nansum(at_stan.to_numpy())),
+        "piratiMid": float(voters["pirati_mid"].sum()),
+        "precinctTypes": first["flows"]["precinctTypes"],
+        "districts": districts,
+        "precincts": rows.to_dict("records"),
+    }
+
+
 def _district(builder: str) -> Callable[[], dict]:
     """A builder from the analyses of city districts. That module builds on
     this one, so it is loaded only when one of its analyses is asked for."""
@@ -965,6 +1116,10 @@ ANALYSES: Dict[str, dict] = {
     },
     "praha-1-2026-okrsky": {
         "build": _district("prague_1_2026"),
+        "elections": ("kv2026", "kv2022", "ps2025"),
+    },
+    "praha-2026-mistni-prace-piratu": {
+        "build": _prague_2026_targets,
         "elections": ("kv2026", "kv2022", "ps2025"),
     },
     "chyby-v-zapisech-okrsku-2026": {

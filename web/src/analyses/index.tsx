@@ -9,6 +9,8 @@ import type { CentreAnalysis } from "./centreShared";
 import { Prague2026Centre } from "./Prague2026Centre";
 import { Prague2026Next } from "./Prague2026Next";
 import { Prague2026Spolu } from "./Prague2026Spolu";
+import { PragueTargets } from "./PragueTargets";
+import type { TargetsAnalysis } from "./targetsShared";
 import { Records2026, type RecordsAnalysis } from "./Records2026";
 import type { NextTimeAnalysis, PragueAnalysis, SpoluStanAnalysis } from "./types";
 
@@ -69,6 +71,15 @@ export const ANALYSES: AnalysisEntry[] = [
     lede: "Jak se podpora Pirátů a Prahy Sobě mění s dobou cesty do centra a s tím, v čem lidé bydlí.",
     updated: "12. října 2026",
     body: (data) => <Prague2026Centre data={data as CentreAnalysis} />,
+  },
+  {
+    slug: "praha-2026-mistni-prace-piratu",
+    election: "kv2026",
+    kicker: "Komunální volby 2026 · Praha",
+    title: "Kde se Pirátům vyplatí místní práce",
+    lede: "Kde bydlí lidé, kteří volí Piráty do Sněmovny a na komunální volby nepřišli, kde od Pirátů odešli voliči ke STAN a kde v městské části chybělo málo do dalšího mandátu.",
+    updated: "14. října 2026",
+    body: (data) => <PragueTargets data={data as TargetsAnalysis} />,
   },
   {
     slug: "praha-5-2026-okrsky-a-bloky",
