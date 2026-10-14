@@ -154,6 +154,16 @@ def test_empty_end_of_a_list_is_missing_votes():
     assert not breaks.mostly_empty[5]
 
 
+def test_low_end_of_a_list_with_some_votes_is_only_possibly_missing():
+    matrix = usual_precincts()
+    matrix[5, -6:] = 2
+
+    breaks = breaks_of_pattern(matrix)
+
+    assert not breaks.missing[5].any()
+    assert breaks.possible[5, -6:].all()
+
+
 def test_ten_times_the_neighbours_is_extra():
     matrix = usual_precincts()
     matrix[7, 23] = 165

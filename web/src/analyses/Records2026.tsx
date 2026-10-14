@@ -94,9 +94,9 @@ const NOTES: Record<string, React.ReactNode> = {
   Karviná: (
     <>
       SPD skončila dva hlasy pod pětiprocentní hranicí. V okrsku 40 má její kandidát č. 19 zapsanou nulu, ačkoli
-      všichni kolem něj mají 13 hlasů; už tento jediný údaj by na překročení hranice stačil. V okrsku 29 navíc mají
-      poslední kandidáti (č. 34 až 41) zlomek hlasů ostatních hned u čtyř kandidátek najednou, což ukazuje na chybu
-      komise při sčítání konce kandidátek. S mandáty pro SPD by o jeden přišli Žijeme pro Karvinou a o jeden
+      všichni kolem něj mají 13 hlasů; už tento jediný údaj by na překročení hranice stačil. V okrsku 29 mají
+      poslední kandidáti SPD (č. 34 až 41) jen 3 až 4 hlasy místo dvanácti. Takový pokles ke konci kandidátky se může
+      stát i bez chyby, a proto se do přepočtu nepočítá. S mandáty pro SPD by o jeden přišli Žijeme pro Karvinou a o jeden
       společná kandidátka STAN, ODS, Pirátů a TOP 09.
     </>
   ),

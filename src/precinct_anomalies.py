@@ -316,8 +316,26 @@ def breaks_of_pattern(matrix: np.ndarray, usual_pile: Optional[np.ndarray] = Non
     low_count = matrix <= 0.5 * expected
     missing = (regular[:, None] & low_count & (expected - matrix >= 5)) | (strong[:, None] & low_count & (expected - matrix >= FEWEST_FILLED))
     possible = shape[:, None] & low_count & (expected - matrix >= FEWEST_FILLED)
+    # Several candidates at the end of the list with fewer votes but not none:
+    # the list may well thin out there, so it is believed only with other errors
+    tail = tail_steps(missing, matrix)
+    missing, possible = missing & ~tail, possible | tail
     extra = (matrix - expected >= np.maximum(10, 0.4 * pile[:, None])) & (standing >= 6)
     return Breaks(missing, possible, extra, expected, mostly_empty, pile)
+
+
+def tail_steps(missing: np.ndarray, matrix: np.ndarray, shortest: int = 3) -> np.ndarray:
+    """Counts running to the end of the list that are all low but, taken
+    together, not empty: a drop that continues to the last candidate, which a
+    thinning list can have, unlike a count missing between its neighbours."""
+    tail = np.zeros_like(missing)
+    for row in range(missing.shape[0]):
+        end = start = missing.shape[1]
+        while start > 0 and missing[row, start - 1]:
+            start -= 1
+        if end - start >= shortest and np.median(matrix[row, start:]) > 0:
+            tail[row, start:] = True
+    return tail
 
 
 def slip_of_the_pen(votes: int, usual: float, pile: float, place: int, share: float) -> Tuple[str, bool]:
