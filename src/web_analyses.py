@@ -33,7 +33,7 @@ from election_comparison import (
 )
 
 # Bump when the figures of an analysis change, so that stored ones are recomputed
-ANALYSIS_VERSION = 7
+ANALYSIS_VERSION = 8
 
 PRAGUE = "554782"
 PRAGUE_REGION = "1"
@@ -837,6 +837,71 @@ def _bands(values: pd.Series, edges: Tuple[int, ...]) -> List[Tuple[int, Optiona
     ]
 
 
+def _fit(
+    target: pd.Series, columns: pd.DataFrame, weights: pd.Series, clusters: pd.Series
+) -> Tuple[np.ndarray, np.ndarray, float]:
+    """Least squares weighted by voters: the coefficients, their standard errors
+    with precincts of one city district counted as related, and R²."""
+    x = np.column_stack([np.ones(len(columns)), columns.to_numpy(dtype=float)])
+    y, w = target.to_numpy(dtype=float), weights.to_numpy(dtype=float)
+    root = np.sqrt(w)
+    # Accelerate on macOS warns about overflow in matrix products with finite results
+    with np.errstate(all="ignore"):
+        coefficients = np.linalg.lstsq(x * root[:, None], y * root, rcond=None)[0]
+        residuals = y - x @ coefficients
+        bread = np.linalg.inv(x.T @ (x * w[:, None]))
+        scores = pd.DataFrame(x * (w * residuals)[:, None]).groupby(clusters.to_numpy()).sum().to_numpy()
+        errors = np.sqrt(np.diag(bread @ scores.T @ scores @ bread))
+    mean = np.average(y, weights=w)
+    fit = 1 - np.sum(w * residuals**2) / np.sum(w * (y - mean) ** 2)
+    return coefficients, errors, float(fit)
+
+
+# What the article correlates with the shares, in the order of its table
+PLACE_MEASURES = ("minutes", "km", "older", "panel", "newer", "houses")
+
+
+def _place_links(voters: pd.DataFrame) -> dict:
+    """How closely the shares in single precincts follow travel time and
+    housing: correlations, and Praha Sobě's share explained by minutes
+    alone, with housing, and inside the same city district."""
+    voted = voters["voted_now"]
+    shares = {
+        "prahaSobe": voters["prahaSobe_now"] / voted * 100,
+        "pirati": voters["pirati_now"] / voted * 100,
+        "camp": (voters["prahaSobe_now"] + voters["pirati_now"]) / voted * 100,
+    }
+    correlations = [
+        {"measure": measure, **{key: float(voters[measure].corr(values)) for key, values in shares.items()}}
+        for measure in PLACE_MEASURES
+    ]
+
+    district = pd.Series(voters.index.str.split("-").str[0], index=voters.index)
+    housing = voters[["houses", "panel", "newer"]]  # against older apartment buildings
+    districts = pd.get_dummies(district, drop_first=True, dtype=float)
+    target = shares["prahaSobe"]
+
+    def model(columns: pd.DataFrame) -> dict:
+        coefficients, errors, fit = _fit(target, columns, voted, district)
+        named = dict(zip(columns.columns, zip(coefficients[1:], errors[1:])))
+        result = {"fit": fit}
+        for name in ("minutes", "panel", "houses", "newer"):
+            if name in named:
+                result[name] = {"value": float(named[name][0]), "error": float(named[name][1])}
+        return result
+
+    return {
+        "precincts": len(voters),
+        "correlations": correlations,
+        "models": {
+            "minutes": model(voters[["minutes"]]),
+            "housing": model(housing),
+            "both": model(pd.concat([voters[["minutes"]], housing], axis=1)),
+            "districts": model(pd.concat([voters[["minutes"]], housing, districts], axis=1)),
+        },
+    }
+
+
 def _prague_2026_centre() -> dict:
     """Support by travel time to the centre and by what people live in."""
     election, previous, parliamentary = "kv2026", "kv2022", "ps2025"
@@ -922,6 +987,7 @@ def _prague_2026_centre() -> dict:
             "rest": _voter_group(voters[~in_strong]),
             "times": local,
         },
+        "links": _place_links(voters[voters["voted_now"] > 0]),
         "precincts": points.to_dict("records"),
     }
 

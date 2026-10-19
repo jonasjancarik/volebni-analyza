@@ -34,6 +34,22 @@ const campOverPirati = (group: VoterGroup) => (camp(group) / voters(group, "pira
 const piratiOfCamp = (group: VoterGroup, when: When = "now") =>
   (voters(group, "pirati", when) / (voters(group, "pirati", when) + voters(group, "prahaSobe", when))) * 100;
 const pct = (value: number) => fmtNum(value);
+/** A correlation with its sign, such as "−0,51" */
+const fmtR = (value: number) => {
+  const rounded = Math.round(value * 100);
+  return `${rounded < 0 ? "−" : rounded > 0 ? "+" : ""}${fmtNum(Math.abs(rounded) / 100, 2)}`;
+};
+/** Percentage points, without the sign */
+const percentagePoints = (value: number, decimals = 1) => fmtNum(Math.abs(value), decimals);
+/** What each correlated measure is, in the order of the table */
+const MEASURES: Record<string, string> = {
+  minutes: "Doba cesty do centra",
+  km: "Vzdálenost od centra vzdušnou čarou",
+  older: "Podíl bytů ve starších bytových domech",
+  panel: "Podíl bytů v panelových domech",
+  newer: "Podíl bytů v novějších bytových domech",
+  houses: "Podíl bytů v rodinných domech",
+};
 const inThousands = (value: number) => fmtNum(value / 1000, 0);
 
 interface Series {
@@ -418,6 +434,20 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
     { group: "Účast", head: years.parliamentary, value: (row) => row.turnout.mid ?? 0, format: pct },
     { group: "Účast", head: years.current, value: (row) => row.turnout.now ?? 0, format: pct, tint: "var(--series-1)" },
     ...shareColumns<KindGroup>(`Zastupitelstvo ${years.current}`),
+  ];
+
+  // How closely single precincts follow travel time and housing
+  const { links } = data;
+  const correlation = (measure: string) => links.correlations.find((row) => row.measure === measure);
+  const [byMinutes, byOlder] = [correlation("minutes"), correlation("older")];
+  const { minutes: alone, both, districts: inside } = links.models;
+  // Within a city district the effect of travel time may not differ from none
+  const minutesUnclear = inside.minutes != null && Math.abs(inside.minutes.value) < 2 * inside.minutes.error;
+  type Correlation = (typeof links.correlations)[number];
+  const correlationColumns: HeatColumn<Correlation>[] = [
+    { head: label("prahaSobe"), value: (row) => row.prahaSobe, format: fmtR, tint: "change" },
+    { head: label("pirati"), value: (row) => row.pirati, format: fmtR, tint: "change" },
+    { head: "Obě dohromady", value: (row) => row.camp, format: fmtR, tint: "change" },
   ];
 
   const spokes = (group: Place) => [
@@ -818,6 +848,57 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
       </Figure>
 
       <section className="prose">
+        <h2>Jak těsně to spolu souvisí</h2>
+        <p>
+          Jak moc podíl v okrscích sleduje dobu cesty nebo zástavbu, jde vyjádřit jedním číslem, korelací. Je +1,
+          když podíl s hodnotou roste úplně pravidelně, −1, když stejně pravidelně klesá, a 0, když spolu nesouvisí.
+          Počítá se z {fmtInt(links.precincts)} pražských okrsků.
+        </p>
+      </section>
+
+      <Figure
+        title="Korelace s podílem hlasů v okrscích"
+        sub={`Volby do zastupitelstva ${years.current}. Modře: čím víc toho okrsek má, tím vyšší podíl. Červeně: tím nižší.`}
+      >
+        <HeatTable
+          rows={links.correlations}
+          rowHead="V okrsku"
+          rowLabel={(row) => MEASURES[row.measure] ?? row.measure}
+          columns={correlationColumns}
+        />
+      </Figure>
+
+      <section className="prose">
+        {byMinutes && byOlder && (
+          <p>
+            Praha Sobě souvisí s dobou cesty ({fmtR(byMinutes.prahaSobe)}) zhruba stejně těsně jako se starší
+            zástavbou ({fmtR(byOlder.prahaSobe)}), Piráti s obojím slaběji. Blízko centra je ale hlavně starší
+            zástavba a na okraji sídliště a rodinné domy, takže z korelací samotných nejde poznat, co z toho
+            rozhoduje. Proto jsme podíl Prahy Sobě v okrscích vysvětlovali dobou cesty i zástavbou najednou.
+          </p>
+        )}
+        {alone.minutes && both.minutes && both.panel && inside.minutes && inside.panel && (
+          <>
+            <p>
+              Samotná doba cesty vysvětluje {fmtPct(alone.fit * 100, 0)} rozdílů mezi okrsky: každá minuta navíc
+              znamená v průměru o {percentagePoints(alone.minutes.value, 2)} bodu nižší podíl. Když se počítá i se
+              zástavbou, je to {percentagePoints(both.minutes.value, 2)} bodu za minutu a okrsek, kde jsou všechny byty
+              v panelových domech, má o {percentagePoints(both.panel.value, 0)} bodů méně než okrsek starší zástavby se
+              stejnou dobou cesty. Při srovnání jen okrsků uvnitř stejné městské části klesne vliv doby cesty na{" "}
+              {percentagePoints(inside.minutes.value, 2)} bodu za minutu
+              {minutesUnclear && <>, což se od nuly nedá rozlišit</>}, a rozdíl mezi sídlištěm a starší zástavbou
+              zůstane {percentagePoints(inside.panel.value, 0)} bodů.
+            </p>
+            <p>
+              {minutesUnclear
+                ? "Rozdíly mezi centrem a okrajem jsou tedy hlavně rozdíly mezi celými městskými částmi. Uvnitř jedné části víc než minuty do centra rozhoduje, v jakých domech lidé bydlí."
+                : "Rozdíly mezi centrem a okrajem jsou tedy z velké části rozdíly mezi celými městskými částmi. Doba cesty hraje roli i uvnitř nich, ale menší než zástavba."}
+            </p>
+          </>
+        )}
+      </section>
+
+      <section className="prose">
         <h2>Co z toho plyne</h2>
         {panel && older && (
           <p>
@@ -866,6 +947,13 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
         <p className="note">
           Zástavba je z registru budov (RÚIAN): druh budovy, počet bytů, konstrukce a rok dokončení. Okrsek se řadí
           podle bytů, ne podle počtu domů, a jeho doba cesty je doba z bytu uprostřed pořadí.
+        </p>
+        <p className="note">
+          Korelace je Pearsonova a každý okrsek v ní váží stejně. Vliv doby cesty a zástavby je z lineární regrese
+          vážené počtem hlasujících. Zástavba v ní vystupuje jako podíl bytů v panelových, novějších a rodinných
+          domech proti starší zástavbě, srovnání uvnitř městských částí přidává každé části vlastní průměr. Při
+          odhadu nejistoty se počítá s tím, že okrsky jedné městské části si jsou podobné. Jde o souvislosti mezi
+          okrsky, ne o to, jak volí jednotliví lidé.
         </p>
         <p className="note">
           Hlasy v komunálních volbách jsou přepočtené na voliče: podíl kandidátky krát počet odevzdaných obálek.

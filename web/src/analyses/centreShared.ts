@@ -54,7 +54,40 @@ export interface CentreAnalysis {
     /** The bands of travel time; a part with too few precincts is missing */
     times: { from: number; to: number | null; strong: VoterGroup | null; rest: VoterGroup | null }[];
   };
+  /** How closely the shares in single precincts follow travel time and housing */
+  links: PlaceLinks;
   precincts: PrecinctPoint[];
+}
+
+/** A coefficient of a fitted model and its standard error */
+export interface Estimate {
+  value: number;
+  error: number;
+}
+
+/** Praha Sobě's share in percent explained by some of: minutes to the centre,
+ * and the shares of flats in panel buildings, family houses and newer buildings
+ * against older apartment buildings (0 to 1) */
+export interface ShareModel {
+  /** Share of the differences between precincts explained, 0 to 1 */
+  fit: number;
+  minutes?: Estimate;
+  panel?: Estimate;
+  houses?: Estimate;
+  newer?: Estimate;
+}
+
+export interface PlaceLinks {
+  precincts: number;
+  /** Correlation of each measure with the shares of the lists and of both together */
+  correlations: { measure: string; prahaSobe: number; pirati: number; camp: number }[];
+  models: {
+    minutes: ShareModel;
+    housing: ShareModel;
+    both: ShareModel;
+    /** Both, comparing only precincts of the same city district */
+    districts: ShareModel;
+  };
 }
 
 export const KINDS: Record<string, { name: string; color: string }> = {
