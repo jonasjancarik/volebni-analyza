@@ -1,5 +1,7 @@
+import { useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAnalysis } from "../api";
+import { ArticleToc } from "../components/ArticleToc";
 import { Loading, Problem } from "../components/State";
 import { Prague2026 } from "./Prague2026";
 import { Prague1, type Prague1Analysis } from "./Prague1";
@@ -143,8 +145,9 @@ export function AnalysisPage() {
 
 function Article({ entry }: { entry: AnalysisEntry }) {
   const analysis = useAnalysis<unknown>(entry.slug);
+  const ref = useRef<HTMLElement>(null);
   return (
-    <article className="page article">
+    <article className="page article" ref={ref}>
       <header className="article-head">
         <nav className="crumbs" aria-label="Kde jste">
           <Link to="/analyzy">Analýzy</Link>
@@ -158,6 +161,7 @@ function Article({ entry }: { entry: AnalysisEntry }) {
       {analysis.isPending && <Loading text="Počítám čísla pro analýzu. Poprvé to trvá několik sekund." />}
       {analysis.error && <Problem error={analysis.error} />}
       {analysis.data != null && <div className="article-body">{entry.body(analysis.data)}</div>}
+      <ArticleToc root={ref} ready={analysis.data != null} />
     </article>
   );
 }
