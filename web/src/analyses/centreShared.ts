@@ -79,8 +79,13 @@ export interface ShareModel {
 
 export interface PlaceLinks {
   precincts: number;
-  /** Correlation of each measure with the shares of the lists and of both together */
-  correlations: { measure: string; prahaSobe: number; pirati: number; camp: number }[];
+  /** City districts, the groups of related precincts in the standard errors */
+  districts: number;
+  /** Correlation of travel time with the share of flats in older and in panel buildings */
+  minutesWith: { older: number; panel: number };
+  /** Correlation of each measure with the shares of the lists and of both together;
+   * `prahaSobeRank` is the rank correlation with Praha Sobě's share */
+  correlations: { measure: string; prahaSobe: number; pirati: number; camp: number; prahaSobeRank: number }[];
   models: {
     minutes: ShareModel;
     housing: ShareModel;

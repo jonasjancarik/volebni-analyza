@@ -10,9 +10,11 @@ import {
   type KindGroup,
   kindName,
   KINDS,
+  type Estimate,
   type Metric,
   type Place,
   type PrecinctPoint,
+  type ShareModel,
   SHARES,
   type TimeBand,
   type When,
@@ -34,11 +36,12 @@ const campOverPirati = (group: VoterGroup) => (camp(group) / voters(group, "pira
 const piratiOfCamp = (group: VoterGroup, when: When = "now") =>
   (voters(group, "pirati", when) / (voters(group, "pirati", when) + voters(group, "prahaSobe", when))) * 100;
 const pct = (value: number) => fmtNum(value);
-/** A correlation with its sign, such as "−0,51" */
-const fmtR = (value: number) => {
-  const rounded = Math.round(value * 100);
-  return `${rounded < 0 ? "−" : rounded > 0 ? "+" : ""}${fmtNum(Math.abs(rounded) / 100, 2)}`;
+/** A number with its sign, such as "−0,51"; no sign where it rounds to zero */
+const signed = (value: number, decimals = 2) => {
+  const rounded = Math.round(value * 10 ** decimals);
+  return `${rounded < 0 ? "−" : rounded > 0 ? "+" : ""}${fmtNum(Math.abs(rounded) / 10 ** decimals, decimals)}`;
 };
+const fmtR = (value: number) => signed(value);
 /** Percentage points, without the sign */
 const percentagePoints = (value: number, decimals = 1) => fmtNum(Math.abs(value), decimals);
 /** What each correlated measure is, in the order of the table */
@@ -443,11 +446,32 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
   const { minutes: alone, both, districts: inside } = links.models;
   // Within a city district the effect of travel time may not differ from none
   const minutesUnclear = inside.minutes != null && Math.abs(inside.minutes.value) < 2 * inside.minutes.error;
+  const panelClear = inside.panel != null && Math.abs(inside.panel.value) > 2 * inside.panel.error;
   type Correlation = (typeof links.correlations)[number];
+  const pearson = "Pearsonův r";
   const correlationColumns: HeatColumn<Correlation>[] = [
-    { head: label("prahaSobe"), value: (row) => row.prahaSobe, format: fmtR, tint: "change" },
-    { head: label("pirati"), value: (row) => row.pirati, format: fmtR, tint: "change" },
-    { head: "Obě dohromady", value: (row) => row.camp, format: fmtR, tint: "change" },
+    { group: pearson, head: label("prahaSobe"), value: (row) => row.prahaSobe, format: fmtR, tint: "change" },
+    { group: pearson, head: label("pirati"), value: (row) => row.pirati, format: fmtR, tint: "change" },
+    { group: pearson, head: "Obě dohromady", value: (row) => row.camp, format: fmtR, tint: "change" },
+    {
+      group: "Spearmanův ρ",
+      head: label("prahaSobe"),
+      value: (row) => row.prahaSobeRank,
+      format: fmtR,
+      tint: "change",
+    },
+  ];
+  const modelRows: { name: string; model: ShareModel }[] = [
+    { name: "Jen doba cesty", model: links.models.minutes },
+    { name: "Jen zástavba", model: links.models.housing },
+    { name: "Doba cesty a zástavba", model: both },
+    { name: "Totéž uvnitř městských částí", model: inside },
+  ];
+  const modelColumns: { head: string; pick: (model: ShareModel) => Estimate | undefined; decimals: number }[] = [
+    { head: "Doba cesty (za minutu)", pick: (model) => model.minutes, decimals: 2 },
+    { head: "Panelové domy", pick: (model) => model.panel, decimals: 1 },
+    { head: "Novější bytové domy", pick: (model) => model.newer, decimals: 1 },
+    { head: "Rodinné domy", pick: (model) => model.houses, decimals: 1 },
   ];
 
   const spokes = (group: Place) => [
@@ -850,15 +874,31 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
       <section className="prose">
         <h2>Jak těsně to spolu souvisí</h2>
         <p>
-          Jak moc podíl v okrscích sleduje dobu cesty nebo zástavbu, jde vyjádřit jedním číslem, korelací. Je +1,
-          když podíl s hodnotou roste úplně pravidelně, −1, když stejně pravidelně klesá, a 0, když spolu nesouvisí.
-          Počítá se z {fmtInt(links.precincts)} pražských okrsků.
+          Sílu souvislosti měříme Pearsonovým korelačním koeficientem r, spočítaným přes{" "}
+          {fmtInt(links.precincts)} pražských okrsků. Ukazuje, jak těsně leží body z grafu výše na přímce: +1
+          znamená, že podíl s danou veličinou roste přesně lineárně, −1, že stejně přesně klesá, a 0, že mezi nimi
+          žádná lineární souvislost není. Druhá mocnina r je podíl rozptylu mezi okrsky, který by vysvětlila
+          samotná tato veličina
+          {byMinutes && (
+            <>
+              ; u doby cesty a Prahy Sobě je r = {fmtR(byMinutes.prahaSobe)}, tedy r² ≈{" "}
+              {fmtPct(byMinutes.prahaSobe ** 2 * 100, 0)}
+            </>
+          )}
+          .
+        </p>
+        <p>
+          Pearsonův koeficient může zkreslit pár neobvyklých okrsků nebo zakřivený tvar vztahu. U Prahy Sobě proto
+          uvádíme i Spearmanův pořadový koeficient ρ, tedy stejný výpočet nad pořadím okrsků místo nad samotnými
+          hodnotami
+          {byMinutes && <> (u doby cesty ρ = {fmtR(byMinutes.prahaSobeRank)})</>}. Vychází podobně, takže výsledek
+          nestojí na několika odlehlých okrscích.
         </p>
       </section>
 
       <Figure
         title="Korelace s podílem hlasů v okrscích"
-        sub={`Volby do zastupitelstva ${years.current}. Modře: čím víc toho okrsek má, tím vyšší podíl. Červeně: tím nižší.`}
+        sub={`Volby do zastupitelstva ${years.current}, ${fmtInt(links.precincts)} okrsků, každý se stejnou váhou. Modře: čím víc toho okrsek má, tím vyšší podíl. Červeně: tím nižší.`}
       >
         <HeatTable
           rows={links.correlations}
@@ -869,25 +909,90 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
       </Figure>
 
       <section className="prose">
-        {byMinutes && byOlder && (
-          <p>
-            Praha Sobě souvisí s dobou cesty ({fmtR(byMinutes.prahaSobe)}) zhruba stejně těsně jako se starší
-            zástavbou ({fmtR(byOlder.prahaSobe)}), Piráti s obojím slaběji. Blízko centra je ale hlavně starší
-            zástavba a na okraji sídliště a rodinné domy, takže z korelací samotných nejde poznat, co z toho
-            rozhoduje. Proto jsme podíl Prahy Sobě v okrscích vysvětlovali dobou cesty i zástavbou najednou.
-          </p>
-        )}
+        <p>
+          {byMinutes && byOlder && (
+            <>
+              Praha Sobě souvisí s dobou cesty ({fmtR(byMinutes.prahaSobe)}) zhruba stejně těsně jako se starší
+              zástavbou ({fmtR(byOlder.prahaSobe)}), Piráti s obojím slaběji.{" "}
+            </>
+          )}
+          Doba cesty a zástavba se ale navzájem překrývají: doba cesty koreluje s podílem bytů ve starší zástavbě{" "}
+          {fmtR(links.minutesWith.older)} a s podílem bytů v panelových domech {fmtR(links.minutesWith.panel)}. Z párových
+          korelací proto nejde oddělit, kolik z rozdílů vysvětluje vzdálenost a kolik to, v čem lidé bydlí.
+        </p>
+        <p>
+          K tomu slouží lineární regrese podílu Prahy Sobě v okrsku (v procentech), vážená počtem hlasujících, aby
+          velké okrsky vážily víc než malé. Zástavba v ní vystupuje jako podíl bytů v panelových, novějších
+          a rodinných domech a srovnávací skupinou je starší zástavba. Koeficient u panelových domů tak říká, o kolik
+          bodů se liší okrsek se všemi byty v panelových domech od okrsku se všemi byty ve starší zástavbě při stejné
+          době cesty. Poslední model přidává každé z {fmtInt(links.districts)} městských částí vlastní konstantu
+          (fixní efekty), takže porovnává jen okrsky uvnitř stejné části. Okrsky jedné městské části si jsou podobné
+          a nejsou nezávislá pozorování, proto jsou intervaly spolehlivosti spočítané se shlukováním po městských
+          částech.
+        </p>
+      </section>
+
+      <Figure
+        title="Regrese podílu Prahy Sobě v okrscích"
+        sub="Koeficienty v procentních bodech, pod nimi 95% interval spolehlivosti. Zástavba je proti okrsku, kde jsou všechny byty ve starších bytových domech. R² je podíl rozptylu mezi okrsky, který model vysvětluje."
+      >
+        <div className="table-wrap">
+          <table className="data regression">
+            <thead>
+              <tr>
+                <th>Model</th>
+                {modelColumns.map((column) => (
+                  <th key={column.head} className="r">
+                    {column.head}
+                  </th>
+                ))}
+                <th className="r">R²</th>
+              </tr>
+            </thead>
+            <tbody>
+              {modelRows.map(({ name, model }) => (
+                <tr key={name}>
+                  <td>{name}</td>
+                  {modelColumns.map((column) => {
+                    const estimate = column.pick(model);
+                    if (!estimate) {
+                      return (
+                        <td key={column.head} className="r muted">
+                          –
+                        </td>
+                      );
+                    }
+                    const [low, high] = [estimate.value - 1.96 * estimate.error, estimate.value + 1.96 * estimate.error];
+                    return (
+                      <td key={column.head} className={`r num${low < 0 && high > 0 ? " unclear" : ""}`}>
+                        <div className="estimate">{signed(estimate.value, column.decimals)}</div>
+                        <div className="interval">
+                          {signed(low, column.decimals)} až {signed(high, column.decimals)}
+                        </div>
+                      </td>
+                    );
+                  })}
+                  <td className="r num">{fmtPct(model.fit * 100, 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Figure>
+
+      <section className="prose">
         {alone.minutes && both.minutes && both.panel && inside.minutes && inside.panel && (
           <>
             <p>
-              Samotná doba cesty vysvětluje {fmtPct(alone.fit * 100, 0)} rozdílů mezi okrsky: každá minuta navíc
-              znamená v průměru o {percentagePoints(alone.minutes.value, 2)} bodu nižší podíl. Když se počítá i se
-              zástavbou, je to {percentagePoints(both.minutes.value, 2)} bodu za minutu a okrsek, kde jsou všechny byty
-              v panelových domech, má o {percentagePoints(both.panel.value, 0)} bodů méně než okrsek starší zástavby se
-              stejnou dobou cesty. Při srovnání jen okrsků uvnitř stejné městské části klesne vliv doby cesty na{" "}
-              {percentagePoints(inside.minutes.value, 2)} bodu za minutu
-              {minutesUnclear && <>, což se od nuly nedá rozlišit</>}, a rozdíl mezi sídlištěm a starší zástavbou
-              zůstane {percentagePoints(inside.panel.value, 0)} bodů.
+              Samotná doba cesty vysvětluje {fmtPct(alone.fit * 100, 0)} rozptylu: každá minuta navíc znamená
+              v průměru o {percentagePoints(alone.minutes.value, 2)} bodu nižší podíl. Se zástavbou v modelu klesne
+              na {percentagePoints(both.minutes.value, 2)} bodu za minutu a okrsek, kde jsou všechny byty v panelových
+              domech, má o {percentagePoints(both.panel.value, 0)} bodů méně než okrsek starší zástavby se stejnou
+              dobou cesty. Uvnitř městských částí je to {percentagePoints(inside.minutes.value, 2)} bodu za minutu
+              {minutesUnclear && <>, a interval spolehlivosti tak zahrnuje nulu</>}, zatímco rozdíl mezi sídlištěm
+              a starší zástavbou zůstává {percentagePoints(inside.panel.value, 0)} bodů
+              {panelClear && <> a od nuly se jasně liší</>}. Vysoké R² posledního modelu (
+              {fmtPct(inside.fit * 100, 0)}) jde hlavně na vrub samotných městských částí.
             </p>
             <p>
               {minutesUnclear
@@ -896,6 +1001,11 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
             </p>
           </>
         )}
+        <p>
+          Jde o ekologickou korelaci: popisuje okrsky, ne jednotlivé voliče, a sama o sobě nedokazuje příčinu.
+          Sídliště a starší zástavba se liší i věkem, vzděláním a příjmy obyvatel, které model nezná, takže koeficient
+          zástavby zachycuje i je.
+        </p>
       </section>
 
       <section className="prose">
@@ -949,11 +1059,10 @@ export function Prague2026Centre({ data }: { data: CentreAnalysis }) {
           podle bytů, ne podle počtu domů, a jeho doba cesty je doba z bytu uprostřed pořadí.
         </p>
         <p className="note">
-          Korelace je Pearsonova a každý okrsek v ní váží stejně. Vliv doby cesty a zástavby je z lineární regrese
-          vážené počtem hlasujících. Zástavba v ní vystupuje jako podíl bytů v panelových, novějších a rodinných
-          domech proti starší zástavbě, srovnání uvnitř městských částí přidává každé části vlastní průměr. Při
-          odhadu nejistoty se počítá s tím, že okrsky jedné městské části si jsou podobné. Jde o souvislosti mezi
-          okrsky, ne o to, jak volí jednotliví lidé.
+          Korelace jsou nevážené, přes všechny okrsky s dobou cesty i výsledkem. Regrese je metodou vážených
+          nejmenších čtverců s váhou počtu hlasujících; standardní chyby jsou robustní vůči shlukování po městských
+          částech (sendvičový odhad bez korekce na malý počet shluků) a 95% interval je odhad ± 1,96 standardní
+          chyby.
         </p>
         <p className="note">
           Hlasy v komunálních volbách jsou přepočtené na voliče: podíl kandidátky krát počet odevzdaných obálek.

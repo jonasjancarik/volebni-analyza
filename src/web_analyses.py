@@ -33,7 +33,7 @@ from election_comparison import (
 )
 
 # Bump when the figures of an analysis change, so that stored ones are recomputed
-ANALYSIS_VERSION = 8
+ANALYSIS_VERSION = 9
 
 PRAGUE = "554782"
 PRAGUE_REGION = "1"
@@ -872,7 +872,12 @@ def _place_links(voters: pd.DataFrame) -> dict:
         "camp": (voters["prahaSobe_now"] + voters["pirati_now"]) / voted * 100,
     }
     correlations = [
-        {"measure": measure, **{key: float(voters[measure].corr(values)) for key, values in shares.items()}}
+        {
+            "measure": measure,
+            **{key: float(voters[measure].corr(values)) for key, values in shares.items()},
+            # By rank, which a few unusual precincts sway less
+            "prahaSobeRank": float(voters[measure].rank().corr(shares["prahaSobe"].rank())),
+        }
         for measure in PLACE_MEASURES
     ]
 
@@ -892,6 +897,9 @@ def _place_links(voters: pd.DataFrame) -> dict:
 
     return {
         "precincts": len(voters),
+        "districts": int(district.nunique()),
+        # How closely travel time goes with the housing, which is why both go into one model
+        "minutesWith": {kind: float(voters["minutes"].corr(voters[kind])) for kind in ("older", "panel")},
         "correlations": correlations,
         "models": {
             "minutes": model(voters[["minutes"]]),
